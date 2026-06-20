@@ -14,16 +14,144 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      branches: {
+        Row: {
+          branch_no: string
+          city: string
+          created_at: string
+        }
+        Insert: {
+          branch_no: string
+          city: string
+          created_at?: string
+        }
+        Update: {
+          branch_no?: string
+          city?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      orders: {
+        Row: {
+          agent_id: string
+          branch_no: string | null
+          created_at: string
+          delivery_type: string | null
+          id: string
+          invoice_no: string | null
+          invoice_value: number | null
+          notes: string | null
+          order_date: string
+          order_no: string | null
+          order_type: string
+          status: string
+          team: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+        }
+        Insert: {
+          agent_id: string
+          branch_no?: string | null
+          created_at?: string
+          delivery_type?: string | null
+          id?: string
+          invoice_no?: string | null
+          invoice_value?: number | null
+          notes?: string | null
+          order_date?: string
+          order_no?: string | null
+          order_type: string
+          status?: string
+          team: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string
+          branch_no?: string | null
+          created_at?: string
+          delivery_type?: string | null
+          id?: string
+          invoice_no?: string | null
+          invoice_value?: number | null
+          notes?: string | null
+          order_date?: string
+          order_no?: string | null
+          order_type?: string
+          status?: string
+          team?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_branch_no_fkey"
+            columns: ["branch_no"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["branch_no"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          active: boolean
+          agent_code: string | null
+          created_at: string
+          full_name: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          agent_code?: string | null
+          created_at?: string
+          full_name: string
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          agent_code?: string | null
+          created_at?: string
+          full_name?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_active: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "customer_care" | "telesales"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +278,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "customer_care", "telesales"],
+    },
   },
 } as const
