@@ -147,6 +147,7 @@ function OrdersList() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Order #</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Team</TableHead>
                   <TableHead>Agent</TableHead>
@@ -154,21 +155,22 @@ function OrdersList() {
                   <TableHead>Branch</TableHead>
                   <TableHead>City</TableHead>
                   <TableHead>Delivery</TableHead>
-                  <TableHead>Order #</TableHead>
+                  <TableHead>Ext. Order</TableHead>
                   <TableHead>Invoice #</TableHead>
                   <TableHead className="text-right">Value</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
-                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
+                {isLoading && <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
+                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
                 {filtered.map((o: any) => {
-                  const editable = profile?.id === o.agent_id || profile?.id === undefined;
+                  const editable = profile?.id === o.agent_id || role === "admin";
                   return (
                     <TableRow key={o.id} className="cursor-pointer" onClick={() => editable && navigate({ to: "/orders/$id", params: { id: o.id } })}>
+                      <TableCell className="font-mono font-semibold">{o.display_no ?? "—"}</TableCell>
                       <TableCell>{o.order_date}</TableCell>
-                      <TableCell><Badge variant="outline" className="capitalize">{o.team.replace("_", " ")}</Badge></TableCell>
+                      <TableCell><TeamBadge team={o.team} /></TableCell>
                       <TableCell className="whitespace-nowrap">{o.agent_name}</TableCell>
                       <TableCell>{o.order_type}</TableCell>
                       <TableCell>{o.branch_no ?? "—"}</TableCell>
@@ -188,6 +190,13 @@ function OrdersList() {
       </Card>
     </div>
   );
+}
+
+function TeamBadge({ team }: { team: string }) {
+  if (team === "telesales") {
+    return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-chart-2/15 text-chart-2 border-chart-2/30">Telesales</span>;
+  }
+  return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-chart-1/15 text-chart-1 border-chart-1/30">Customer Care</span>;
 }
 
 function StatusBadge({ s }: { s: string }) {
