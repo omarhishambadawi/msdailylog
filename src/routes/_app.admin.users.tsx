@@ -31,6 +31,7 @@ function AdminUsers() {
   const setRoleFn = useServerFn(adminSetRole);
   const setPwFn = useServerFn(adminSetPassword);
   const updFn = useServerFn(adminUpdateProfile);
+  const delFn = useServerFn(adminDeleteUser);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-users"],
