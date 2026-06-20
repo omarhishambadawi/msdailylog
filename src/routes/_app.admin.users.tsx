@@ -13,9 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ShieldAlert, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
+import { ALL_PERMISSIONS, defaultPermsForRole } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app/admin/users")({
   head: () => ({ meta: [{ title: "Users — Admin" }] }),
@@ -67,12 +69,18 @@ function AdminUsers() {
   const saveEdit = async () => {
     if (!editing) return;
     try {
-      await updFn({ data: { userId: editing.id, fullName: editing.full_name, agentCode: editing.agent_code ?? "" } });
+      await updFn({ data: { userId: editing.id, fullName: editing.full_name, agentCode: editing.agent_code ?? "", permissions: editing.permissions ?? [] } });
       if (editing._roleChange) await setRoleFn({ data: { userId: editing.id, role: editing.role } });
       toast.success("Saved");
       setEditing(null);
       reload();
     } catch (e: any) { toast.error(e.message); }
+  };
+
+  const togglePerm = (key: string, on: boolean) => {
+    if (!editing) return;
+    const cur: string[] = editing.permissions ?? [];
+    setEditing({ ...editing, permissions: on ? Array.from(new Set([...cur, key])) : cur.filter((p: string) => p !== key) });
   };
 
   const savePw = async () => {
