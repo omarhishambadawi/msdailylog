@@ -71,6 +71,7 @@ function OrdersList() {
 
   const exportXlsx = () => {
     const rows = filtered.map((o: any) => ({
+      "Order #": o.display_no,
       Date: o.order_date,
       Team: o.team === "customer_care" ? "Customer Care" : "Telesales",
       Agent: o.agent_name,
@@ -79,7 +80,7 @@ function OrdersList() {
       "Branch No.": o.branch_no,
       City: o.city,
       "Delivery & Pickup": o.delivery_type,
-      "Order No.": o.order_no,
+      "External Order No.": o.order_no,
       "Invoice No.": o.invoice_no,
       "Invoice Value": o.invoice_value,
       "Notes / Customer No.": o.notes,
@@ -96,9 +97,14 @@ function OrdersList() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Orders</h1>
-          <p className="text-sm text-muted-foreground">Search, filter, edit and export</p>
+          <p className="text-sm text-muted-foreground">
+            {mineOnly ? <>Showing your orders · <span className="font-medium text-foreground">{todayMine}</span> logged today</> : "Search, filter, edit and export"}
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
+            {mineOnly ? "My orders" : "All orders"}
+          </Button>
           <Button variant="outline" onClick={exportXlsx}><Download className="h-4 w-4 mr-2" />Export Excel</Button>
           <Button onClick={() => navigate({ to: "/orders/new" })}><Plus className="h-4 w-4 mr-2" />New order</Button>
         </div>
