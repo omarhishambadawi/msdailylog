@@ -117,7 +117,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         notes: form.notes || null,
       });
       if (mode === "create") {
-        const { error } = await supabase.from("orders").insert({ ...parsed, agent_id: user.id });
+        const { error } = await supabase.from("orders").insert({ ...parsed, agent_id: user.id } as any);
         if (error) throw error;
         toast.success("Order saved");
       } else {
