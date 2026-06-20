@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download, Plus, Search } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/_app/orders/")({
 
 function OrdersList() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, user, role } = useAuth();
   const today = new Date().toISOString().slice(0, 10);
   const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
   const [from, setFrom] = useState(monthAgo.toISOString().slice(0, 10));
@@ -28,13 +28,15 @@ function OrdersList() {
   const [q, setQ] = useState("");
   const [team, setTeam] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
+  const [mineOnly, setMineOnly] = useState<boolean>(role !== "admin");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["orders", from, to, team, status],
+    queryKey: ["orders", from, to, team, status, mineOnly, user?.id],
     queryFn: async () => {
       let qb = supabase.from("orders").select("*").gte("order_date", from).lte("order_date", to).order("order_date", { ascending: false }).order("created_at", { ascending: false }).limit(2000);
       if (team !== "all") qb = qb.eq("team", team as "customer_care" | "telesales");
       if (status !== "all") qb = qb.eq("status", status);
+      if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
       const [{ data: orders, error }, { data: profiles }, { data: branches }] = await Promise.all([
         qb,
         supabase.from("profiles").select("id,full_name,agent_code"),
@@ -57,13 +59,19 @@ function OrdersList() {
     const term = q.trim().toLowerCase();
     if (!term) return data;
     return data.filter((o: any) =>
-      [o.order_no, o.invoice_no, o.branch_no, o.city, o.agent_name, o.notes, o.delivery_type, o.order_type]
+      [o.display_no, o.order_no, o.invoice_no, o.branch_no, o.city, o.agent_name, o.notes, o.delivery_type, o.order_type]
         .filter(Boolean).some((v: string) => String(v).toLowerCase().includes(term)),
     );
   }, [data, q]);
 
+  const todayMine = useMemo(() => {
+    if (!user?.id) return 0;
+    return (data ?? []).filter((o: any) => o.agent_id === user.id && o.order_date === today).length;
+  }, [data, user?.id, today]);
+
   const exportXlsx = () => {
     const rows = filtered.map((o: any) => ({
+      "Order #": o.display_no,
       Date: o.order_date,
       Team: o.team === "customer_care" ? "Customer Care" : "Telesales",
       Agent: o.agent_name,
@@ -72,7 +80,7 @@ function OrdersList() {
       "Branch No.": o.branch_no,
       City: o.city,
       "Delivery & Pickup": o.delivery_type,
-      "Order No.": o.order_no,
+      "External Order No.": o.order_no,
       "Invoice No.": o.invoice_no,
       "Invoice Value": o.invoice_value,
       "Notes / Customer No.": o.notes,
@@ -89,9 +97,14 @@ function OrdersList() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Orders</h1>
-          <p className="text-sm text-muted-foreground">Search, filter, edit and export</p>
+          <p className="text-sm text-muted-foreground">
+            {mineOnly ? <>Showing your orders · <span className="font-medium text-foreground">{todayMine}</span> logged today</> : "Search, filter, edit and export"}
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
+            {mineOnly ? "My orders" : "All orders"}
+          </Button>
           <Button variant="outline" onClick={exportXlsx}><Download className="h-4 w-4 mr-2" />Export Excel</Button>
           <Button onClick={() => navigate({ to: "/orders/new" })}><Plus className="h-4 w-4 mr-2" />New order</Button>
         </div>
@@ -134,6 +147,7 @@ function OrdersList() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Order #</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Team</TableHead>
                   <TableHead>Agent</TableHead>
@@ -141,21 +155,22 @@ function OrdersList() {
                   <TableHead>Branch</TableHead>
                   <TableHead>City</TableHead>
                   <TableHead>Delivery</TableHead>
-                  <TableHead>Order #</TableHead>
+                  <TableHead>Ext. Order</TableHead>
                   <TableHead>Invoice #</TableHead>
                   <TableHead className="text-right">Value</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
-                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
+                {isLoading && <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
+                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
                 {filtered.map((o: any) => {
-                  const editable = profile?.id === o.agent_id || profile?.id === undefined;
+                  const editable = profile?.id === o.agent_id || role === "admin";
                   return (
                     <TableRow key={o.id} className="cursor-pointer" onClick={() => editable && navigate({ to: "/orders/$id", params: { id: o.id } })}>
+                      <TableCell className="font-mono font-semibold">{o.display_no ?? "—"}</TableCell>
                       <TableCell>{o.order_date}</TableCell>
-                      <TableCell><Badge variant="outline" className="capitalize">{o.team.replace("_", " ")}</Badge></TableCell>
+                      <TableCell><TeamBadge team={o.team} /></TableCell>
                       <TableCell className="whitespace-nowrap">{o.agent_name}</TableCell>
                       <TableCell>{o.order_type}</TableCell>
                       <TableCell>{o.branch_no ?? "—"}</TableCell>
@@ -175,6 +190,13 @@ function OrdersList() {
       </Card>
     </div>
   );
+}
+
+function TeamBadge({ team }: { team: string }) {
+  if (team === "telesales") {
+    return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-chart-2/15 text-chart-2 border-chart-2/30">Telesales</span>;
+  }
+  return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-chart-1/15 text-chart-1 border-chart-1/30">Customer Care</span>;
 }
 
 function StatusBadge({ s }: { s: string }) {

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useAuth } from "@/lib/auth";
-import { adminCreateUser, adminListUsers, adminSetActive, adminSetRole, adminSetPassword, adminUpdateProfile } from "@/lib/admin.functions";
+import { adminCreateUser, adminListUsers, adminSetActive, adminSetRole, adminSetPassword, adminUpdateProfile, adminDeleteUser } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,10 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ShieldAlert, KeyRound, Pencil, Plus } from "lucide-react";
+import { ShieldAlert, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/admin/users")({
   head: () => ({ meta: [{ title: "Users — Admin" }] }),
@@ -30,6 +31,7 @@ function AdminUsers() {
   const setRoleFn = useServerFn(adminSetRole);
   const setPwFn = useServerFn(adminSetPassword);
   const updFn = useServerFn(adminUpdateProfile);
+  const delFn = useServerFn(adminDeleteUser);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-users"],
@@ -137,9 +139,24 @@ function AdminUsers() {
                   <TableCell>
                     <Switch checked={u.active} onCheckedChange={async (v) => { try { await setActiveFn({ data: { userId: u.id, active: v } }); reload(); } catch (e: any) { toast.error(e.message); } }} />
                   </TableCell>
-                  <TableCell className="text-right space-x-2">
+                  <TableCell className="text-right space-x-1">
                     <Button variant="ghost" size="sm" onClick={() => setEditing({ ...u })}><Pencil className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="sm" onClick={() => setPwUser(u)}><KeyRound className="h-4 w-4" /></Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete {u.full_name}?</AlertDialogTitle>
+                          <AlertDialogDescription>This permanently removes the account and signs them out. Their existing orders are kept for records. This cannot be undone.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={async () => { try { await delFn({ data: { userId: u.id } }); toast.success("User deleted"); reload(); } catch (e: any) { toast.error(e.message); } }}>Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}

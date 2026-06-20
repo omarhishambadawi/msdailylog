@@ -117,7 +117,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         notes: form.notes || null,
       });
       if (mode === "create") {
-        const { error } = await supabase.from("orders").insert({ ...parsed, agent_id: user.id });
+        const { error } = await supabase.from("orders").insert({ ...parsed, agent_id: user.id } as any);
         if (error) throw error;
         toast.success("Order saved");
       } else {
@@ -154,7 +154,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         )}
       </div>
       <Card>
-        <CardHeader><CardTitle>{mode === "create" ? "New order" : "Edit order"}</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{mode === "create" ? "New order" : `Edit order ${existing?.display_no ?? ""}`}</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={submit} className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
