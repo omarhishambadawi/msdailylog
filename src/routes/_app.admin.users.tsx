@@ -139,9 +139,24 @@ function AdminUsers() {
                   <TableCell>
                     <Switch checked={u.active} onCheckedChange={async (v) => { try { await setActiveFn({ data: { userId: u.id, active: v } }); reload(); } catch (e: any) { toast.error(e.message); } }} />
                   </TableCell>
-                  <TableCell className="text-right space-x-2">
+                  <TableCell className="text-right space-x-1">
                     <Button variant="ghost" size="sm" onClick={() => setEditing({ ...u })}><Pencil className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="sm" onClick={() => setPwUser(u)}><KeyRound className="h-4 w-4" /></Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete {u.full_name}?</AlertDialogTitle>
+                          <AlertDialogDescription>This permanently removes the account and signs them out. Their existing orders are kept for records. This cannot be undone.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={async () => { try { await delFn({ data: { userId: u.id } }); toast.success("User deleted"); reload(); } catch (e: any) { toast.error(e.message); } }}>Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}
