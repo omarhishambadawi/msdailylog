@@ -9,38 +9,189 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as BootstrapRouteImport } from './routes/bootstrap'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppOrdersIndexRouteImport } from './routes/_app.orders.index'
+import { Route as AppOrdersNewRouteImport } from './routes/_app.orders.new'
+import { Route as AppOrdersIdRouteImport } from './routes/_app.orders.$id'
+import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
+import { Route as AppAdminBranchesRouteImport } from './routes/_app.admin.branches'
 
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BootstrapRoute = BootstrapRouteImport.update({
+  id: '/bootstrap',
+  path: '/bootstrap',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrdersIndexRoute = AppOrdersIndexRouteImport.update({
+  id: '/orders/',
+  path: '/orders/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrdersNewRoute = AppOrdersNewRouteImport.update({
+  id: '/orders/new',
+  path: '/orders/new',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrdersIdRoute = AppOrdersIdRouteImport.update({
+  id: '/orders/$id',
+  path: '/orders/$id',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminBranchesRoute = AppAdminBranchesRouteImport.update({
+  id: '/admin/branches',
+  path: '/admin/branches',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/bootstrap': typeof BootstrapRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/admin/branches': typeof AppAdminBranchesRoute
+  '/admin/users': typeof AppAdminUsersRoute
+  '/orders/$id': typeof AppOrdersIdRoute
+  '/orders/new': typeof AppOrdersNewRoute
+  '/orders/': typeof AppOrdersIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/bootstrap': typeof BootstrapRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/admin/branches': typeof AppAdminBranchesRoute
+  '/admin/users': typeof AppAdminUsersRoute
+  '/orders/$id': typeof AppOrdersIdRoute
+  '/orders/new': typeof AppOrdersNewRoute
+  '/orders': typeof AppOrdersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/bootstrap': typeof BootstrapRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/admin/branches': typeof AppAdminBranchesRoute
+  '/_app/admin/users': typeof AppAdminUsersRoute
+  '/_app/orders/$id': typeof AppOrdersIdRoute
+  '/_app/orders/new': typeof AppOrdersNewRoute
+  '/_app/orders/': typeof AppOrdersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/bootstrap'
+    | '/reset-password'
+    | '/dashboard'
+    | '/admin/branches'
+    | '/admin/users'
+    | '/orders/$id'
+    | '/orders/new'
+    | '/orders/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/bootstrap'
+    | '/reset-password'
+    | '/dashboard'
+    | '/admin/branches'
+    | '/admin/users'
+    | '/orders/$id'
+    | '/orders/new'
+    | '/orders'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/auth'
+    | '/bootstrap'
+    | '/reset-password'
+    | '/_app/dashboard'
+    | '/_app/admin/branches'
+    | '/_app/admin/users'
+    | '/_app/orders/$id'
+    | '/_app/orders/new'
+    | '/_app/orders/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
+  AuthRoute: typeof AuthRoute
+  BootstrapRoute: typeof BootstrapRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bootstrap': {
+      id: '/bootstrap'
+      path: '/bootstrap'
+      fullPath: '/bootstrap'
+      preLoaderRoute: typeof BootstrapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +199,78 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/orders/': {
+      id: '/_app/orders/'
+      path: '/orders'
+      fullPath: '/orders/'
+      preLoaderRoute: typeof AppOrdersIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/orders/new': {
+      id: '/_app/orders/new'
+      path: '/orders/new'
+      fullPath: '/orders/new'
+      preLoaderRoute: typeof AppOrdersNewRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/orders/$id': {
+      id: '/_app/orders/$id'
+      path: '/orders/$id'
+      fullPath: '/orders/$id'
+      preLoaderRoute: typeof AppOrdersIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/users': {
+      id: '/_app/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AppAdminUsersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/branches': {
+      id: '/_app/admin/branches'
+      path: '/admin/branches'
+      fullPath: '/admin/branches'
+      preLoaderRoute: typeof AppAdminBranchesRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AppRouteChildren {
+  AppDashboardRoute: typeof AppDashboardRoute
+  AppAdminBranchesRoute: typeof AppAdminBranchesRoute
+  AppAdminUsersRoute: typeof AppAdminUsersRoute
+  AppOrdersIdRoute: typeof AppOrdersIdRoute
+  AppOrdersNewRoute: typeof AppOrdersNewRoute
+  AppOrdersIndexRoute: typeof AppOrdersIndexRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppDashboardRoute: AppDashboardRoute,
+  AppAdminBranchesRoute: AppAdminBranchesRoute,
+  AppAdminUsersRoute: AppAdminUsersRoute,
+  AppOrdersIdRoute: AppOrdersIdRoute,
+  AppOrdersNewRoute: AppOrdersNewRoute,
+  AppOrdersIndexRoute: AppOrdersIndexRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
+  AuthRoute: AuthRoute,
+  BootstrapRoute: BootstrapRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
