@@ -20,7 +20,7 @@ export const Route = createFileRoute("/_app/orders/")({
 
 function OrdersList() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, user, role } = useAuth();
   const today = new Date().toISOString().slice(0, 10);
   const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
   const [from, setFrom] = useState(monthAgo.toISOString().slice(0, 10));
@@ -28,13 +28,15 @@ function OrdersList() {
   const [q, setQ] = useState("");
   const [team, setTeam] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
+  const [mineOnly, setMineOnly] = useState<boolean>(role !== "admin");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["orders", from, to, team, status],
+    queryKey: ["orders", from, to, team, status, mineOnly, user?.id],
     queryFn: async () => {
       let qb = supabase.from("orders").select("*").gte("order_date", from).lte("order_date", to).order("order_date", { ascending: false }).order("created_at", { ascending: false }).limit(2000);
       if (team !== "all") qb = qb.eq("team", team as "customer_care" | "telesales");
       if (status !== "all") qb = qb.eq("status", status);
+      if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
       const [{ data: orders, error }, { data: profiles }, { data: branches }] = await Promise.all([
         qb,
         supabase.from("profiles").select("id,full_name,agent_code"),
@@ -57,10 +59,15 @@ function OrdersList() {
     const term = q.trim().toLowerCase();
     if (!term) return data;
     return data.filter((o: any) =>
-      [o.order_no, o.invoice_no, o.branch_no, o.city, o.agent_name, o.notes, o.delivery_type, o.order_type]
+      [o.display_no, o.order_no, o.invoice_no, o.branch_no, o.city, o.agent_name, o.notes, o.delivery_type, o.order_type]
         .filter(Boolean).some((v: string) => String(v).toLowerCase().includes(term)),
     );
   }, [data, q]);
+
+  const todayMine = useMemo(() => {
+    if (!user?.id) return 0;
+    return (data ?? []).filter((o: any) => o.agent_id === user.id && o.order_date === today).length;
+  }, [data, user?.id, today]);
 
   const exportXlsx = () => {
     const rows = filtered.map((o: any) => ({
