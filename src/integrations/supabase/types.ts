@@ -32,11 +32,61 @@ export type Database = {
         }
         Relationships: []
       }
+      complaints: {
+        Row: {
+          agent_id: string
+          branch_no: string | null
+          category: string | null
+          complaint_date: string
+          created_at: string
+          customer_name: string
+          customer_phone: string
+          description: string
+          display_no: string
+          id: string
+          resolution: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          agent_id: string
+          branch_no?: string | null
+          category?: string | null
+          complaint_date?: string
+          created_at?: string
+          customer_name?: string
+          customer_phone?: string
+          description?: string
+          display_no?: string
+          id?: string
+          resolution?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string
+          branch_no?: string | null
+          category?: string | null
+          complaint_date?: string
+          created_at?: string
+          customer_name?: string
+          customer_phone?: string
+          description?: string
+          display_no?: string
+          id?: string
+          resolution?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       orders: {
         Row: {
           agent_id: string
           branch_no: string | null
           created_at: string
+          customer_name: string
+          customer_phone: string
           delivery_type: string | null
           display_no: string
           id: string
@@ -44,7 +94,6 @@ export type Database = {
           invoice_value: number | null
           notes: string | null
           order_date: string
-          order_no: string | null
           order_type: string
           status: string
           team: Database["public"]["Enums"]["app_role"]
@@ -54,6 +103,8 @@ export type Database = {
           agent_id: string
           branch_no?: string | null
           created_at?: string
+          customer_name?: string
+          customer_phone?: string
           delivery_type?: string | null
           display_no?: string
           id?: string
@@ -61,7 +112,6 @@ export type Database = {
           invoice_value?: number | null
           notes?: string | null
           order_date?: string
-          order_no?: string | null
           order_type: string
           status?: string
           team: Database["public"]["Enums"]["app_role"]
@@ -71,6 +121,8 @@ export type Database = {
           agent_id?: string
           branch_no?: string | null
           created_at?: string
+          customer_name?: string
+          customer_phone?: string
           delivery_type?: string | null
           display_no?: string
           id?: string
@@ -78,7 +130,6 @@ export type Database = {
           invoice_value?: number | null
           notes?: string | null
           order_date?: string
-          order_no?: string | null
           order_type?: string
           status?: string
           team?: Database["public"]["Enums"]["app_role"]
@@ -101,6 +152,7 @@ export type Database = {
           created_at: string
           full_name: string
           id: string
+          permissions: string[]
           updated_at: string
         }
         Insert: {
@@ -109,6 +161,7 @@ export type Database = {
           created_at?: string
           full_name: string
           id: string
+          permissions?: string[]
           updated_at?: string
         }
         Update: {
@@ -117,6 +170,7 @@ export type Database = {
           created_at?: string
           full_name?: string
           id?: string
+          permissions?: string[]
           updated_at?: string
         }
         Relationships: []
