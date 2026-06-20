@@ -33,7 +33,7 @@ function OrdersList() {
     queryKey: ["orders", from, to, team, status],
     queryFn: async () => {
       let qb = supabase.from("orders").select("*").gte("order_date", from).lte("order_date", to).order("order_date", { ascending: false }).order("created_at", { ascending: false }).limit(2000);
-      if (team !== "all") qb = qb.eq("team", team);
+      if (team !== "all") qb = qb.eq("team", team as "customer_care" | "telesales");
       if (status !== "all") qb = qb.eq("status", status);
       const [{ data: orders, error }, { data: profiles }, { data: branches }] = await Promise.all([
         qb,
