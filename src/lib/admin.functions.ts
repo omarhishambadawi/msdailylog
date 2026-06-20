@@ -75,21 +75,24 @@ export const adminSetRole = createServerFn({ method: "POST" })
 
 export const adminUpdateProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; fullName: string; agentCode?: string }) =>
+  .inputValidator((d: { userId: string; fullName: string; agentCode?: string; permissions?: string[] }) =>
     z
       .object({
         userId: z.string().uuid(),
         fullName: z.string().min(1).max(120),
         agentCode: z.string().max(40).optional().nullable(),
+        permissions: z.array(z.string()).optional(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const patch: any = { full_name: data.fullName, agent_code: data.agentCode ?? null };
+    if (data.permissions) patch.permissions = data.permissions;
     const { error } = await supabaseAdmin
       .from("profiles")
-      .update({ full_name: data.fullName, agent_code: data.agentCode ?? null })
+      .update(patch)
       .eq("id", data.userId);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -129,7 +132,7 @@ export const adminListUsers = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profiles, error } = await supabaseAdmin
       .from("profiles")
-      .select("id,full_name,agent_code,active,created_at")
+      .select("id,full_name,agent_code,active,permissions,created_at")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     const { data: roles } = await supabaseAdmin.from("user_roles").select("user_id,role");

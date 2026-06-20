@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
 import { ArrowLeft, Check, ChevronsUpDown, Trash2 } from "lucide-react";
-import { ORDER_TYPES, DELIVERY_TYPES, STATUSES, TEAMS } from "@/lib/branches";
+import { ORDER_TYPES, DELIVERY_TYPES, STATUSES, TEAMS, CURRENCY } from "@/lib/branches";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 
@@ -21,9 +21,10 @@ const schema = z.object({
   order_date: z.string().min(1),
   team: z.enum(["customer_care", "telesales"]),
   order_type: z.string().min(1),
+  customer_name: z.string().trim().min(1, "Customer name is required").max(120),
+  customer_phone: z.string().trim().min(5, "Customer phone is required").max(40),
   branch_no: z.string().nullable().optional(),
   delivery_type: z.string().nullable().optional(),
-  order_no: z.string().max(50).optional().nullable(),
   invoice_no: z.string().max(50).optional().nullable(),
   invoice_value: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().nonnegative().nullable()),
   notes: z.string().max(500).optional().nullable(),
@@ -69,9 +70,10 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
     order_date: new Date().toISOString().slice(0, 10),
     team: defaultTeam(role),
     order_type: "Cash",
+    customer_name: "",
+    customer_phone: "",
     branch_no: "" as string | null,
     delivery_type: "Store Pickup",
-    order_no: "",
     invoice_no: "",
     invoice_value: "",
     notes: "",
@@ -86,9 +88,10 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         order_date: existing.order_date,
         team: existing.team === "admin" ? "customer_care" : existing.team,
         order_type: existing.order_type,
+        customer_name: (existing as any).customer_name ?? "",
+        customer_phone: (existing as any).customer_phone ?? "",
         branch_no: existing.branch_no ?? "",
         delivery_type: existing.delivery_type ?? "",
-        order_no: existing.order_no ?? "",
         invoice_no: existing.invoice_no ?? "",
         invoice_value: existing.invoice_value?.toString() ?? "",
         notes: existing.notes ?? "",
@@ -112,7 +115,6 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         ...form,
         branch_no: form.branch_no || null,
         delivery_type: form.delivery_type || null,
-        order_no: form.order_no || null,
         invoice_no: form.invoice_no || null,
         notes: form.notes || null,
       });
@@ -121,7 +123,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         if (error) throw error;
         toast.success("Order saved");
       } else {
-        const { error } = await supabase.from("orders").update(parsed).eq("id", id!);
+        const { error } = await supabase.from("orders").update(parsed as any).eq("id", id!);
         if (error) throw error;
         toast.success("Order updated");
       }
@@ -167,6 +169,14 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{TEAMS.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Customer name *</Label>
+              <Input required value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="Full name" />
+            </div>
+            <div className="space-y-2">
+              <Label>Customer phone *</Label>
+              <Input required value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="05xxxxxxxx" />
             </div>
             <div className="space-y-2">
               <Label>Order type</Label>
@@ -222,19 +232,15 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Invoice value</Label>
-              <Input type="number" step="0.01" min="0" value={form.invoice_value} onChange={(e) => setForm({ ...form, invoice_value: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>Order No.</Label>
-              <Input value={form.order_no} onChange={(e) => setForm({ ...form, order_no: e.target.value })} />
+              <Label>Order value ({CURRENCY})</Label>
+              <Input type="number" step="0.01" min="0" value={form.invoice_value} onChange={(e) => setForm({ ...form, invoice_value: e.target.value })} placeholder="0.00" />
             </div>
             <div className="space-y-2">
               <Label>Invoice No.</Label>
               <Input value={form.invoice_no} onChange={(e) => setForm({ ...form, invoice_no: e.target.value })} />
             </div>
             <div className="space-y-2 md:col-span-2">
-              <Label>Notes / Customer No.</Label>
+              <Label>Notes</Label>
               <Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
             <div className="md:col-span-2 flex justify-end gap-2">
