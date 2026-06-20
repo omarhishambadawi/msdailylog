@@ -55,7 +55,7 @@ export type Database = {
           branch_no?: string | null
           created_at?: string
           delivery_type?: string | null
-          display_no: string
+          display_no?: string
           id?: string
           invoice_no?: string | null
           invoice_value?: number | null
