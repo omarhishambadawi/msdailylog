@@ -2,8 +2,9 @@ import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tan
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut, ClipboardList, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut, ClipboardList, ShieldAlert, MessageSquareWarning } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -35,10 +36,13 @@ function AppLayout() {
     );
   }
 
+  const canSeeComplaints = role === "admin" || role === "customer_care" || hasPerm(role, profile?.permissions as any, "create_complaints");
+
   const nav = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/orders", label: "Orders", icon: ListOrdered },
     { to: "/orders/new", label: "New Order", icon: Plus },
+    ...(canSeeComplaints ? [{ to: "/complaints", label: "Complaints", icon: MessageSquareWarning }] : []),
     ...(role === "admin"
       ? [
           { to: "/admin/users", label: "Users", icon: Users },

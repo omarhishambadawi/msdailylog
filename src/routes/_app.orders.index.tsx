@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download, Plus, Search } from "lucide-react";
 import * as XLSX from "xlsx";
-import { STATUSES, TEAMS } from "@/lib/branches";
+import { STATUSES, TEAMS, CURRENCY, fmtSAR } from "@/lib/branches";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/orders/")({
   head: () => ({ meta: [{ title: "Orders" }] }),
@@ -20,6 +21,7 @@ export const Route = createFileRoute("/_app/orders/")({
 
 function OrdersList() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { profile, user, role } = useAuth();
   const today = new Date().toISOString().slice(0, 10);
   const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
@@ -59,7 +61,7 @@ function OrdersList() {
     const term = q.trim().toLowerCase();
     if (!term) return data;
     return data.filter((o: any) =>
-      [o.display_no, o.order_no, o.invoice_no, o.branch_no, o.city, o.agent_name, o.notes, o.delivery_type, o.order_type]
+      [o.display_no, o.invoice_no, o.branch_no, o.city, o.agent_name, o.customer_name, o.customer_phone, o.notes, o.delivery_type, o.order_type]
         .filter(Boolean).some((v: string) => String(v).toLowerCase().includes(term)),
     );
   }, [data, q]);
@@ -69,6 +71,14 @@ function OrdersList() {
     return (data ?? []).filter((o: any) => o.agent_id === user.id && o.order_date === today).length;
   }, [data, user?.id, today]);
 
+  const updateStatus = async (orderId: string, newStatus: string) => {
+    const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Status updated");
+    qc.invalidateQueries({ queryKey: ["orders"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+  };
+
   const exportXlsx = () => {
     const rows = filtered.map((o: any) => ({
       "Order #": o.display_no,
@@ -76,14 +86,15 @@ function OrdersList() {
       Team: o.team === "customer_care" ? "Customer Care" : "Telesales",
       Agent: o.agent_name,
       "Agent Code": o.agent_code,
+      "Customer Name": o.customer_name,
+      "Customer Phone": o.customer_phone,
       "Order Type": o.order_type,
       "Branch No.": o.branch_no,
       City: o.city,
       "Delivery & Pickup": o.delivery_type,
-      "External Order No.": o.order_no,
       "Invoice No.": o.invoice_no,
-      "Invoice Value": o.invoice_value,
-      "Notes / Customer No.": o.notes,
+      [`Order Value (${CURRENCY})`]: o.invoice_value,
+      Notes: o.notes,
       Status: o.status,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -114,7 +125,7 @@ function OrdersList() {
         <CardContent className="p-4 grid gap-3 md:grid-cols-6">
           <div className="md:col-span-2 relative">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search order/invoice/branch/agent…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+            <Input placeholder="Search order/customer/phone/branch/agent…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
           </div>
           <div><label className="text-xs text-muted-foreground">From</label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
           <div><label className="text-xs text-muted-foreground">To</label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
@@ -151,35 +162,44 @@ function OrdersList() {
                   <TableHead>Date</TableHead>
                   <TableHead>Team</TableHead>
                   <TableHead>Agent</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Phone</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Branch</TableHead>
                   <TableHead>City</TableHead>
-                  <TableHead>Delivery</TableHead>
-                  <TableHead>Ext. Order</TableHead>
-                  <TableHead>Invoice #</TableHead>
                   <TableHead className="text-right">Value</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
-                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
+                {isLoading && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
+                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
                 {filtered.map((o: any) => {
                   const editable = profile?.id === o.agent_id || role === "admin";
                   return (
-                    <TableRow key={o.id} className="cursor-pointer" onClick={() => editable && navigate({ to: "/orders/$id", params: { id: o.id } })}>
-                      <TableCell className="font-mono font-semibold">{o.display_no ?? "—"}</TableCell>
-                      <TableCell>{o.order_date}</TableCell>
+                    <TableRow key={o.id} className={editable ? "cursor-pointer" : ""}>
+                      <TableCell className="font-mono font-semibold" onClick={() => editable && navigate({ to: "/orders/$id", params: { id: o.id } })}>{o.display_no ?? "—"}</TableCell>
+                      <TableCell onClick={() => editable && navigate({ to: "/orders/$id", params: { id: o.id } })}>{o.order_date}</TableCell>
                       <TableCell><TeamBadge team={o.team} /></TableCell>
-                      <TableCell className="whitespace-nowrap">{o.agent_name}</TableCell>
+                      <TableCell className="whitespace-nowrap" onClick={() => editable && navigate({ to: "/orders/$id", params: { id: o.id } })}>{o.agent_name}</TableCell>
+                      <TableCell className="whitespace-nowrap">{o.customer_name || "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs">{o.customer_phone || "—"}</TableCell>
                       <TableCell>{o.order_type}</TableCell>
                       <TableCell>{o.branch_no ?? "—"}</TableCell>
                       <TableCell>{o.city || "—"}</TableCell>
-                      <TableCell>{o.delivery_type ?? "—"}</TableCell>
-                      <TableCell>{o.order_no ?? "—"}</TableCell>
-                      <TableCell>{o.invoice_no ?? "—"}</TableCell>
-                      <TableCell className="text-right">{o.invoice_value ?? "—"}</TableCell>
-                      <TableCell><StatusBadge s={o.status} /></TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{fmtSAR(o.invoice_value)}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {editable ? (
+                          <Select value={o.status} onValueChange={(v) => updateStatus(o.id, v)}>
+                            <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <StatusBadge s={o.status} />
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -204,8 +224,9 @@ function StatusBadge({ s }: { s: string }) {
     Completed: "bg-success/15 text-success border-success/30",
     Pending: "bg-warning/15 text-warning-foreground border-warning/30",
     Closed: "bg-muted text-muted-foreground border-border",
-    Holded: "bg-destructive/10 text-destructive border-destructive/30",
-    "Complaint - Solved": "bg-accent text-accent-foreground border-border",
+    Cancelled: "bg-destructive/10 text-destructive border-destructive/30",
+    "Follow-up": "bg-chart-3/15 text-chart-3 border-chart-3/30",
+    "No Answer": "bg-chart-4/15 text-chart-4 border-chart-4/30",
   };
   return <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${tone[s] ?? "bg-muted"}`}>{s}</span>;
 }
