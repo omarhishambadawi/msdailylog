@@ -16,8 +16,11 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppOrdersIndexRouteImport } from './routes/_app.orders.index'
+import { Route as AppComplaintsIndexRouteImport } from './routes/_app.complaints.index'
 import { Route as AppOrdersNewRouteImport } from './routes/_app.orders.new'
 import { Route as AppOrdersIdRouteImport } from './routes/_app.orders.$id'
+import { Route as AppComplaintsNewRouteImport } from './routes/_app.complaints.new'
+import { Route as AppComplaintsIdRouteImport } from './routes/_app.complaints.$id'
 import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
 import { Route as AppAdminBranchesRouteImport } from './routes/_app.admin.branches'
 
@@ -55,6 +58,11 @@ const AppOrdersIndexRoute = AppOrdersIndexRouteImport.update({
   path: '/orders/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppComplaintsIndexRoute = AppComplaintsIndexRouteImport.update({
+  id: '/complaints/',
+  path: '/complaints/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppOrdersNewRoute = AppOrdersNewRouteImport.update({
   id: '/orders/new',
   path: '/orders/new',
@@ -63,6 +71,16 @@ const AppOrdersNewRoute = AppOrdersNewRouteImport.update({
 const AppOrdersIdRoute = AppOrdersIdRouteImport.update({
   id: '/orders/$id',
   path: '/orders/$id',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppComplaintsNewRoute = AppComplaintsNewRouteImport.update({
+  id: '/complaints/new',
+  path: '/complaints/new',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppComplaintsIdRoute = AppComplaintsIdRouteImport.update({
+  id: '/complaints/$id',
+  path: '/complaints/$id',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
@@ -84,8 +102,11 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/admin/branches': typeof AppAdminBranchesRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/complaints/$id': typeof AppComplaintsIdRoute
+  '/complaints/new': typeof AppComplaintsNewRoute
   '/orders/$id': typeof AppOrdersIdRoute
   '/orders/new': typeof AppOrdersNewRoute
+  '/complaints/': typeof AppComplaintsIndexRoute
   '/orders/': typeof AppOrdersIndexRoute
 }
 export interface FileRoutesByTo {
@@ -96,8 +117,11 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/admin/branches': typeof AppAdminBranchesRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/complaints/$id': typeof AppComplaintsIdRoute
+  '/complaints/new': typeof AppComplaintsNewRoute
   '/orders/$id': typeof AppOrdersIdRoute
   '/orders/new': typeof AppOrdersNewRoute
+  '/complaints': typeof AppComplaintsIndexRoute
   '/orders': typeof AppOrdersIndexRoute
 }
 export interface FileRoutesById {
@@ -110,8 +134,11 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/admin/branches': typeof AppAdminBranchesRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
+  '/_app/complaints/$id': typeof AppComplaintsIdRoute
+  '/_app/complaints/new': typeof AppComplaintsNewRoute
   '/_app/orders/$id': typeof AppOrdersIdRoute
   '/_app/orders/new': typeof AppOrdersNewRoute
+  '/_app/complaints/': typeof AppComplaintsIndexRoute
   '/_app/orders/': typeof AppOrdersIndexRoute
 }
 export interface FileRouteTypes {
@@ -124,8 +151,11 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/admin/branches'
     | '/admin/users'
+    | '/complaints/$id'
+    | '/complaints/new'
     | '/orders/$id'
     | '/orders/new'
+    | '/complaints/'
     | '/orders/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -136,8 +166,11 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/admin/branches'
     | '/admin/users'
+    | '/complaints/$id'
+    | '/complaints/new'
     | '/orders/$id'
     | '/orders/new'
+    | '/complaints'
     | '/orders'
   id:
     | '__root__'
@@ -149,8 +182,11 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/_app/admin/branches'
     | '/_app/admin/users'
+    | '/_app/complaints/$id'
+    | '/_app/complaints/new'
     | '/_app/orders/$id'
     | '/_app/orders/new'
+    | '/_app/complaints/'
     | '/_app/orders/'
   fileRoutesById: FileRoutesById
 }
@@ -213,6 +249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrdersIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/complaints/': {
+      id: '/_app/complaints/'
+      path: '/complaints'
+      fullPath: '/complaints/'
+      preLoaderRoute: typeof AppComplaintsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/orders/new': {
       id: '/_app/orders/new'
       path: '/orders/new'
@@ -225,6 +268,20 @@ declare module '@tanstack/react-router' {
       path: '/orders/$id'
       fullPath: '/orders/$id'
       preLoaderRoute: typeof AppOrdersIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/complaints/new': {
+      id: '/_app/complaints/new'
+      path: '/complaints/new'
+      fullPath: '/complaints/new'
+      preLoaderRoute: typeof AppComplaintsNewRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/complaints/$id': {
+      id: '/_app/complaints/$id'
+      path: '/complaints/$id'
+      fullPath: '/complaints/$id'
+      preLoaderRoute: typeof AppComplaintsIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/admin/users': {
@@ -248,8 +305,11 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppAdminBranchesRoute: typeof AppAdminBranchesRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
+  AppComplaintsIdRoute: typeof AppComplaintsIdRoute
+  AppComplaintsNewRoute: typeof AppComplaintsNewRoute
   AppOrdersIdRoute: typeof AppOrdersIdRoute
   AppOrdersNewRoute: typeof AppOrdersNewRoute
+  AppComplaintsIndexRoute: typeof AppComplaintsIndexRoute
   AppOrdersIndexRoute: typeof AppOrdersIndexRoute
 }
 
@@ -257,8 +317,11 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppAdminBranchesRoute: AppAdminBranchesRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
+  AppComplaintsIdRoute: AppComplaintsIdRoute,
+  AppComplaintsNewRoute: AppComplaintsNewRoute,
   AppOrdersIdRoute: AppOrdersIdRoute,
   AppOrdersNewRoute: AppOrdersNewRoute,
+  AppComplaintsIndexRoute: AppComplaintsIndexRoute,
   AppOrdersIndexRoute: AppOrdersIndexRoute,
 }
 
