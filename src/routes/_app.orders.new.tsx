@@ -84,7 +84,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
     if (existing) {
       setForm({
         order_date: existing.order_date,
-        team: existing.team,
+        team: existing.team === "admin" ? "customer_care" : existing.team,
         order_type: existing.order_type,
         branch_no: existing.branch_no ?? "",
         delivery_type: existing.delivery_type ?? "",
