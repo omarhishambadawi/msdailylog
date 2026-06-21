@@ -224,7 +224,7 @@ function OrdersList() {
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o.id, v)}>
-                            <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className={`h-8 w-[140px] border ${STATUS_STYLES[o.status] ?? ""}`}><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
