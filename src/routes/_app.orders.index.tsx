@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download, Plus, Search } from "lucide-react";
 import * as XLSX from "xlsx";
-import { STATUSES, TEAMS, CURRENCY, fmtSAR } from "@/lib/branches";
+import { STATUSES, STATUS_STYLES, TEAMS, CURRENCY, fmtSAR } from "@/lib/branches";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/orders/")({
@@ -30,7 +30,7 @@ function OrdersList() {
   const [q, setQ] = useState("");
   const [team, setTeam] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
-  const [mineOnly, setMineOnly] = useState<boolean>(role !== "admin");
+  const [mineOnly, setMineOnly] = useState<boolean>(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["orders", from, to, team, status, mineOnly, user?.id],
@@ -65,6 +65,32 @@ function OrdersList() {
         .filter(Boolean).some((v: string) => String(v).toLowerCase().includes(term)),
     );
   }, [data, q]);
+
+  const todayMine = useMemo(() => {
+    if (!user?.id) return 0;
+    return (data ?? []).filter((o: any) => o.agent_id === user.id && o.order_date === today).length;
+  }, [data, user?.id, today]);
+
+  const todaySummary = useMemo(() => {
+    const todays = filtered.filter((o: any) => o.order_date === today);
+    const num = (v: any) => Number(v ?? 0);
+    const cash = todays.filter((o: any) => o.order_type === "Cash");
+    const was = todays.filter((o: any) => o.order_type === "Wasfaty");
+    const completed = (rows: any[]) => rows.filter((o: any) => o.status === "Completed");
+    const sum = (rows: any[]) => rows.reduce((s, o) => s + num(o.invoice_value), 0);
+    return {
+      cashSales: sum(cash),
+      cashCompletedSales: sum(completed(cash)),
+      cashCount: cash.length,
+      wasSales: sum(was),
+      wasCompletedSales: sum(completed(was)),
+      wasCount: was.length,
+      dailySales: sum(todays),
+      dailyCompletedSales: sum(completed(todays)),
+      totalCount: todays.length,
+      completedCount: completed(todays).length,
+    };
+  }, [filtered, today]);
 
   const todayMine = useMemo(() => {
     if (!user?.id) return 0;
