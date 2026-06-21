@@ -174,6 +174,17 @@ function OrdersList() {
         </CardContent>
       </Card>
 
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard label="Cash sales (today)" value={fmtSAR(todaySummary.cashSales)} sub={`${todaySummary.cashCount} orders`} />
+        <SummaryCard label="Completed cash" value={fmtSAR(todaySummary.cashCompletedSales)} sub="Today" accent="text-green-600 dark:text-green-400" />
+        <SummaryCard label="Wasfaty sales (today)" value={fmtSAR(todaySummary.wasSales)} sub={`${todaySummary.wasCount} orders`} />
+        <SummaryCard label="Completed Wasfaty" value={fmtSAR(todaySummary.wasCompletedSales)} sub="Today" accent="text-green-600 dark:text-green-400" />
+        <SummaryCard label="Daily sales (today)" value={fmtSAR(todaySummary.dailySales)} sub={`${todaySummary.totalCount} orders`} />
+        <SummaryCard label="Completed daily sales" value={fmtSAR(todaySummary.dailyCompletedSales)} sub={`${todaySummary.completedCount} completed`} accent="text-green-600 dark:text-green-400" />
+        <SummaryCard label="Total orders (today)" value={todaySummary.totalCount} />
+        <SummaryCard label="Completed orders (today)" value={todaySummary.completedCount} accent="text-green-600 dark:text-green-400" />
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -242,13 +253,17 @@ function TeamBadge({ team }: { team: string }) {
 }
 
 function StatusBadge({ s }: { s: string }) {
-  const tone: Record<string, string> = {
-    Completed: "bg-success/15 text-success border-success/30",
-    Pending: "bg-warning/15 text-warning-foreground border-warning/30",
-    Closed: "bg-muted text-muted-foreground border-border",
-    Cancelled: "bg-destructive/10 text-destructive border-destructive/30",
-    "Follow-up": "bg-chart-3/15 text-chart-3 border-chart-3/30",
-    "No Answer": "bg-chart-4/15 text-chart-4 border-chart-4/30",
-  };
-  return <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${tone[s] ?? "bg-muted"}`}>{s}</span>;
+  return <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[s] ?? "bg-muted"}`}>{s}</span>;
+}
+
+function SummaryCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
+  return (
+    <Card>
+      <CardContent className="p-3">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
+        <div className={`text-lg font-semibold mt-0.5 ${accent ?? ""}`}>{value}</div>
+        {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
+      </CardContent>
+    </Card>
+  );
 }
