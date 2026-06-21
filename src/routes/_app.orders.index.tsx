@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download, Plus, Search } from "lucide-react";
 import * as XLSX from "xlsx";
-import { STATUSES, TEAMS, CURRENCY, fmtSAR } from "@/lib/branches";
+import { STATUSES, STATUS_STYLES, TEAMS, CURRENCY, fmtSAR } from "@/lib/branches";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/orders/")({
@@ -30,7 +30,7 @@ function OrdersList() {
   const [q, setQ] = useState("");
   const [team, setTeam] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
-  const [mineOnly, setMineOnly] = useState<boolean>(role !== "admin");
+  const [mineOnly, setMineOnly] = useState<boolean>(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["orders", from, to, team, status, mineOnly, user?.id],
@@ -70,6 +70,28 @@ function OrdersList() {
     if (!user?.id) return 0;
     return (data ?? []).filter((o: any) => o.agent_id === user.id && o.order_date === today).length;
   }, [data, user?.id, today]);
+
+  const todaySummary = useMemo(() => {
+    const todays = filtered.filter((o: any) => o.order_date === today);
+    const num = (v: any) => Number(v ?? 0);
+    const cash = todays.filter((o: any) => o.order_type === "Cash");
+    const was = todays.filter((o: any) => o.order_type === "Wasfaty");
+    const completed = (rows: any[]) => rows.filter((o: any) => o.status === "Completed");
+    const sum = (rows: any[]) => rows.reduce((s, o) => s + num(o.invoice_value), 0);
+    return {
+      cashSales: sum(cash),
+      cashCompletedSales: sum(completed(cash)),
+      cashCount: cash.length,
+      wasSales: sum(was),
+      wasCompletedSales: sum(completed(was)),
+      wasCount: was.length,
+      dailySales: sum(todays),
+      dailyCompletedSales: sum(completed(todays)),
+      totalCount: todays.length,
+      completedCount: completed(todays).length,
+    };
+  }, [filtered, today]);
+
 
   const updateStatus = async (orderId: string, newStatus: string) => {
     const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
@@ -152,6 +174,17 @@ function OrdersList() {
         </CardContent>
       </Card>
 
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard label="Cash sales (today)" value={fmtSAR(todaySummary.cashSales)} sub={`${todaySummary.cashCount} orders`} />
+        <SummaryCard label="Completed cash" value={fmtSAR(todaySummary.cashCompletedSales)} sub="Today" accent="text-green-600 dark:text-green-400" />
+        <SummaryCard label="Wasfaty sales (today)" value={fmtSAR(todaySummary.wasSales)} sub={`${todaySummary.wasCount} orders`} />
+        <SummaryCard label="Completed Wasfaty" value={fmtSAR(todaySummary.wasCompletedSales)} sub="Today" accent="text-green-600 dark:text-green-400" />
+        <SummaryCard label="Daily sales (today)" value={fmtSAR(todaySummary.dailySales)} sub={`${todaySummary.totalCount} orders`} />
+        <SummaryCard label="Completed daily sales" value={fmtSAR(todaySummary.dailyCompletedSales)} sub={`${todaySummary.completedCount} completed`} accent="text-green-600 dark:text-green-400" />
+        <SummaryCard label="Total orders (today)" value={todaySummary.totalCount} />
+        <SummaryCard label="Completed orders (today)" value={todaySummary.completedCount} accent="text-green-600 dark:text-green-400" />
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -191,7 +224,7 @@ function OrdersList() {
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o.id, v)}>
-                            <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className={`h-8 w-[140px] border ${STATUS_STYLES[o.status] ?? ""}`}><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
@@ -220,13 +253,17 @@ function TeamBadge({ team }: { team: string }) {
 }
 
 function StatusBadge({ s }: { s: string }) {
-  const tone: Record<string, string> = {
-    Completed: "bg-success/15 text-success border-success/30",
-    Pending: "bg-warning/15 text-warning-foreground border-warning/30",
-    Closed: "bg-muted text-muted-foreground border-border",
-    Cancelled: "bg-destructive/10 text-destructive border-destructive/30",
-    "Follow-up": "bg-chart-3/15 text-chart-3 border-chart-3/30",
-    "No Answer": "bg-chart-4/15 text-chart-4 border-chart-4/30",
-  };
-  return <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${tone[s] ?? "bg-muted"}`}>{s}</span>;
+  return <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[s] ?? "bg-muted"}`}>{s}</span>;
+}
+
+function SummaryCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
+  return (
+    <Card>
+      <CardContent className="p-3">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
+        <div className={`text-lg font-semibold mt-0.5 ${accent ?? ""}`}>{value}</div>
+        {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
+      </CardContent>
+    </Card>
+  );
 }

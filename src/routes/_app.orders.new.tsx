@@ -21,8 +21,8 @@ const schema = z.object({
   order_date: z.string().min(1),
   team: z.enum(["customer_care", "telesales"]),
   order_type: z.string().min(1),
-  customer_name: z.string().trim().min(1, "Customer name is required").max(120),
-  customer_phone: z.string().trim().min(5, "Customer phone is required").max(40),
+  customer_name: z.string().trim().max(120).optional().nullable(),
+  customer_phone: z.string().trim().max(40).optional().nullable(),
   branch_no: z.string().nullable().optional(),
   delivery_type: z.string().nullable().optional(),
   invoice_no: z.string().max(50).optional().nullable(),
@@ -113,6 +113,8 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
     try {
       const parsed = schema.parse({
         ...form,
+        customer_name: form.customer_name || null,
+        customer_phone: form.customer_phone || null,
         branch_no: form.branch_no || null,
         delivery_type: form.delivery_type || null,
         invoice_no: form.invoice_no || null,
@@ -171,12 +173,12 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Customer name *</Label>
-              <Input required value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="Full name" />
+              <Label>Customer name</Label>
+              <Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="Optional" />
             </div>
             <div className="space-y-2">
-              <Label>Customer phone *</Label>
-              <Input required value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="05xxxxxxxx" />
+              <Label>Customer phone</Label>
+              <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="Optional" />
             </div>
             <div className="space-y-2">
               <Label>Order type</Label>
