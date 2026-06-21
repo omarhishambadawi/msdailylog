@@ -60,8 +60,8 @@ function AppLayout() {
               <ClipboardList className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <div className="text-sm font-semibold leading-tight">Orders Portal</div>
-              <div className="text-[11px] text-muted-foreground">Sales operations</div>
+              <div className="text-sm font-semibold leading-tight">MilaServ</div>
+              <div className="text-[11px] text-muted-foreground">Daily Log</div>
             </div>
           </div>
         </div>

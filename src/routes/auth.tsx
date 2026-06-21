@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { ClipboardList } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
-  head: () => ({ meta: [{ title: "Sign in — Order Management Portal" }] }),
+  head: () => ({ meta: [{ title: "Sign in — MilaServ - Daily Log" }] }),
   component: AuthPage,
 });
 
@@ -51,8 +51,8 @@ function AuthPage() {
           <div className="mx-auto h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
             <ClipboardList className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-2xl">Order Management Portal</CardTitle>
-          <CardDescription>Sign in to log and manage orders</CardDescription>
+          <CardTitle className="text-2xl">MilaServ - Daily Log</CardTitle>
+          <CardDescription>Sign in to log and manage your daily orders</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
