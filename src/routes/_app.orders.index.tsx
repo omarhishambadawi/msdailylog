@@ -92,10 +92,6 @@ function OrdersList() {
     };
   }, [filtered, today]);
 
-  const todayMine = useMemo(() => {
-    if (!user?.id) return 0;
-    return (data ?? []).filter((o: any) => o.agent_id === user.id && o.order_date === today).length;
-  }, [data, user?.id, today]);
 
   const updateStatus = async (orderId: string, newStatus: string) => {
     const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
