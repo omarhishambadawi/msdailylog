@@ -31,10 +31,11 @@ function OrdersList() {
   const qc = useQueryClient();
   const { profile, user, role } = useAuth();
 
-  const todayDate = new Date();
-  const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
-  const [range, setRange] = useState<DateRange | undefined>({ from: monthAgo, to: todayDate });
-  const from = range?.from ? toISO(range.from) : toISO(monthAgo);
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const [range, setRange] = useState<DateRange | undefined>({ from: monthStart, to: monthEnd });
+  const from = range?.from ? toISO(range.from) : toISO(monthStart);
   const to = range?.to ? toISO(range.to) : from;
 
   const [q, setQ] = useState("");
