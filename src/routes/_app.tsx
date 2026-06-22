@@ -67,7 +67,11 @@ function AppLayout() {
         </div>
         <nav className="flex-1 px-2 py-3 space-y-0.5">
           {nav.map((n) => {
-            const active = location.pathname === n.to || (n.to !== "/dashboard" && location.pathname.startsWith(n.to));
+            const path = location.pathname;
+            // Pick the longest nav prefix that matches; only that one is active.
+            const candidates = nav.filter((m) => path === m.to || path.startsWith(m.to + "/"));
+            const best = candidates.sort((a, b) => b.to.length - a.to.length)[0];
+            const active = best?.to === n.to;
             const Icon = n.icon;
             return (
               <Link
@@ -75,7 +79,7 @@ function AppLayout() {
                 to={n.to}
                 className={cn(
                   "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
-                  active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-accent",
+                  active ? "bg-primary text-primary-foreground shadow-sm" : "text-foreground hover:bg-accent",
                 )}
               >
                 <Icon className="h-4 w-4" />
