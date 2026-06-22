@@ -84,6 +84,7 @@ export type Database = {
         Row: {
           agent_id: string
           branch_no: string | null
+          call_center_verified: boolean
           created_at: string
           customer_name: string
           customer_phone: string
@@ -102,6 +103,7 @@ export type Database = {
         Insert: {
           agent_id: string
           branch_no?: string | null
+          call_center_verified?: boolean
           created_at?: string
           customer_name?: string
           customer_phone?: string
@@ -120,6 +122,7 @@ export type Database = {
         Update: {
           agent_id?: string
           branch_no?: string | null
+          call_center_verified?: boolean
           created_at?: string
           customer_name?: string
           customer_phone?: string

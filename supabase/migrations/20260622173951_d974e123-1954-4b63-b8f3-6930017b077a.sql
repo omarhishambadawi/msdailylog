@@ -1,0 +1,1 @@
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS call_center_verified boolean NOT NULL DEFAULT false;

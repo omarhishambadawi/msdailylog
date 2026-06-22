@@ -7,30 +7,41 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, Plus, Search } from "lucide-react";
+import { CalendarIcon, CheckCircle2, Download, Plus, Search } from "lucide-react";
+import { format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import * as XLSX from "xlsx";
 import { STATUSES, STATUS_STYLES, TEAMS, CURRENCY, fmtSAR } from "@/lib/branches";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/orders/")({
   head: () => ({ meta: [{ title: "Orders" }] }),
   component: OrdersList,
 });
 
+const toISO = (d: Date) => format(d, "yyyy-MM-dd");
+
 function OrdersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { profile, user, role } = useAuth();
-  const today = new Date().toISOString().slice(0, 10);
+
+  const todayDate = new Date();
   const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
-  const [from, setFrom] = useState(monthAgo.toISOString().slice(0, 10));
-  const [to, setTo] = useState(today);
+  const [range, setRange] = useState<DateRange | undefined>({ from: monthAgo, to: todayDate });
+  const from = range?.from ? toISO(range.from) : toISO(monthAgo);
+  const to = range?.to ? toISO(range.to) : from;
+
   const [q, setQ] = useState("");
   const [team, setTeam] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
   const [mineOnly, setMineOnly] = useState<boolean>(false);
+  const [dateOpen, setDateOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["orders", from, to, team, status, mineOnly, user?.id],
@@ -66,16 +77,11 @@ function OrdersList() {
     );
   }, [data, q]);
 
-  const todayMine = useMemo(() => {
-    if (!user?.id) return 0;
-    return (data ?? []).filter((o: any) => o.agent_id === user.id && o.order_date === today).length;
-  }, [data, user?.id, today]);
-
-  const todaySummary = useMemo(() => {
-    const todays = filtered.filter((o: any) => o.order_date === today);
+  // Summary now reflects the SELECTED date range (single day or range), and the My Orders toggle.
+  const summary = useMemo(() => {
     const num = (v: any) => Number(v ?? 0);
-    const cash = todays.filter((o: any) => o.order_type === "Cash");
-    const was = todays.filter((o: any) => o.order_type === "Wasfaty");
+    const cash = filtered.filter((o: any) => o.order_type === "Cash");
+    const was = filtered.filter((o: any) => o.order_type === "Wasfaty");
     const completed = (rows: any[]) => rows.filter((o: any) => o.status === "Completed");
     const sum = (rows: any[]) => rows.reduce((s, o) => s + num(o.invoice_value), 0);
     return {
@@ -85,13 +91,26 @@ function OrdersList() {
       wasSales: sum(was),
       wasCompletedSales: sum(completed(was)),
       wasCount: was.length,
-      dailySales: sum(todays),
-      dailyCompletedSales: sum(completed(todays)),
-      totalCount: todays.length,
-      completedCount: completed(todays).length,
+      totalSales: sum(filtered),
+      totalCompletedSales: sum(completed(filtered)),
+      totalCount: filtered.length,
+      completedCount: completed(filtered).length,
     };
-  }, [filtered, today]);
+  }, [filtered]);
 
+  const dateLabel = useMemo(() => {
+    if (!range?.from) return "Pick a date";
+    if (!range.to || toISO(range.from) === toISO(range.to)) return format(range.from, "PP");
+    return `${format(range.from, "PP")} — ${format(range.to, "PP")}`;
+  }, [range]);
+
+  const setQuick = (kind: "today" | "7d" | "30d" | "month") => {
+    const today = new Date();
+    if (kind === "today") { setRange({ from: today, to: today }); return; }
+    if (kind === "7d") { const f = new Date(); f.setDate(f.getDate() - 6); setRange({ from: f, to: today }); return; }
+    if (kind === "30d") { const f = new Date(); f.setDate(f.getDate() - 29); setRange({ from: f, to: today }); return; }
+    if (kind === "month") { const f = new Date(today.getFullYear(), today.getMonth(), 1); setRange({ from: f, to: today }); return; }
+  };
 
   const updateStatus = async (orderId: string, newStatus: string) => {
     const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
@@ -99,6 +118,12 @@ function OrdersList() {
     toast.success("Status updated");
     qc.invalidateQueries({ queryKey: ["orders"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
+  };
+
+  const toggleVerified = async (orderId: string, value: boolean) => {
+    const { error } = await supabase.from("orders").update({ call_center_verified: value } as any).eq("id", orderId);
+    if (error) { toast.error(error.message); return; }
+    qc.invalidateQueries({ queryKey: ["orders"] });
   };
 
   const exportXlsx = () => {
@@ -116,6 +141,7 @@ function OrdersList() {
       "Delivery & Pickup": o.delivery_type,
       "Invoice No.": o.invoice_no,
       [`Order Value (${CURRENCY})`]: o.invoice_value,
+      "CC Verified": o.call_center_verified ? "Yes" : "No",
       Notes: o.notes,
       Status: o.status,
     }));
@@ -130,9 +156,7 @@ function OrdersList() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Orders</h1>
-          <p className="text-sm text-muted-foreground">
-            {mineOnly ? <>Showing your orders · <span className="font-medium text-foreground">{todayMine}</span> logged today</> : "Search, filter, edit and export"}
-          </p>
+          <p className="text-sm text-muted-foreground">Showing <span className="font-medium text-foreground">{filtered.length}</span> {mineOnly ? "of your" : ""} orders · {dateLabel}</p>
         </div>
         <div className="flex gap-2 items-center">
           <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
@@ -149,8 +173,33 @@ function OrdersList() {
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search order/customer/phone/branch/agent…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
           </div>
-          <div><label className="text-xs text-muted-foreground">From</label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div><label className="text-xs text-muted-foreground">To</label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+          <div className="md:col-span-2">
+            <label className="text-xs text-muted-foreground">Date</label>
+            <Popover open={dateOpen} onOpenChange={setDateOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className={cn("w-full justify-start font-normal", !range?.from && "text-muted-foreground")}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {dateLabel}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0 pointer-events-auto" align="start">
+                <div className="flex flex-wrap gap-1 p-2 border-b">
+                  <Button size="sm" variant="ghost" onClick={() => setQuick("today")}>Today</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setQuick("7d")}>Last 7 days</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
+                </div>
+                <Calendar
+                  mode="range"
+                  selected={range}
+                  onSelect={setRange}
+                  numberOfMonths={2}
+                  defaultMonth={range?.from}
+                  className="pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
           <div>
             <label className="text-xs text-muted-foreground">Team</label>
             <Select value={team} onValueChange={setTeam}>
@@ -175,14 +224,14 @@ function OrdersList() {
       </Card>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard label="Cash sales (today)" value={fmtSAR(todaySummary.cashSales)} sub={`${todaySummary.cashCount} orders`} />
-        <SummaryCard label="Completed cash" value={fmtSAR(todaySummary.cashCompletedSales)} sub="Today" accent="text-green-600 dark:text-green-400" />
-        <SummaryCard label="Wasfaty sales (today)" value={fmtSAR(todaySummary.wasSales)} sub={`${todaySummary.wasCount} orders`} />
-        <SummaryCard label="Completed Wasfaty" value={fmtSAR(todaySummary.wasCompletedSales)} sub="Today" accent="text-green-600 dark:text-green-400" />
-        <SummaryCard label="Daily sales (today)" value={fmtSAR(todaySummary.dailySales)} sub={`${todaySummary.totalCount} orders`} />
-        <SummaryCard label="Completed daily sales" value={fmtSAR(todaySummary.dailyCompletedSales)} sub={`${todaySummary.completedCount} completed`} accent="text-green-600 dark:text-green-400" />
-        <SummaryCard label="Total orders (today)" value={todaySummary.totalCount} />
-        <SummaryCard label="Completed orders (today)" value={todaySummary.completedCount} accent="text-green-600 dark:text-green-400" />
+        <SummaryCard label="Cash sales" value={fmtSAR(summary.cashSales)} sub={`${summary.cashCount} orders`} />
+        <SummaryCard label="Completed cash" value={fmtSAR(summary.cashCompletedSales)} accent="text-[oklch(0.62_0.15_155)]" />
+        <SummaryCard label="Wasfaty sales" value={fmtSAR(summary.wasSales)} sub={`${summary.wasCount} orders`} />
+        <SummaryCard label="Completed Wasfaty" value={fmtSAR(summary.wasCompletedSales)} accent="text-[oklch(0.62_0.15_155)]" />
+        <SummaryCard label="Total sales" value={fmtSAR(summary.totalSales)} sub={`${summary.totalCount} orders`} />
+        <SummaryCard label="Completed sales" value={fmtSAR(summary.totalCompletedSales)} sub={`${summary.completedCount} completed`} accent="text-[oklch(0.62_0.15_155)]" />
+        <SummaryCard label="Total orders" value={summary.totalCount} />
+        <SummaryCard label="Completed orders" value={summary.completedCount} accent="text-[oklch(0.62_0.15_155)]" />
       </div>
 
       <Card>
@@ -191,6 +240,7 @@ function OrdersList() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">CC ✓</TableHead>
                   <TableHead>Order #</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Team</TableHead>
@@ -205,16 +255,28 @@ function OrdersList() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
-                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
+                {isLoading && <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
+                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
                 {filtered.map((o: any) => {
                   const editable = profile?.id === o.agent_id || role === "admin";
+                  const verified = !!o.call_center_verified;
+                  const go = () => editable && navigate({ to: "/orders/$id", params: { id: o.id } });
                   return (
-                    <TableRow key={o.id} className={editable ? "cursor-pointer" : ""}>
-                      <TableCell className="font-mono font-semibold" onClick={() => editable && navigate({ to: "/orders/$id", params: { id: o.id } })}>{o.display_no ?? "—"}</TableCell>
-                      <TableCell onClick={() => editable && navigate({ to: "/orders/$id", params: { id: o.id } })}>{o.order_date}</TableCell>
+                    <TableRow key={o.id} className={cn(editable && "cursor-pointer", verified && "bg-green-50/60 dark:bg-green-500/5")}>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1">
+                          <Checkbox
+                            checked={verified}
+                            onCheckedChange={(v) => toggleVerified(o.id, !!v)}
+                            aria-label="Call Center invoice verified"
+                          />
+                          {verified && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono font-semibold" onClick={go}>{o.display_no ?? "—"}</TableCell>
+                      <TableCell onClick={go}>{o.order_date}</TableCell>
                       <TableCell><TeamBadge team={o.team} /></TableCell>
-                      <TableCell className="whitespace-nowrap" onClick={() => editable && navigate({ to: "/orders/$id", params: { id: o.id } })}>{o.agent_name}</TableCell>
+                      <TableCell className="whitespace-nowrap" onClick={go}>{o.agent_name}</TableCell>
                       <TableCell className="whitespace-nowrap">{o.customer_name || "—"}</TableCell>
                       <TableCell className="whitespace-nowrap font-mono text-xs">{o.customer_phone || "—"}</TableCell>
                       <TableCell>{o.order_type}</TableCell>
@@ -247,9 +309,9 @@ function OrdersList() {
 
 function TeamBadge({ team }: { team: string }) {
   if (team === "telesales") {
-    return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-chart-2/15 text-chart-2 border-chart-2/30">Telesales</span>;
+    return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-chart-3/15 text-chart-3 border-chart-3/30">Telesales</span>;
   }
-  return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-chart-1/15 text-chart-1 border-chart-1/30">Customer Care</span>;
+  return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-primary/15 text-primary border-primary/30">Customer Care</span>;
 }
 
 function StatusBadge({ s }: { s: string }) {
