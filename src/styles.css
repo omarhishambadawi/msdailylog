@@ -40,35 +40,36 @@
 }
 
 :root {
-  --radius: 0.5rem;
-  --background: oklch(0.99 0.005 240);
-  --foreground: oklch(0.18 0.03 250);
+  --radius: 0.625rem;
+  /* MilaServ brand: turquoise #25BDBC, teal #3D6D6C, navy #2B3346 */
+  --background: oklch(0.995 0.003 200);
+  --foreground: oklch(0.24 0.04 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.03 250);
+  --card-foreground: oklch(0.24 0.04 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.03 250);
-  --primary: oklch(0.52 0.18 252);
+  --popover-foreground: oklch(0.24 0.04 260);
+  --primary: oklch(0.72 0.12 194);          /* #25BDBC turquoise */
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.01 250);
-  --secondary-foreground: oklch(0.25 0.03 250);
-  --muted: oklch(0.96 0.01 250);
-  --muted-foreground: oklch(0.5 0.02 250);
-  --accent: oklch(0.95 0.03 252);
-  --accent-foreground: oklch(0.3 0.1 252);
+  --secondary: oklch(0.29 0.04 260);        /* #2B3346 navy */
+  --secondary-foreground: oklch(0.99 0 0);
+  --muted: oklch(0.965 0.01 200);
+  --muted-foreground: oklch(0.5 0.03 250);
+  --accent: oklch(0.93 0.05 195);           /* soft teal accent */
+  --accent-foreground: oklch(0.32 0.06 200);
   --destructive: oklch(0.58 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.6 0.15 155);
+  --success: oklch(0.62 0.15 155);
   --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.75 0.15 75);
-  --warning-foreground: oklch(0.2 0.05 75);
-  --border: oklch(0.92 0.01 250);
-  --input: oklch(0.92 0.01 250);
-  --ring: oklch(0.52 0.18 252);
-  --chart-1: oklch(0.55 0.2 252);
-  --chart-2: oklch(0.65 0.15 165);
-  --chart-3: oklch(0.7 0.15 50);
-  --chart-4: oklch(0.6 0.2 320);
-  --chart-5: oklch(0.55 0.22 25);
+  --warning: oklch(0.78 0.15 75);
+  --warning-foreground: oklch(0.22 0.05 75);
+  --border: oklch(0.91 0.015 210);
+  --input: oklch(0.91 0.015 210);
+  --ring: oklch(0.72 0.12 194);
+  --chart-1: oklch(0.72 0.12 194);          /* turquoise */
+  --chart-2: oklch(0.47 0.05 195);          /* teal */
+  --chart-3: oklch(0.4 0.06 255);           /* navy mid */
+  --chart-4: oklch(0.65 0.09 220);          /* steel blue */
+  --chart-5: oklch(0.78 0.1 190);           /* light turquoise */
 }
 
 @layer base {
