@@ -4,32 +4,71 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
 import { fmtSAR } from "@/lib/branches";
+import { format } from "date-fns";
+import type { DateRange } from "react-day-picker";
+import { CalendarIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — MilaServ Daily Log" }] }),
   component: Dashboard,
 });
 
+const toISO = (d: Date) => format(d, "yyyy-MM-dd");
+
 function Dashboard() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const isAdmin = role === "admin";
   const [mineOnly, setMineOnly] = useState(false);
+  const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [dateOpen, setDateOpen] = useState(false);
+
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const [range, setRange] = useState<DateRange | undefined>({ from: monthStart, to: monthEnd });
+  const from = range?.from ? toISO(range.from) : toISO(monthStart);
+  const to = range?.to ? toISO(range.to) : from;
+
+  const dateLabel = useMemo(() => {
+    if (!range?.from) return "Pick a date";
+    if (!range.to || toISO(range.from) === toISO(range.to)) return format(range.from, "PP");
+    return `${format(range.from, "PP")} — ${format(range.to, "PP")}`;
+  }, [range]);
+
+  const setQuick = (kind: "today" | "7d" | "30d" | "month") => {
+    const t = new Date();
+    if (kind === "today") { setRange({ from: t, to: t }); return; }
+    if (kind === "7d") { const f = new Date(); f.setDate(f.getDate() - 6); setRange({ from: f, to: t }); return; }
+    if (kind === "30d") { const f = new Date(); f.setDate(f.getDate() - 29); setRange({ from: f, to: t }); return; }
+    if (kind === "month") { setRange({ from: new Date(t.getFullYear(), t.getMonth(), 1), to: new Date(t.getFullYear(), t.getMonth() + 1, 0) }); return; }
+  };
+
+  const effectiveAgent = isAdmin ? agentFilter : (mineOnly && user?.id ? user.id : "all");
+
+  const { data: agents } = useQuery({
+    queryKey: ["dashboard-agents"],
+    queryFn: async () => {
+      const { data } = await supabase.from("profiles").select("id,full_name,agent_code").order("full_name");
+      return data ?? [];
+    },
+    enabled: isAdmin,
+  });
 
   const { data } = useQuery({
-    queryKey: ["dashboard", mineOnly, user?.id],
+    queryKey: ["dashboard", from, to, effectiveAgent],
     queryFn: async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const start = new Date(); start.setDate(start.getDate() - 30);
-      const startISO = start.toISOString().slice(0, 10);
-      const monthStart = new Date(); monthStart.setDate(1);
-      const monthISO = monthStart.toISOString().slice(0, 10);
-      const earliest = monthISO < startISO ? monthISO : startISO;
+      const todayISO = toISO(new Date());
       let qb = supabase.from("orders")
         .select("id,order_date,team,agent_id,branch_no,invoice_value,status,order_type,delivery_type")
-        .gte("order_date", earliest);
-      if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
+        .gte("order_date", from).lte("order_date", to);
+      if (effectiveAgent !== "all") qb = qb.eq("agent_id", effectiveAgent);
       const [{ data: orders }, { data: branches }, { data: profiles }] = await Promise.all([
         qb,
         supabase.from("branches").select("branch_no,city"),
@@ -37,18 +76,19 @@ function Dashboard() {
       ]);
       const cityMap = new Map((branches ?? []).map((b: any) => [b.branch_no, b.city]));
       const nameMap = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name]));
-      const all = (orders ?? []).filter((o: any) => o.order_date >= startISO);
-      const todayOrders = (orders ?? []).filter((o: any) => o.order_date === today);
-      const monthOrders = (orders ?? []).filter((o: any) => o.order_date >= monthISO);
+      const rangeOrders = orders ?? [];
+      const todayOrders = rangeOrders.filter((o: any) => o.order_date === todayISO);
 
       const num = (v: any) => Number(v ?? 0);
       const sum = (rows: any[]) => rows.reduce((s, o) => s + num(o.invoice_value), 0);
       const completedRows = (rows: any[]) => rows.filter((o) => o.status === "Completed");
+      const cash = (rows: any[]) => rows.filter((o: any) => o.order_type === "Cash");
+      const was = (rows: any[]) => rows.filter((o: any) => o.order_type === "Wasfaty");
 
-      const monthAll = sum(monthOrders);
-      const monthCompleted = sum(completedRows(monthOrders));
-      const monthCompletedCount = completedRows(monthOrders).length;
-      const completionRate = monthOrders.length > 0 ? (monthCompletedCount / monthOrders.length) * 100 : 0;
+      const monthAll = sum(rangeOrders);
+      const monthCompleted = sum(completedRows(rangeOrders));
+      const monthCompletedCount = completedRows(rangeOrders).length;
+      const completionRate = rangeOrders.length > 0 ? (monthCompletedCount / rangeOrders.length) * 100 : 0;
 
       const groupAgg = (rows: any[], keyFn: (o: any) => string) => {
         const m: Record<string, { count: number; sales: number; completed: number }> = {};
@@ -65,10 +105,10 @@ function Dashboard() {
       };
 
       const byStatus: Record<string, number> = {};
-      for (const o of monthOrders) byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
+      for (const o of rangeOrders) byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
 
       const byDay: Record<string, { date: string; total: number; completed: number }> = {};
-      for (const o of all) {
+      for (const o of rangeOrders) {
         const d = o.order_date;
         if (!byDay[d]) byDay[d] = { date: d.slice(5), total: 0, completed: 0 };
         byDay[d].total += num(o.invoice_value);
@@ -80,19 +120,23 @@ function Dashboard() {
         todayCompletedCount: completedRows(todayOrders).length,
         todaySales: sum(todayOrders),
         todayCompletedSales: sum(completedRows(todayOrders)),
+        todayCashSales: sum(cash(todayOrders)),
+        todayWasSales: sum(was(todayOrders)),
         monthAll,
         monthCompleted,
         monthCompletedCount,
-        monthTotalCount: monthOrders.length,
+        monthTotalCount: rangeOrders.length,
+        monthCashSales: sum(cash(rangeOrders)),
+        monthWasSales: sum(was(rangeOrders)),
         completionRate,
-        byAgent: groupAgg(monthOrders, (o) => nameMap.get(o.agent_id) ?? "Unknown").sort((a, b) => b.sales - a.sales).slice(0, 10),
-        byTeam: groupAgg(monthOrders, (o) => o.team === "telesales" ? "Telesales" : "Customer Care"),
-        byBranch: groupAgg(monthOrders, (o) => o.branch_no ?? "—").sort((a, b) => b.sales - a.sales).slice(0, 10),
-        byCity: groupAgg(monthOrders, (o) => cityMap.get(o.branch_no) ?? "—").sort((a, b) => b.sales - a.sales),
-        byDelivery: groupAgg(monthOrders, (o) => o.delivery_type ?? "—"),
+        byAgent: groupAgg(rangeOrders, (o) => nameMap.get(o.agent_id) ?? "Unknown").sort((a, b) => b.sales - a.sales).slice(0, 10),
+        byTeam: groupAgg(rangeOrders, (o) => o.team === "telesales" ? "Telesales" : "Customer Care"),
+        byBranch: groupAgg(rangeOrders, (o) => o.branch_no ?? "—").sort((a, b) => b.sales - a.sales).slice(0, 10),
+        byCity: groupAgg(rangeOrders, (o) => cityMap.get(o.branch_no) ?? "—").sort((a, b) => b.sales - a.sales),
+        byDelivery: groupAgg(rangeOrders, (o) => o.delivery_type ?? "—"),
         byDeliveryBranch: (() => {
           const m: Record<string, Record<string, number>> = {};
-          for (const o of completedRows(monthOrders)) {
+          for (const o of completedRows(rangeOrders)) {
             const b = o.branch_no ?? "—";
             const d = o.delivery_type ?? "—";
             if (!m[b]) m[b] = {};
@@ -102,7 +146,7 @@ function Dashboard() {
         })(),
         byDeliveryCity: (() => {
           const m: Record<string, Record<string, number>> = {};
-          for (const o of completedRows(monthOrders)) {
+          for (const o of completedRows(rangeOrders)) {
             const c = cityMap.get(o.branch_no) ?? "—";
             const d = o.delivery_type ?? "—";
             if (!m[c]) m[c] = {};
@@ -138,52 +182,88 @@ function Dashboard() {
   );
 
   const deliveryMethods = Array.from(new Set((data?.byDelivery ?? []).map((d) => d.name)));
+  const selectedAgentLabel = isAdmin && agentFilter !== "all"
+    ? (agents?.find((a: any) => a.id === agentFilter)?.full_name ?? "agent")
+    : null;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">{mineOnly ? "Your performance" : "Team performance"} — today and last 30 days</p>
+          <p className="text-sm text-muted-foreground">
+            {selectedAgentLabel ? `Performance for ${selectedAgentLabel}` : mineOnly ? "Your performance" : "Team performance"} · {dateLabel}
+          </p>
         </div>
-        <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
-          {mineOnly ? "My data" : "All data"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Popover open={dateOpen} onOpenChange={setDateOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className={cn("font-normal", !range?.from && "text-muted-foreground")}>
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {dateLabel}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0 pointer-events-auto" align="end">
+              <div className="flex flex-wrap gap-1 p-2 border-b">
+                <Button size="sm" variant="ghost" onClick={() => setQuick("today")}>Today</Button>
+                <Button size="sm" variant="ghost" onClick={() => setQuick("7d")}>Last 7 days</Button>
+                <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
+                <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
+              </div>
+              <Calendar mode="range" selected={range} onSelect={setRange} numberOfMonths={2} defaultMonth={range?.from} className="pointer-events-auto" />
+            </PopoverContent>
+          </Popover>
+          {isAdmin ? (
+            <Select value={agentFilter} onValueChange={setAgentFilter}>
+              <SelectTrigger className="h-9 w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All agents</SelectItem>
+                {(agents ?? []).map((a: any) => (
+                  <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
+              {mineOnly ? "My data" : "All data"}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div>
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Today</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           <Stat label="Orders today" value={data?.todayCount ?? "—"} />
           <Stat label="Completed today" value={data?.todayCompletedCount ?? "—"} accent="text-green-600 dark:text-green-400" />
+          <Stat label="Cash sales today" value={data ? fmtSAR(data.todayCashSales) : "—"} />
+          <Stat label="Wasfaty sales today" value={data ? fmtSAR(data.todayWasSales) : "—"} />
           <Stat label="Sales today" value={data ? fmtSAR(data.todaySales) : "—"} />
           <Stat label="Completed sales today" value={data ? fmtSAR(data.todayCompletedSales) : "—"} accent="text-green-600 dark:text-green-400" />
         </div>
       </div>
 
       <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">This month</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Stat label="Total sales (all orders)" value={data ? fmtSAR(data.monthAll) : "—"} />
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Selected range</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <Stat label="Total orders" value={data?.monthTotalCount ?? "—"} />
+          <Stat label="Completed orders" value={data?.monthCompletedCount ?? "—"} sub={`of ${data?.monthTotalCount ?? 0}`} accent="text-green-600 dark:text-green-400" />
+          <Stat label="Cash sales" value={data ? fmtSAR(data.monthCashSales) : "—"} />
+          <Stat label="Wasfaty sales" value={data ? fmtSAR(data.monthWasSales) : "—"} />
+          <Stat label="Total sales" value={data ? fmtSAR(data.monthAll) : "—"} />
           <Stat label="Completed sales" value={data ? fmtSAR(data.monthCompleted) : "—"} accent="text-green-600 dark:text-green-400" />
-          <Stat label="Completed orders" value={data?.monthCompletedCount ?? "—"} sub={`of ${data?.monthTotalCount ?? 0}`} />
-          <Stat label="Completion rate" value={data ? `${data.completionRate.toFixed(1)}%` : "—"} />
         </div>
-      </div>
-
-      <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Status overview (month)</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
           <Stat label="Pending" value={data?.pending ?? 0} accent="text-yellow-600 dark:text-yellow-400" />
           <Stat label="Cancelled" value={data?.cancelled ?? 0} accent="text-red-600 dark:text-red-400" />
-          <Stat label="Completed" value={data?.monthCompletedCount ?? 0} accent="text-green-600 dark:text-green-400" />
-          <Stat label="Total orders" value={data?.monthTotalCount ?? 0} />
+          <Stat label="Completion rate" value={data ? `${data.completionRate.toFixed(1)}%` : "—"} />
+          <Stat label="Avg order value" value={data && data.monthTotalCount > 0 ? fmtSAR(data.monthAll / data.monthTotalCount) : "—"} />
         </div>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
         <Card>
-          <CardHeader><CardTitle className="text-base">Daily sales trend (30d)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Daily sales trend</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data?.byDay ?? []}>
@@ -200,7 +280,7 @@ function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">Orders by status (month)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Orders by status</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -215,7 +295,7 @@ function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">Sales by team (month)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Sales by team</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data?.byTeam ?? []}>
@@ -230,7 +310,7 @@ function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">Top agents by sales (month)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Top agents by sales</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data?.byAgent ?? []} layout="vertical">
@@ -276,7 +356,7 @@ function Dashboard() {
       </div>
 
       <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Delivery methods (month)</div>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Delivery methods</div>
         <div className="grid lg:grid-cols-2 gap-4">
           <Card>
             <CardHeader><CardTitle className="text-base">Orders & sales by delivery method</CardTitle></CardHeader>
