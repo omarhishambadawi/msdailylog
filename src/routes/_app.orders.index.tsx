@@ -31,10 +31,11 @@ function OrdersList() {
   const qc = useQueryClient();
   const { profile, user, role } = useAuth();
 
-  const todayDate = new Date();
-  const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
-  const [range, setRange] = useState<DateRange | undefined>({ from: monthAgo, to: todayDate });
-  const from = range?.from ? toISO(range.from) : toISO(monthAgo);
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const [range, setRange] = useState<DateRange | undefined>({ from: monthStart, to: monthEnd });
+  const from = range?.from ? toISO(range.from) : toISO(monthStart);
   const to = range?.to ? toISO(range.to) : from;
 
   const [q, setQ] = useState("");
@@ -105,11 +106,11 @@ function OrdersList() {
   }, [range]);
 
   const setQuick = (kind: "today" | "7d" | "30d" | "month") => {
-    const today = new Date();
-    if (kind === "today") { setRange({ from: today, to: today }); return; }
-    if (kind === "7d") { const f = new Date(); f.setDate(f.getDate() - 6); setRange({ from: f, to: today }); return; }
-    if (kind === "30d") { const f = new Date(); f.setDate(f.getDate() - 29); setRange({ from: f, to: today }); return; }
-    if (kind === "month") { const f = new Date(today.getFullYear(), today.getMonth(), 1); setRange({ from: f, to: today }); return; }
+    const t = new Date();
+    if (kind === "today") { setRange({ from: t, to: t }); return; }
+    if (kind === "7d") { const f = new Date(); f.setDate(f.getDate() - 6); setRange({ from: f, to: t }); return; }
+    if (kind === "30d") { const f = new Date(); f.setDate(f.getDate() - 29); setRange({ from: f, to: t }); return; }
+    if (kind === "month") { setRange({ from: new Date(t.getFullYear(), t.getMonth(), 1), to: new Date(t.getFullYear(), t.getMonth() + 1, 0) }); return; }
   };
 
   const updateStatus = async (orderId: string, newStatus: string) => {
