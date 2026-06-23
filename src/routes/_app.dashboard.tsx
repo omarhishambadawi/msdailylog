@@ -64,32 +64,39 @@ function Dashboard() {
   const { data } = useQuery({
     queryKey: ["dashboard", from, to, effectiveAgent],
     queryFn: async () => {
-      const todayISO = toISO(new Date());
       let qb = supabase.from("orders")
-        .select("id,order_date,team,agent_id,branch_no,invoice_value,status,order_type,delivery_type")
+        .select("id,order_date,team,agent_id,branch_no,invoice_value,status,order_type,delivery_type,call_center_verified")
         .gte("order_date", from).lte("order_date", to);
       if (effectiveAgent !== "all") qb = qb.eq("agent_id", effectiveAgent);
-      const [{ data: orders }, { data: branches }, { data: profiles }] = await Promise.all([
+
+      let cb = supabase.from("complaints" as any).select("id,complaint_date,branch_no,status,agent_id")
+        .gte("complaint_date", from).lte("complaint_date", to);
+      if (effectiveAgent !== "all") cb = cb.eq("agent_id", effectiveAgent);
+
+      const [{ data: orders }, { data: branches }, { data: profiles }, { data: complaints }] = await Promise.all([
         qb,
         supabase.from("branches").select("branch_no,city"),
         supabase.from("profiles").select("id,full_name"),
+        cb,
       ]);
       const cityMap = new Map((branches ?? []).map((b: any) => [b.branch_no, b.city]));
       const nameMap = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name]));
       const rangeOrders = orders ?? [];
-      const todayOrders = rangeOrders.filter((o: any) => o.order_date === todayISO);
+      const cmps = (complaints as any[]) ?? [];
 
       const num = (v: any) => Number(v ?? 0);
       const sum = (rows: any[]) => rows.reduce((s, o) => s + num(o.invoice_value), 0);
       const completedRows = (rows: any[]) => rows.filter((o) => o.status === "Completed");
       const cash = (rows: any[]) => rows.filter((o: any) => o.order_type === "Cash");
       const was = (rows: any[]) => rows.filter((o: any) => o.order_type === "Wasfaty");
+      const verifiedRows = (rows: any[]) => rows.filter((o: any) => o.call_center_verified);
 
       const monthAll = sum(rangeOrders);
       const monthCompleted = sum(completedRows(rangeOrders));
       const monthCompletedCount = completedRows(rangeOrders).length;
       const completionRate = rangeOrders.length > 0 ? (monthCompletedCount / rangeOrders.length) * 100 : 0;
 
+      // Generic aggregation: counts, completed-sales, completed count, completion rate
       const groupAgg = (rows: any[], keyFn: (o: any) => string) => {
         const m: Record<string, { count: number; sales: number; completed: number }> = {};
         for (const o of rows) {
@@ -101,7 +108,10 @@ function Dashboard() {
             m[k].completed += 1;
           }
         }
-        return Object.entries(m).map(([name, v]) => ({ name, ...v }));
+        return Object.entries(m).map(([name, v]) => ({
+          name, ...v,
+          rate: v.count > 0 ? (v.completed / v.count) * 100 : 0,
+        }));
       };
 
       const byStatus: Record<string, number> = {};
@@ -115,20 +125,62 @@ function Dashboard() {
         if (o.status === "Completed") byDay[d].completed += num(o.invoice_value);
       }
 
+      // CC verification by agent
+      const verifByAgent: Record<string, { name: string; total: number; verified: number; nonVerified: number; verifiedValue: number; verifiedCount: number }> = {};
+      for (const o of rangeOrders) {
+        const k = o.agent_id ?? "—";
+        const name = nameMap.get(o.agent_id) ?? "Unknown";
+        if (!verifByAgent[k]) verifByAgent[k] = { name, total: 0, verified: 0, nonVerified: 0, verifiedValue: 0, verifiedCount: 0 };
+        verifByAgent[k].total += 1;
+        if (o.call_center_verified) {
+          verifByAgent[k].verified += 1;
+          verifByAgent[k].verifiedCount += 1;
+          verifByAgent[k].verifiedValue += num(o.invoice_value);
+        } else {
+          verifByAgent[k].nonVerified += 1;
+        }
+      }
+      const verifAgentRows = Object.values(verifByAgent).map((r) => ({
+        ...r, rate: r.total > 0 ? (r.verified / r.total) * 100 : 0,
+      })).sort((a, b) => b.verified - a.verified);
+
+      const totalVerified = verifiedRows(rangeOrders).length;
+      const totalNonVerified = rangeOrders.length - totalVerified;
+      const totalVerifiedValue = sum(verifiedRows(rangeOrders));
+
+      // Complaints aggregations
+      const cmpByBranch: Record<string, { total: number; resolved: number }> = {};
+      const cmpByCity: Record<string, { total: number; resolved: number }> = {};
+      let cmpResolved = 0, cmpInProg = 0;
+      for (const c of cmps) {
+        const b = c.branch_no ?? "—";
+        const city = cityMap.get(c.branch_no) ?? "—";
+        if (!cmpByBranch[b]) cmpByBranch[b] = { total: 0, resolved: 0 };
+        if (!cmpByCity[city]) cmpByCity[city] = { total: 0, resolved: 0 };
+        cmpByBranch[b].total += 1;
+        cmpByCity[city].total += 1;
+        if (c.status === "Resolved") {
+          cmpByBranch[b].resolved += 1;
+          cmpByCity[city].resolved += 1;
+          cmpResolved += 1;
+        } else cmpInProg += 1;
+      }
+      const cmpBranchRows = Object.entries(cmpByBranch).map(([name, v]) => ({
+        name, ...v, open: v.total - v.resolved, rate: v.total > 0 ? (v.resolved / v.total) * 100 : 0,
+      })).sort((a, b) => b.total - a.total).slice(0, 10);
+      const cmpCityRows = Object.entries(cmpByCity).map(([name, v]) => ({
+        name, ...v, rate: v.total > 0 ? (v.resolved / v.total) * 100 : 0,
+      })).sort((a, b) => b.total - a.total);
+
       return {
-        todayCount: todayOrders.length,
-        todayCompletedCount: completedRows(todayOrders).length,
-        todaySales: sum(todayOrders),
-        todayCompletedSales: sum(completedRows(todayOrders)),
-        todayCashSales: sum(cash(todayOrders)),
-        todayWasSales: sum(was(todayOrders)),
-        monthAll,
-        monthCompleted,
-        monthCompletedCount,
+        monthAll, monthCompleted, monthCompletedCount,
         monthTotalCount: rangeOrders.length,
         monthCashSales: sum(cash(rangeOrders)),
         monthWasSales: sum(was(rangeOrders)),
         completionRate,
+        totalVerified, totalNonVerified, totalVerifiedValue,
+        verifRate: rangeOrders.length > 0 ? (totalVerified / rangeOrders.length) * 100 : 0,
+        verifAgentRows: verifAgentRows.slice(0, 12),
         byAgent: groupAgg(rangeOrders, (o) => nameMap.get(o.agent_id) ?? "Unknown").sort((a, b) => b.sales - a.sales).slice(0, 10),
         byTeam: groupAgg(rangeOrders, (o) => o.team === "telesales" ? "Telesales" : "Customer Care"),
         byBranch: groupAgg(rangeOrders, (o) => o.branch_no ?? "—").sort((a, b) => b.sales - a.sales).slice(0, 10),
@@ -158,25 +210,24 @@ function Dashboard() {
         pending: byStatus["Pending"] ?? 0,
         cancelled: byStatus["Cancelled"] ?? 0,
         byDay: Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date)),
+        cmpTotal: cmps.length, cmpResolved, cmpInProg,
+        cmpResolutionRate: cmps.length > 0 ? (cmpResolved / cmps.length) * 100 : 0,
+        cmpBranchRows, cmpCityRows,
       };
     },
   });
 
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
-    Pending: "#eab308",
-    Completed: "#16a34a",
-    Cancelled: "#dc2626",
-    "Follow-up": "#2563eb",
-    "No Answer": "#6b7280",
+    Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
   };
 
   const Stat = ({ label, value, accent, sub }: { label: string; value: string | number; accent?: string; sub?: string }) => (
     <Card>
-      <CardContent className="p-4">
-        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
-        <div className={`text-xl font-semibold mt-1 ${accent ?? ""}`}>{value}</div>
-        {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
+      <CardContent className="p-3 sm:p-4">
+        <div className="text-[10px] sm:text-[11px] uppercase tracking-wider text-muted-foreground truncate">{label}</div>
+        <div className={`text-base sm:text-xl font-semibold mt-1 truncate ${accent ?? ""}`}>{value}</div>
+        {sub && <div className="text-[10px] sm:text-[11px] text-muted-foreground mt-0.5 truncate">{sub}</div>}
       </CardContent>
     </Card>
   );
@@ -188,19 +239,19 @@ function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">
             {selectedAgentLabel ? `Performance for ${selectedAgentLabel}` : mineOnly ? "Your performance" : "Team performance"} · {dateLabel}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Popover open={dateOpen} onOpenChange={setDateOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm" className={cn("font-normal", !range?.from && "text-muted-foreground")}>
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {dateLabel}
+                <span className="truncate max-w-[180px]">{dateLabel}</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0 pointer-events-auto" align="end">
@@ -210,12 +261,12 @@ function Dashboard() {
                 <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
                 <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
               </div>
-              <Calendar mode="range" selected={range} onSelect={setRange} numberOfMonths={2} defaultMonth={range?.from} className="pointer-events-auto" />
+              <Calendar mode="range" selected={range} onSelect={setRange} numberOfMonths={1} defaultMonth={range?.from} className="pointer-events-auto" />
             </PopoverContent>
           </Popover>
           {isAdmin ? (
             <Select value={agentFilter} onValueChange={setAgentFilter}>
-              <SelectTrigger className="h-9 w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All agents</SelectItem>
                 {(agents ?? []).map((a: any) => (
@@ -232,28 +283,16 @@ function Dashboard() {
       </div>
 
       <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Today</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <Stat label="Orders today" value={data?.todayCount ?? "—"} />
-          <Stat label="Completed today" value={data?.todayCompletedCount ?? "—"} accent="text-green-600 dark:text-green-400" />
-          <Stat label="Cash sales today" value={data ? fmtSAR(data.todayCashSales) : "—"} />
-          <Stat label="Wasfaty sales today" value={data ? fmtSAR(data.todayWasSales) : "—"} />
-          <Stat label="Sales today" value={data ? fmtSAR(data.todaySales) : "—"} />
-          <Stat label="Completed sales today" value={data ? fmtSAR(data.todayCompletedSales) : "—"} accent="text-green-600 dark:text-green-400" />
-        </div>
-      </div>
-
-      <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Selected range</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Performance for selected period</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           <Stat label="Total orders" value={data?.monthTotalCount ?? "—"} />
-          <Stat label="Completed orders" value={data?.monthCompletedCount ?? "—"} sub={`of ${data?.monthTotalCount ?? 0}`} accent="text-green-600 dark:text-green-400" />
+          <Stat label="Completed orders" value={data?.monthCompletedCount ?? "—"} accent="text-green-600 dark:text-green-400" sub={`of ${data?.monthTotalCount ?? 0}`} />
           <Stat label="Cash sales" value={data ? fmtSAR(data.monthCashSales) : "—"} />
           <Stat label="Wasfaty sales" value={data ? fmtSAR(data.monthWasSales) : "—"} />
           <Stat label="Total sales" value={data ? fmtSAR(data.monthAll) : "—"} />
           <Stat label="Completed sales" value={data ? fmtSAR(data.monthCompleted) : "—"} accent="text-green-600 dark:text-green-400" />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3">
           <Stat label="Pending" value={data?.pending ?? 0} accent="text-yellow-600 dark:text-yellow-400" />
           <Stat label="Cancelled" value={data?.cancelled ?? 0} accent="text-red-600 dark:text-red-400" />
           <Stat label="Completion rate" value={data ? `${data.completionRate.toFixed(1)}%` : "—"} />
@@ -261,7 +300,50 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      {/* Call Center Invoice Verification */}
+      <div>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Call Center Invoice verification</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+          <Stat label="Verified invoices" value={data?.totalVerified ?? 0} accent="text-green-600 dark:text-green-400" />
+          <Stat label="Non-verified" value={data?.totalNonVerified ?? 0} accent="text-yellow-600 dark:text-yellow-400" />
+          <Stat label="Verification rate" value={data ? `${data.verifRate.toFixed(1)}%` : "—"} />
+          <Stat label="Verified value" value={data ? fmtSAR(data.totalVerifiedValue) : "—"} />
+        </div>
+
+        <Card className="mt-3">
+          <CardHeader><CardTitle className="text-base">Verification activity by agent</CardTitle></CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="px-3 py-2">Agent</th>
+                  <th className="px-3 py-2 text-right">Total orders</th>
+                  <th className="px-3 py-2 text-right">Verified</th>
+                  <th className="px-3 py-2 text-right">Non-verified</th>
+                  <th className="px-3 py-2 text-right">Rate</th>
+                  <th className="px-3 py-2 text-right">Verified value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.verifAgentRows ?? []).length === 0 && <tr><td colSpan={6} className="text-center text-muted-foreground py-6">No data</td></tr>}
+                {(data?.verifAgentRows ?? []).map((r) => (
+                  <tr key={r.name} className="border-b last:border-0">
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">{r.name}</td>
+                    <td className="px-3 py-2 text-right">{r.total}</td>
+                    <td className="px-3 py-2 text-right text-green-600 dark:text-green-400 font-semibold">{r.verified}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">{r.nonVerified}</td>
+                    <td className="px-3 py-2 text-right">{r.rate.toFixed(0)}%</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">{fmtSAR(r.verifiedValue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Sales charts */}
+      <div className="grid lg:grid-cols-2 gap-3 sm:gap-4">
         <Card>
           <CardHeader><CardTitle className="text-base">Daily sales trend</CardTitle></CardHeader>
           <CardContent className="h-64">
@@ -355,46 +437,104 @@ function Dashboard() {
         </Card>
       </div>
 
+      {/* Delivery method analysis */}
       <div>
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Delivery methods</div>
-        <div className="grid lg:grid-cols-2 gap-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Orders & sales by delivery method</CardTitle></CardHeader>
-            <CardContent className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data?.byDelivery ?? []}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="l" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar yAxisId="l" dataKey="count" name="Orders" fill="var(--color-chart-1)" radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="r" dataKey="sales" name="Completed sales" fill="#16a34a" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Delivery method performance</CardTitle></CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="px-3 py-2">Method</th>
+                  <th className="px-3 py-2 text-right">Orders</th>
+                  <th className="px-3 py-2 text-right">Completed sales</th>
+                  <th className="px-3 py-2 text-right">Completion rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.byDelivery ?? []).length === 0 && <tr><td colSpan={4} className="text-center text-muted-foreground py-6">No data</td></tr>}
+                {(data?.byDelivery ?? []).map((d) => (
+                  <tr key={d.name} className="border-b last:border-0">
+                    <td className="px-3 py-2 font-medium">{d.name}</td>
+                    <td className="px-3 py-2 text-right">{d.count}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">{fmtSAR(d.sales)}</td>
+                    <td className="px-3 py-2 text-right">{d.rate.toFixed(0)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
 
-          <Card>
-            <CardHeader><CardTitle className="text-base">Delivery method distribution</CardTitle></CardHeader>
-            <CardContent className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={data?.byDelivery ?? []} dataKey="count" nameKey="name" outerRadius={80} label>
-                    {(data?.byDelivery ?? []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Legend />
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid lg:grid-cols-2 gap-4 mt-4">
+        <div className="grid lg:grid-cols-2 gap-3 sm:gap-4 mt-3">
           <DeliveryMatrix title="Sales by branch × delivery method" matrix={data?.byDeliveryBranch ?? {}} methods={deliveryMethods} />
           <DeliveryMatrix title="Sales by city × delivery method" matrix={data?.byDeliveryCity ?? {}} methods={deliveryMethods} />
+        </div>
+      </div>
+
+      {/* Complaints analytics */}
+      <div>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Complaints</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+          <Stat label="Total complaints" value={data?.cmpTotal ?? 0} />
+          <Stat label="In progress" value={data?.cmpInProg ?? 0} accent="text-amber-600 dark:text-amber-400" />
+          <Stat label="Resolved" value={data?.cmpResolved ?? 0} accent="text-green-600 dark:text-green-400" />
+          <Stat label="Resolution rate" value={data ? `${data.cmpResolutionRate.toFixed(1)}%` : "—"} />
+        </div>
+
+        <div className="grid lg:grid-cols-2 gap-3 sm:gap-4 mt-3">
+          <Card>
+            <CardHeader><CardTitle className="text-base">Complaints by branch (top 10)</CardTitle></CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="px-3 py-2">Branch</th>
+                    <th className="px-3 py-2 text-right">Total</th>
+                    <th className="px-3 py-2 text-right">Resolved</th>
+                    <th className="px-3 py-2 text-right">Open</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.cmpBranchRows ?? []).length === 0 && <tr><td colSpan={4} className="text-center text-muted-foreground py-6">No data</td></tr>}
+                  {(data?.cmpBranchRows ?? []).map((r) => (
+                    <tr key={r.name} className="border-b last:border-0">
+                      <td className="px-3 py-2 font-medium">{r.name}</td>
+                      <td className="px-3 py-2 text-right">{r.total}</td>
+                      <td className="px-3 py-2 text-right text-green-600 dark:text-green-400">{r.resolved}</td>
+                      <td className="px-3 py-2 text-right text-amber-600 dark:text-amber-400">{r.open}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">Complaints by city</CardTitle></CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="px-3 py-2">City</th>
+                    <th className="px-3 py-2 text-right">Total</th>
+                    <th className="px-3 py-2 text-right">Resolution rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.cmpCityRows ?? []).length === 0 && <tr><td colSpan={3} className="text-center text-muted-foreground py-6">No data</td></tr>}
+                  {(data?.cmpCityRows ?? []).map((r) => (
+                    <tr key={r.name} className="border-b last:border-0">
+                      <td className="px-3 py-2 font-medium">{r.name}</td>
+                      <td className="px-3 py-2 text-right">{r.total}</td>
+                      <td className="px-3 py-2 text-right">{r.rate.toFixed(0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
