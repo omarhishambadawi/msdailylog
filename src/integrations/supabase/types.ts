@@ -39,9 +39,9 @@ export type Database = {
           category: string | null
           complaint_date: string
           created_at: string
-          customer_name: string
-          customer_phone: string
-          description: string
+          customer_name: string | null
+          customer_phone: string | null
+          description: string | null
           display_no: string
           id: string
           resolution: string | null
@@ -54,9 +54,9 @@ export type Database = {
           category?: string | null
           complaint_date?: string
           created_at?: string
-          customer_name?: string
-          customer_phone?: string
-          description?: string
+          customer_name?: string | null
+          customer_phone?: string | null
+          description?: string | null
           display_no?: string
           id?: string
           resolution?: string | null
@@ -69,9 +69,9 @@ export type Database = {
           category?: string | null
           complaint_date?: string
           created_at?: string
-          customer_name?: string
-          customer_phone?: string
-          description?: string
+          customer_name?: string | null
+          customer_phone?: string | null
+          description?: string | null
           display_no?: string
           id?: string
           resolution?: string | null
