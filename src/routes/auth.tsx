@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -70,8 +70,7 @@ function AuthPage() {
             <Button type="submit" className="w-full" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button>
           </form>
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            Need an account? Ask an administrator to create one. <br />
-            <Link to="/bootstrap" className="text-primary hover:underline">First time setup</Link>
+            Need an account? Ask an administrator to create one.
           </p>
         </CardContent>
       </Card>

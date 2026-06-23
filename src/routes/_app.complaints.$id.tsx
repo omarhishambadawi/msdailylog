@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ArrowLeft, ShieldAlert, Trash2 } from "lucide-react";
-import { COMPLAINT_STATUSES } from "@/lib/branches";
 import { hasPerm } from "@/lib/permissions";
 import { z } from "zod";
 
@@ -22,13 +22,12 @@ export const Route = createFileRoute("/_app/complaints/$id")({
 
 const schema = z.object({
   complaint_date: z.string().min(1),
-  customer_name: z.string().trim().min(1).max(120),
-  customer_phone: z.string().trim().min(5).max(40),
+  customer_name: z.string().trim().max(120).nullable().optional(),
+  customer_phone: z.string().trim().max(40).nullable().optional(),
   branch_no: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
-  description: z.string().min(1).max(2000),
-  resolution: z.string().max(2000).nullable().optional(),
-  status: z.string().min(1),
+  description: z.string().max(2000).nullable().optional(),
+  status: z.enum(["In Progress", "Resolved"]),
 });
 
 export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
@@ -39,10 +38,7 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
   const id = params?.id;
 
   const canCreate = hasPerm(role, profile?.permissions as any, "create_complaints");
-  const canEdit = hasPerm(role, profile?.permissions as any, "edit_complaints");
-  if ((mode === "create" && !canCreate) || (mode === "edit" && !canEdit)) {
-    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have permission.</p></div>;
-  }
+  const canEditPerm = hasPerm(role, profile?.permissions as any, "edit_complaints");
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -59,6 +55,10 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
     },
   });
 
+  // Ownership check for edit mode
+  const isOwner = existing && user && existing.agent_id === user.id;
+  const canEditThis = mode === "create" ? canCreate : (canEditPerm && (role === "admin" || isOwner));
+
   const [form, setForm] = useState({
     complaint_date: new Date().toISOString().slice(0, 10),
     customer_name: "",
@@ -66,25 +66,31 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
     branch_no: "",
     category: "",
     description: "",
-    resolution: "",
-    status: "Open",
+    status: "In Progress" as "In Progress" | "Resolved",
   });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (existing) {
+      const s = existing.status === "Resolved" ? "Resolved" : "In Progress";
       setForm({
         complaint_date: existing.complaint_date,
         customer_name: existing.customer_name ?? "",
         customer_phone: existing.customer_phone ?? "",
         branch_no: existing.branch_no ?? "",
         category: existing.category ?? "",
-        description: existing.description ?? "",
-        resolution: existing.resolution ?? "",
-        status: existing.status,
+        description: existing.description ?? existing.resolution ?? "",
+        status: s,
       });
     }
   }, [existing]);
+
+  if (mode === "edit" && existing && !canEditThis) {
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You can only edit your own complaints.</p></div>;
+  }
+  if (mode === "create" && !canCreate) {
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have permission.</p></div>;
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,9 +99,11 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
     try {
       const parsed = schema.parse({
         ...form,
+        customer_name: form.customer_name || null,
+        customer_phone: form.customer_phone || null,
         branch_no: form.branch_no || null,
         category: form.category || null,
-        resolution: form.resolution || null,
+        description: form.description || null,
       });
       if (mode === "create") {
         const { error } = await supabase.from("complaints" as any).insert({ ...parsed, agent_id: user.id } as any);
@@ -134,13 +142,19 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
             <div className="space-y-2"><Label>Date</Label><Input type="date" value={form.complaint_date} onChange={(e) => setForm({ ...form, complaint_date: e.target.value })} required /></div>
             <div className="space-y-2">
               <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{COMPLAINT_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-              </Select>
+              <div className="flex items-center gap-3 h-10 px-3 border rounded-md bg-background">
+                <Checkbox
+                  id="resolved"
+                  checked={form.status === "Resolved"}
+                  onCheckedChange={(v) => setForm({ ...form, status: v ? "Resolved" : "In Progress" })}
+                />
+                <Label htmlFor="resolved" className="cursor-pointer text-sm">
+                  {form.status === "Resolved" ? "Resolved" : "In Progress"}
+                </Label>
+              </div>
             </div>
-            <div className="space-y-2"><Label>Customer name *</Label><Input required value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Customer phone *</Label><Input required value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Customer name</Label><Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="Optional" /></div>
+            <div className="space-y-2"><Label>Customer phone</Label><Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="Optional" /></div>
             <div className="space-y-2">
               <Label>Branch No.</Label>
               <Select value={form.branch_no || "none"} onValueChange={(v) => setForm({ ...form, branch_no: v === "none" ? "" : v })}>
@@ -152,8 +166,7 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
               </Select>
             </div>
             <div className="space-y-2"><Label>Category</Label><Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Delivery, Quality, Service…" /></div>
-            <div className="space-y-2 md:col-span-2"><Label>Description *</Label><Textarea rows={3} required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-            <div className="space-y-2 md:col-span-2"><Label>Resolution</Label><Textarea rows={2} value={form.resolution} onChange={(e) => setForm({ ...form, resolution: e.target.value })} /></div>
+            <div className="space-y-2 md:col-span-2"><Label>Notes</Label><Textarea rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional notes" /></div>
             <div className="md:col-span-2 flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => navigate({ to: "/complaints" })}>Cancel</Button>
               <Button type="submit" disabled={busy}>{busy ? "Saving…" : mode === "create" ? "Save complaint" : "Update complaint"}</Button>
