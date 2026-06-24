@@ -3,9 +3,10 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut, ClipboardList,
+  LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut,
   ShieldAlert, MessageSquareWarning, Menu, X,
 } from "lucide-react";
+import logo from "@/assets/milaserv-logo.png.asset.json";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app")({
