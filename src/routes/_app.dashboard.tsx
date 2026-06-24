@@ -328,7 +328,7 @@ function Dashboard() {
         </div>
 
         <Card className="mt-3">
-          <CardHeader><CardTitle className="text-base">Verification activity by agent</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Call Center Invoices Tracking</CardTitle></CardHeader>
           <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
