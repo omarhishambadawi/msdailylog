@@ -119,7 +119,7 @@ function AppLayout() {
   return (
     <div className="min-h-screen flex bg-muted/30">
       {/* Desktop sidebar */}
-      <aside className={cn("hidden md:flex shrink-0 bg-card border-r border-border flex-col transition-[width] duration-200", sidebarWidth)}>
+      <aside className={cn("hidden md:flex shrink-0 sticky top-0 h-screen bg-card border-r border-border flex-col transition-[width] duration-200 z-20", sidebarWidth)}>
         {SidebarContent}
       </aside>
 
