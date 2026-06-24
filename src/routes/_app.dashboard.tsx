@@ -143,12 +143,12 @@ function Dashboard() {
           verifByAgent[k].nonVerified += 1;
         }
       }
-      let verifAgentRows = Object.values(verifByAgent).map((r) => ({
-        ...r, rate: r.total > 0 ? (r.verified / r.total) * 100 : 0,
+      let verifAgentRows = Object.entries(verifByAgent).map(([agentId, r]) => ({
+        agentId, ...r, rate: r.total > 0 ? (r.verified / r.total) * 100 : 0,
       })).sort((a, b) => b.verified - a.verified);
       // Privacy: non-admin agents only see their own row in the CC Invoices tracking table
       if (!isAdmin && user?.id) {
-        verifAgentRows = verifAgentRows.filter((r) => verifByAgent && Object.entries(verifByAgent).find(([k, v]) => v.name === r.name && k === user.id));
+        verifAgentRows = verifAgentRows.filter((r) => r.agentId === user.id);
       }
 
       const totalVerified = verifiedRows(rangeOrders).length;
