@@ -272,15 +272,25 @@ function Dashboard() {
             </PopoverContent>
           </Popover>
           {isAdmin ? (
-            <Select value={agentFilter} onValueChange={setAgentFilter}>
-              <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All agents</SelectItem>
-                {(agents ?? []).map((a: any) => (
-                  <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={teamFilter} onValueChange={setTeamFilter}>
+                <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="All teams" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All teams</SelectItem>
+                  <SelectItem value="customer_care">Customer Care</SelectItem>
+                  <SelectItem value="telesales">Telesales</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={agentFilter} onValueChange={setAgentFilter}>
+                <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All agents</SelectItem>
+                  {(agents ?? []).map((a: any) => (
+                    <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
           ) : (
             <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
               {mineOnly ? "My data" : "All data"}
