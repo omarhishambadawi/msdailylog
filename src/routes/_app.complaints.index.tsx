@@ -34,13 +34,15 @@ function ComplaintsList() {
       let qb = supabase.from("complaints" as any).select("*").order("created_at", { ascending: false }).limit(2000);
       if (status !== "all") qb = qb.eq("status", status);
       if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
-      const [{ data: rows, error }, { data: profiles }] = await Promise.all([
+      const [{ data: rows, error }, { data: profiles }, { data: branches }] = await Promise.all([
         qb,
         supabase.from("profiles").select("id,full_name"),
+        supabase.from("branches").select("branch_no,city"),
       ]);
       if (error) throw error;
       const nm = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name]));
-      return ((rows as any[]) ?? []).map((r: any) => ({ ...r, agent_name: nm.get(r.agent_id) ?? "—" }));
+      const bm = new Map((branches ?? []).map((b: any) => [b.branch_no, b.city]));
+      return ((rows as any[]) ?? []).map((r: any) => ({ ...r, agent_name: nm.get(r.agent_id) ?? "—", city: bm.get(r.branch_no) ?? "" }));
     },
   });
 
@@ -104,16 +106,15 @@ function ComplaintsList() {
                   <TableHead className="hidden sm:table-cell">Date</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead className="hidden md:table-cell">Phone</TableHead>
-                  <TableHead className="hidden md:table-cell">Branch</TableHead>
-                  <TableHead className="hidden lg:table-cell">Category</TableHead>
+                  <TableHead>Branch · City</TableHead>
                   <TableHead className="hidden lg:table-cell">Agent</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
-                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No complaints</TableCell></TableRow>}
+                {isLoading && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
+                {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No complaints</TableCell></TableRow>}
                 {filtered.map((c: any) => {
                   const owned = c.agent_id === user?.id;
                   const canEditRow = role === "admin" || owned;
@@ -127,8 +128,7 @@ function ComplaintsList() {
                       <TableCell className="hidden sm:table-cell whitespace-nowrap">{c.complaint_date}</TableCell>
                       <TableCell className="whitespace-nowrap">{c.customer_name || "—"}</TableCell>
                       <TableCell className="hidden md:table-cell font-mono text-xs">{c.customer_phone || "—"}</TableCell>
-                      <TableCell className="hidden md:table-cell">{c.branch_no ?? "—"}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{c.category ?? "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap">{c.branch_no ? `${c.branch_no} — ${c.city || "—"}` : "—"}</TableCell>
                       <TableCell className="hidden lg:table-cell whitespace-nowrap">{c.agent_name}</TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[c.status] ?? "bg-muted"}`}>{c.status}</span>
