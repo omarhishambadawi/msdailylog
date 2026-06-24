@@ -27,6 +27,7 @@ function Dashboard() {
   const isAdmin = role === "admin";
   const [mineOnly, setMineOnly] = useState(false);
   const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [teamFilter, setTeamFilter] = useState<string>("all");
   const [dateOpen, setDateOpen] = useState(false);
 
   const today = new Date();
@@ -51,6 +52,7 @@ function Dashboard() {
   };
 
   const effectiveAgent = isAdmin ? agentFilter : (mineOnly && user?.id ? user.id : "all");
+  const effectiveTeam = isAdmin ? teamFilter : "all";
 
   const { data: agents } = useQuery({
     queryKey: ["dashboard-agents"],
@@ -62,12 +64,13 @@ function Dashboard() {
   });
 
   const { data } = useQuery({
-    queryKey: ["dashboard", from, to, effectiveAgent],
+    queryKey: ["dashboard", from, to, effectiveAgent, effectiveTeam, isAdmin, user?.id],
     queryFn: async () => {
       let qb = supabase.from("orders")
         .select("id,order_date,team,agent_id,branch_no,invoice_value,status,order_type,delivery_type,call_center_verified")
         .gte("order_date", from).lte("order_date", to);
       if (effectiveAgent !== "all") qb = qb.eq("agent_id", effectiveAgent);
+      if (effectiveTeam !== "all") qb = qb.eq("team", effectiveTeam as "customer_care" | "telesales");
 
       let cb = supabase.from("complaints" as any).select("id,complaint_date,branch_no,status,agent_id")
         .gte("complaint_date", from).lte("complaint_date", to);
