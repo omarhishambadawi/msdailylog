@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -8,11 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { ArrowLeft, ShieldAlert, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronsUpDown, ShieldAlert, Trash2 } from "lucide-react";
 import { hasPerm } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 import { z } from "zod";
 
 export const Route = createFileRoute("/_app/complaints/$id")({
@@ -25,7 +27,6 @@ const schema = z.object({
   customer_name: z.string().trim().max(120).nullable().optional(),
   customer_phone: z.string().trim().max(40).nullable().optional(),
   branch_no: z.string().nullable().optional(),
-  category: z.string().nullable().optional(),
   description: z.string().max(2000).nullable().optional(),
   status: z.enum(["In Progress", "Resolved"]),
 });
@@ -55,7 +56,6 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
     },
   });
 
-  // Ownership check for edit mode
   const isOwner = existing && user && existing.agent_id === user.id;
   const canEditThis = mode === "create" ? canCreate : (canEditPerm && (role === "admin" || isOwner));
 
@@ -64,11 +64,11 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
     customer_name: "",
     customer_phone: "",
     branch_no: "",
-    category: "",
     description: "",
     status: "In Progress" as "In Progress" | "Resolved",
   });
   const [busy, setBusy] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
 
   useEffect(() => {
     if (existing) {
@@ -78,12 +78,13 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
         customer_name: existing.customer_name ?? "",
         customer_phone: existing.customer_phone ?? "",
         branch_no: existing.branch_no ?? "",
-        category: existing.category ?? "",
         description: existing.description ?? existing.resolution ?? "",
         status: s,
       });
     }
   }, [existing]);
+
+  const cityFor = useMemo(() => (b: string | null) => branches?.find((x) => x.branch_no === b)?.city ?? "", [branches]);
 
   if (mode === "edit" && existing && !canEditThis) {
     return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You can only edit your own complaints.</p></div>;
@@ -102,8 +103,9 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
         customer_name: form.customer_name || null,
         customer_phone: form.customer_phone || null,
         branch_no: form.branch_no || null,
-        category: form.category || null,
         description: form.description || null,
+        // Force In Progress when creating; preserve current status on edit
+        status: mode === "create" ? "In Progress" : form.status,
       });
       if (mode === "create") {
         const { error } = await supabase.from("complaints" as any).insert({ ...parsed, agent_id: user.id } as any);
@@ -140,33 +142,56 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
         <CardContent>
           <form onSubmit={submit} className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2"><Label>Date</Label><Input type="date" value={form.complaint_date} onChange={(e) => setForm({ ...form, complaint_date: e.target.value })} required /></div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <div className="flex items-center gap-3 h-10 px-3 border rounded-md bg-background">
-                <Checkbox
-                  id="resolved"
-                  checked={form.status === "Resolved"}
-                  onCheckedChange={(v) => setForm({ ...form, status: v ? "Resolved" : "In Progress" })}
-                />
-                <Label htmlFor="resolved" className="cursor-pointer text-sm">
-                  {form.status === "Resolved" ? "Resolved" : "In Progress"}
-                </Label>
+            {mode === "edit" && (
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <div className="flex items-center gap-3 h-10 px-3 border rounded-md bg-background">
+                  <Checkbox
+                    id="resolved"
+                    checked={form.status === "Resolved"}
+                    onCheckedChange={(v) => setForm({ ...form, status: v ? "Resolved" : "In Progress" })}
+                  />
+                  <Label htmlFor="resolved" className="cursor-pointer text-sm">
+                    {form.status === "Resolved" ? "Resolved" : "In Progress"}
+                  </Label>
+                </div>
               </div>
-            </div>
-            <div className="space-y-2"><Label>Customer name</Label><Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="Optional" /></div>
-            <div className="space-y-2"><Label>Customer phone</Label><Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="Optional" /></div>
+            )}
+            <div className="space-y-2"><Label>Customer name <span className="text-xs text-muted-foreground">(optional)</span></Label><Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="Optional" /></div>
+            <div className="space-y-2"><Label>Customer phone <span className="text-xs text-muted-foreground">(optional)</span></Label><Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="Optional" /></div>
             <div className="space-y-2">
               <Label>Branch No.</Label>
-              <Select value={form.branch_no || "none"} onValueChange={(v) => setForm({ ...form, branch_no: v === "none" ? "" : v })}>
-                <SelectTrigger><SelectValue placeholder="Select branch" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">—</SelectItem>
-                  {(branches ?? []).map((b: any) => <SelectItem key={b.branch_no} value={b.branch_no}>{b.branch_no} · {b.city}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Popover open={branchOpen} onOpenChange={setBranchOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                    {form.branch_no ? `${form.branch_no} — ${cityFor(form.branch_no)}` : "Select branch…"}
+                    <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="p-0 w-[280px]">
+                  <Command>
+                    <CommandInput placeholder="Search branch…" />
+                    <CommandList>
+                      <CommandEmpty>No branch.</CommandEmpty>
+                      <CommandGroup>
+                        {(branches ?? []).map((b: any) => (
+                          <CommandItem key={b.branch_no} value={`${b.branch_no} ${b.city}`} onSelect={() => { setForm({ ...form, branch_no: b.branch_no }); setBranchOpen(false); }}>
+                            <Check className={cn("mr-2 h-4 w-4", form.branch_no === b.branch_no ? "opacity-100" : "opacity-0")} />
+                            <span className="font-mono mr-2">{b.branch_no}</span>
+                            <span className="text-muted-foreground text-xs">{b.city}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
-            <div className="space-y-2"><Label>Category</Label><Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Delivery, Quality, Service…" /></div>
-            <div className="space-y-2 md:col-span-2"><Label>Notes</Label><Textarea rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional notes" /></div>
+            <div className="space-y-2">
+              <Label>City (auto)</Label>
+              <Input value={cityFor(form.branch_no)} readOnly className="bg-muted" placeholder="—" />
+            </div>
+            <div className="space-y-2 md:col-span-2"><Label>Notes</Label><Textarea rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Describe the complaint" /></div>
             <div className="md:col-span-2 flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => navigate({ to: "/complaints" })}>Cancel</Button>
               <Button type="submit" disabled={busy}>{busy ? "Saving…" : mode === "create" ? "Save complaint" : "Update complaint"}</Button>

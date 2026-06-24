@@ -12,8 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronsUpDown, Trash2 } from "lucide-react";
-import { ORDER_TYPES, DELIVERY_TYPES, STATUSES, TEAMS, CURRENCY } from "@/lib/branches";
+import { ArrowLeft, Check, ChevronsUpDown, Clock, Trash2 } from "lucide-react";
+import { ORDER_TYPES, DELIVERY_TYPES, TEAMS, CURRENCY, formatOrderNo } from "@/lib/branches";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 
@@ -24,7 +24,7 @@ const schema = z.object({
   customer_name: z.string().trim().max(120).optional().nullable(),
   customer_phone: z.string().trim().max(40).optional().nullable(),
   branch_no: z.string().nullable().optional(),
-  delivery_type: z.string().nullable().optional(),
+  delivery_type: z.string().min(1, "Please choose a delivery / pickup method"),
   invoice_no: z.string().max(50).optional().nullable(),
   invoice_value: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().nonnegative().nullable()),
   notes: z.string().max(500).optional().nullable(),
@@ -73,7 +73,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
     customer_name: "",
     customer_phone: "",
     branch_no: "" as string | null,
-    delivery_type: "Store Pickup",
+    delivery_type: "",
     invoice_no: "",
     invoice_value: "",
     notes: "",
@@ -116,9 +116,9 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         customer_name: form.customer_name || null,
         customer_phone: form.customer_phone || null,
         branch_no: form.branch_no || null,
-        delivery_type: form.delivery_type || null,
         invoice_no: form.invoice_no || null,
         notes: form.notes || null,
+        status: mode === "create" ? "Pending" : form.status,
       });
       if (mode === "create") {
         const { error } = await supabase.from("orders").insert({ ...parsed, agent_id: user.id } as any);
@@ -158,7 +158,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         )}
       </div>
       <Card>
-        <CardHeader><CardTitle>{mode === "create" ? "New order" : `Edit order ${existing?.display_no ?? ""}`}</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{mode === "create" ? "New order" : `Edit order ${formatOrderNo(existing?.team, existing?.display_no)}`}</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={submit} className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -173,11 +173,11 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Customer name</Label>
+              <Label>Customer name <span className="text-xs text-muted-foreground">(optional)</span></Label>
               <Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="Optional" />
             </div>
             <div className="space-y-2">
-              <Label>Customer phone</Label>
+              <Label>Customer phone <span className="text-xs text-muted-foreground">(optional)</span></Label>
               <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="Optional" />
             </div>
             <div className="space-y-2">
@@ -188,10 +188,10 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{STATUSES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              <Label>Delivery & Pickup <span className="text-destructive">*</span></Label>
+              <Select value={form.delivery_type} onValueChange={(v) => setForm({ ...form, delivery_type: v })}>
+                <SelectTrigger><SelectValue placeholder="Select a method…" /></SelectTrigger>
+                <SelectContent>{DELIVERY_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
@@ -199,7 +199,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
-                    {form.branch_no || "Select branch…"}
+                    {form.branch_no ? `${form.branch_no} — ${cityFor(form.branch_no)}` : "Select branch…"}
                     <ChevronsUpDown className="h-4 w-4 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -227,13 +227,6 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               <Input value={cityFor(form.branch_no)} readOnly className="bg-muted" placeholder="—" />
             </div>
             <div className="space-y-2">
-              <Label>Delivery & Pickup</Label>
-              <Select value={form.delivery_type} onValueChange={(v) => setForm({ ...form, delivery_type: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{DELIVERY_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
               <Label>Order value ({CURRENCY})</Label>
               <Input type="number" step="0.01" min="0" value={form.invoice_value} onChange={(e) => setForm({ ...form, invoice_value: e.target.value })} placeholder="0.00" />
             </div>
@@ -252,6 +245,69 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
           </form>
         </CardContent>
       </Card>
+
+      {mode === "edit" && id && <OrderActivityTimeline orderId={id} />}
     </div>
+  );
+}
+
+function OrderActivityTimeline({ orderId }: { orderId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["order-activity", orderId],
+    queryFn: async () => {
+      const [{ data: events }, { data: profiles }] = await Promise.all([
+        supabase.from("order_activity" as any).select("*").eq("order_id", orderId).order("created_at", { ascending: false }),
+        supabase.from("profiles").select("id,full_name"),
+      ]);
+      const nm = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name]));
+      return ((events as any[]) ?? []).map((e: any) => ({ ...e, actor_name: nm.get(e.actor_id) ?? "System" }));
+    },
+  });
+
+  const fmtCairo = (iso: string) => {
+    try {
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: "Africa/Cairo", year: "numeric", month: "short", day: "2-digit",
+        hour: "numeric", minute: "2-digit", hour12: true,
+      }).format(new Date(iso));
+    } catch { return iso; }
+  };
+
+  const describe = (e: any) => {
+    const d = e.details ?? {};
+    if (e.action === "created") return "Created the order";
+    if (e.action === "status_changed") return `Changed status from ${d.from ?? "—"} to ${d.to ?? "—"}`;
+    if (e.action === "verification_changed") return d.verified ? "Marked Call Center invoice verified" : "Removed Call Center invoice verification";
+    if (e.action === "edited") {
+      const keys = Object.keys(d);
+      if (keys.length === 0) return "Edited the order";
+      return `Updated ${keys.join(", ")}`;
+    }
+    return e.action;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4" /> Activity timeline</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
+        {!isLoading && (data?.length ?? 0) === 0 && <div className="text-sm text-muted-foreground">No activity yet.</div>}
+        <ol className="space-y-3">
+          {(data ?? []).map((e: any) => (
+            <li key={e.id} className="flex gap-3 text-sm">
+              <div className="mt-1.5 h-2 w-2 rounded-full bg-primary shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">{describe(e)}</div>
+                <div className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{e.actor_name}</span> · {fmtCairo(e.created_at)} (Cairo)
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </CardContent>
+    </Card>
   );
 }

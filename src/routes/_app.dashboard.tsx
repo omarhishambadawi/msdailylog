@@ -27,6 +27,7 @@ function Dashboard() {
   const isAdmin = role === "admin";
   const [mineOnly, setMineOnly] = useState(false);
   const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [teamFilter, setTeamFilter] = useState<string>("all");
   const [dateOpen, setDateOpen] = useState(false);
 
   const today = new Date();
@@ -51,6 +52,7 @@ function Dashboard() {
   };
 
   const effectiveAgent = isAdmin ? agentFilter : (mineOnly && user?.id ? user.id : "all");
+  const effectiveTeam = isAdmin ? teamFilter : "all";
 
   const { data: agents } = useQuery({
     queryKey: ["dashboard-agents"],
@@ -62,12 +64,13 @@ function Dashboard() {
   });
 
   const { data } = useQuery({
-    queryKey: ["dashboard", from, to, effectiveAgent],
+    queryKey: ["dashboard", from, to, effectiveAgent, effectiveTeam, isAdmin, user?.id],
     queryFn: async () => {
       let qb = supabase.from("orders")
         .select("id,order_date,team,agent_id,branch_no,invoice_value,status,order_type,delivery_type,call_center_verified")
         .gte("order_date", from).lte("order_date", to);
       if (effectiveAgent !== "all") qb = qb.eq("agent_id", effectiveAgent);
+      if (effectiveTeam !== "all") qb = qb.eq("team", effectiveTeam as "customer_care" | "telesales");
 
       let cb = supabase.from("complaints" as any).select("id,complaint_date,branch_no,status,agent_id")
         .gte("complaint_date", from).lte("complaint_date", to);
@@ -140,9 +143,13 @@ function Dashboard() {
           verifByAgent[k].nonVerified += 1;
         }
       }
-      const verifAgentRows = Object.values(verifByAgent).map((r) => ({
-        ...r, rate: r.total > 0 ? (r.verified / r.total) * 100 : 0,
+      let verifAgentRows = Object.entries(verifByAgent).map(([agentId, r]) => ({
+        agentId, ...r, rate: r.total > 0 ? (r.verified / r.total) * 100 : 0,
       })).sort((a, b) => b.verified - a.verified);
+      // Privacy: non-admin agents only see their own row in the CC Invoices tracking table
+      if (!isAdmin && user?.id) {
+        verifAgentRows = verifAgentRows.filter((r) => r.agentId === user.id);
+      }
 
       const totalVerified = verifiedRows(rangeOrders).length;
       const totalNonVerified = rangeOrders.length - totalVerified;
@@ -265,15 +272,25 @@ function Dashboard() {
             </PopoverContent>
           </Popover>
           {isAdmin ? (
-            <Select value={agentFilter} onValueChange={setAgentFilter}>
-              <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All agents</SelectItem>
-                {(agents ?? []).map((a: any) => (
-                  <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={teamFilter} onValueChange={setTeamFilter}>
+                <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="All teams" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All teams</SelectItem>
+                  <SelectItem value="customer_care">Customer Care</SelectItem>
+                  <SelectItem value="telesales">Telesales</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={agentFilter} onValueChange={setAgentFilter}>
+                <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All agents</SelectItem>
+                  {(agents ?? []).map((a: any) => (
+                    <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
           ) : (
             <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
               {mineOnly ? "My data" : "All data"}
@@ -311,7 +328,7 @@ function Dashboard() {
         </div>
 
         <Card className="mt-3">
-          <CardHeader><CardTitle className="text-base">Verification activity by agent</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Call Center Invoices Tracking</CardTitle></CardHeader>
           <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

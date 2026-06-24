@@ -3,9 +3,10 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut, ClipboardList,
+  LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut,
   ShieldAlert, MessageSquareWarning, Menu, X,
 } from "lucide-react";
+import logo from "@/assets/milaserv-logo.png.asset.json";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app")({
@@ -62,9 +63,7 @@ function AppLayout() {
   const SidebarContent = (
     <>
       <div className={cn("px-4 py-4 border-b border-border flex items-center gap-2", collapsed && "justify-center px-2")}>
-        <div className="h-9 w-9 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center">
-          <ClipboardList className="h-5 w-5 text-primary" />
-        </div>
+        <img src={logo.url} alt="MilaServ" className="h-9 w-9 shrink-0 object-contain" />
         {!collapsed && (
           <div className="min-w-0">
             <div className="text-sm font-semibold leading-tight truncate">MilaServ</div>
@@ -120,7 +119,7 @@ function AppLayout() {
   return (
     <div className="min-h-screen flex bg-muted/30">
       {/* Desktop sidebar */}
-      <aside className={cn("hidden md:flex shrink-0 bg-card border-r border-border flex-col transition-[width] duration-200", sidebarWidth)}>
+      <aside className={cn("hidden md:flex shrink-0 sticky top-0 h-screen bg-card border-r border-border flex-col transition-[width] duration-200 z-20", sidebarWidth)}>
         {SidebarContent}
       </aside>
 
