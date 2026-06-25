@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ShieldAlert, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
-import { ALL_PERMISSIONS, defaultPermsForRole } from "@/lib/permissions";
+import { ALL_PERMISSIONS, defaultPermsForRole, PERMISSION_GROUPS } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app/admin/users")({
   head: () => ({ meta: [{ title: "Users — Admin" }] }),
@@ -174,42 +174,54 @@ function AdminUsers() {
       </Card>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Edit user</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit user &amp; permissions</DialogTitle></DialogHeader>
           {editing && (
-            <div className="space-y-3">
-              <div className="space-y-2"><Label>Full name</Label><Input value={editing.full_name} onChange={(e) => setEditing({ ...editing, full_name: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Agent code</Label><Input value={editing.agent_code ?? ""} onChange={(e) => setEditing({ ...editing, agent_code: e.target.value })} /></div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select value={editing.role ?? "customer_care"} onValueChange={(v) => setEditing({ ...editing, role: v, _roleChange: true })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="customer_care">Customer Care</SelectItem>
-                    <SelectItem value="telesales">Telesales</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="space-y-4">
+              <div className="grid sm:grid-cols-3 gap-3">
+                <div className="space-y-2 sm:col-span-2"><Label>Full name</Label><Input value={editing.full_name} onChange={(e) => setEditing({ ...editing, full_name: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Agent code</Label><Input value={editing.agent_code ?? ""} onChange={(e) => setEditing({ ...editing, agent_code: e.target.value })} /></div>
+                <div className="space-y-2 sm:col-span-3">
+                  <Label>Role</Label>
+                  <Select value={editing.role ?? "customer_care"} onValueChange={(v) => setEditing({ ...editing, role: v, _roleChange: true })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="customer_care">Customer Care</SelectItem>
+                      <SelectItem value="telesales">Telesales</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Permissions</Label>
                   <Button type="button" variant="ghost" size="sm" onClick={() => setEditing({ ...editing, permissions: defaultPermsForRole((editing.role ?? "customer_care")) })}>Reset to role defaults</Button>
                 </div>
-                <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
-                  {ALL_PERMISSIONS.map((p) => {
-                    const checked = (editing.permissions ?? []).includes(p.key);
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {PERMISSION_GROUPS.map((group) => {
+                    const perms = ALL_PERMISSIONS.filter((p) => p.group === group);
                     return (
-                      <label key={p.key} className="flex items-center gap-2 text-sm cursor-pointer">
-                        <Checkbox checked={checked} onCheckedChange={(v) => togglePerm(p.key, !!v)} />
-                        {p.label}
-                      </label>
+                      <div key={group} className="rounded-lg border bg-card p-3 space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b pb-1.5">{group}</div>
+                        <div className="space-y-1.5">
+                          {perms.map((p) => {
+                            const checked = (editing.permissions ?? []).includes(p.key);
+                            return (
+                              <label key={p.key} className="flex items-center gap-2 text-sm cursor-pointer rounded px-1 py-0.5 hover:bg-accent/40">
+                                <Checkbox checked={checked} onCheckedChange={(v) => togglePerm(p.key, !!v)} />
+                                <span className="flex-1">{p.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
                 <p className="text-[11px] text-muted-foreground">Empty list = uses role defaults. Admins always have all permissions.</p>
               </div>
-              <DialogFooter><Button onClick={saveEdit}>Save</Button></DialogFooter>
+              <DialogFooter><Button onClick={saveEdit}>Save changes</Button></DialogFooter>
             </div>
           )}
         </DialogContent>

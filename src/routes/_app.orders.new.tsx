@@ -224,7 +224,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
             </div>
             <div className="space-y-2">
               <Label>City (auto)</Label>
-              <Input value={cityFor(form.branch_no)} readOnly className="bg-muted" placeholder="—" />
+              <Input value={cityFor(form.branch_no) || "—"} readOnly className="h-10 bg-muted/60 text-sm leading-none" placeholder="—" />
             </div>
             <div className="space-y-2">
               <Label>Order value ({CURRENCY})</Label>

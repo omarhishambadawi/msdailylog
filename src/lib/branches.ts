@@ -7,12 +7,14 @@ export const TEAMS = [
   { value: "telesales", label: "Telesales" },
 ] as const;
 
+// Modern rounded badge styles using the requested brand colors
+// Pending #F59E0B · Completed #10B981 · Cancelled #EF4444
 export const STATUS_STYLES: Record<string, string> = {
-  Pending: "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/30",
-  Completed: "bg-green-100 text-green-900 border-green-300 dark:bg-green-500/15 dark:text-green-200 dark:border-green-500/30",
-  Cancelled: "bg-red-100 text-red-900 border-red-300 dark:bg-red-500/15 dark:text-red-200 dark:border-red-500/30",
-  "In Progress": "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/30",
-  Resolved: "bg-green-100 text-green-900 border-green-300 dark:bg-green-500/15 dark:text-green-200 dark:border-green-500/30",
+  Pending: "bg-[#F59E0B]/15 text-[#B45309] border-[#F59E0B]/40 dark:text-amber-200",
+  Completed: "bg-[#10B981]/15 text-[#047857] border-[#10B981]/40 dark:text-emerald-200",
+  Cancelled: "bg-[#EF4444]/15 text-[#B91C1C] border-[#EF4444]/40 dark:text-red-200",
+  "In Progress": "bg-[#F59E0B]/15 text-[#B45309] border-[#F59E0B]/40 dark:text-amber-200",
+  Resolved: "bg-[#10B981]/15 text-[#047857] border-[#10B981]/40 dark:text-emerald-200",
 };
 
 export const CURRENCY = "SAR";

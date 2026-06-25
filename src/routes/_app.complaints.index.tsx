@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Search, ShieldAlert, Pencil } from "lucide-react";
+import { Plus, Search, ShieldAlert, Pencil, Download } from "lucide-react";
 import { COMPLAINT_STATUSES, STATUS_STYLES } from "@/lib/branches";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { hasPerm } from "@/lib/permissions";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export const Route = createFileRoute("/_app/complaints/")({
   head: () => ({ meta: [{ title: "Complaints" }] }),
@@ -75,6 +76,7 @@ function ComplaintsList() {
         </div>
         <div className="flex gap-2 items-center">
           <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>{mineOnly ? "Mine" : "All"}</Button>
+          <Button variant="outline" size="sm" onClick={() => exportComplaints(filtered)}><Download className="h-4 w-4 mr-2" />Export</Button>
           {canCreate && <Button onClick={() => navigate({ to: "/complaints/new" })}><Plus className="h-4 w-4 mr-2" />New complaint</Button>}
         </div>
       </div>
@@ -150,4 +152,22 @@ function ComplaintsList() {
       </Card>
     </div>
   );
+}
+
+function exportComplaints(rows: any[]) {
+  const xrows = rows.map((c) => ({
+    "#": c.display_no,
+    Date: c.complaint_date,
+    "Customer Name": c.customer_name ?? "",
+    "Customer Phone": c.customer_phone ?? "",
+    "Branch No.": c.branch_no ?? "",
+    City: c.city ?? "",
+    Agent: c.agent_name ?? "",
+    Notes: c.description ?? "",
+    Status: c.status,
+  }));
+  const ws = XLSX.utils.json_to_sheet(xrows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Complaints");
+  XLSX.writeFile(wb, `complaints_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

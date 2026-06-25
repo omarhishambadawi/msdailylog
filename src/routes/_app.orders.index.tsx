@@ -36,8 +36,9 @@ function OrdersList() {
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  const [range, setRange] = useState<DateRange | undefined>({ from: monthStart, to: monthEnd });
-  const from = range?.from ? toISO(range.from) : toISO(monthStart);
+  // Orders default = Today (per spec). Quick range presets still available.
+  const [range, setRange] = useState<DateRange | undefined>({ from: today, to: today });
+  const from = range?.from ? toISO(range.from) : toISO(today);
   const to = range?.to ? toISO(range.to) : from;
 
   const [q, setQ] = useState("");
@@ -51,12 +52,27 @@ function OrdersList() {
   const searching = q.trim().length > 0;
   const term = q.trim();
 
-  // Agents list for admin filter
+  // Agents list for admin filter, with role for team-based dependency
   const { data: agentOpts } = useQuery({
     queryKey: ["orders-agents"],
-    queryFn: async () => (await supabase.from("profiles").select("id,full_name,agent_code").order("full_name")).data ?? [],
+    queryFn: async () => {
+      const [{ data: profiles }, { data: roles }] = await Promise.all([
+        supabase.from("profiles").select("id,full_name,agent_code").order("full_name"),
+        supabase.from("user_roles").select("user_id,role"),
+      ]);
+      const rm = new Map((roles ?? []).map((r: any) => [r.user_id, r.role]));
+      return (profiles ?? []).map((p: any) => ({ ...p, role: rm.get(p.id) ?? null }));
+    },
     enabled: isAdmin,
   });
+
+  // Filter agent list according to selected team (Customer Care vs Telesales)
+  const filteredAgentOpts = useMemo(() => {
+    if (!agentOpts) return [];
+    if (team === "all") return agentOpts;
+    return agentOpts.filter((a: any) => a.role === team || a.role === "admin");
+  }, [agentOpts, team]);
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["orders", from, to, team, agent, status, mineOnly, user?.id, term],
@@ -188,68 +204,66 @@ function OrdersList() {
           <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => onFilterChange(() => setMineOnly((v) => !v))}>
             {mineOnly ? "My orders" : "All orders"}
           </Button>
-          <Button variant="outline" size="sm" onClick={exportXlsx} className="hidden sm:inline-flex"><Download className="h-4 w-4 mr-2" />Export</Button>
           <Button size="sm" onClick={() => navigate({ to: "/orders/new" })}><Plus className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">New order</span></Button>
         </div>
       </div>
 
       <Card>
-        <CardContent className="p-3 sm:p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-          <div className="lg:col-span-2 relative">
+        <CardContent className="p-3 sm:p-4 flex flex-wrap items-center gap-2 lg:gap-3">
+          <div className="relative flex-1 min-w-[200px] lg:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search order, invoice, customer, phone, branch…" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} className="pl-9 h-10" />
+            <Input placeholder="Search order, invoice, customer, phone…" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} className="pl-9 h-10" />
           </div>
-          <div className="lg:col-span-2">
-            <Popover open={dateOpen} onOpenChange={setDateOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" disabled={searching} className={cn("w-full h-10 justify-start font-normal", !range?.from && "text-muted-foreground")}>
-                  <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                  <span className="truncate">{searching ? "Searching all orders" : dateLabel}</span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 pointer-events-auto" align="start">
-                <div className="flex flex-wrap gap-1 p-2 border-b">
-                  <Button size="sm" variant="ghost" onClick={() => setQuick("today")}>Today</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setQuick("7d")}>Last 7 days</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
-                </div>
-                <Calendar mode="range" selected={range} onSelect={(r) => { setRange(r); setPage(0); }} numberOfMonths={1} defaultMonth={range?.from} className="pointer-events-auto" />
-              </PopoverContent>
-            </Popover>
-          </div>
-          <Select value={team} onValueChange={(v) => onFilterChange(() => setTeam(v))}>
-            <SelectTrigger className="h-10"><SelectValue placeholder="Team" /></SelectTrigger>
+          <Select value={team} onValueChange={(v) => onFilterChange(() => { setTeam(v); setAgent("all"); })}>
+            <SelectTrigger className="h-10 w-[150px]"><SelectValue placeholder="Team" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All teams</SelectItem>
               {TEAMS.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={status} onValueChange={(v) => onFilterChange(() => setStatus(v))}>
-            <SelectTrigger className="h-10"><SelectValue placeholder="Status" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
           {isAdmin && (
             <Select value={agent} onValueChange={(v) => onFilterChange(() => setAgent(v))}>
-              <SelectTrigger className="h-10 lg:col-span-2"><SelectValue placeholder="Agent" /></SelectTrigger>
+              <SelectTrigger className="h-10 w-[180px]"><SelectValue placeholder="Agent" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All agents</SelectItem>
-                {(agentOpts ?? []).map((a: any) => (
+                {filteredAgentOpts.map((a: any) => (
                   <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
+          <Select value={status} onValueChange={(v) => onFilterChange(() => setStatus(v))}>
+            <SelectTrigger className="h-10 w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Popover open={dateOpen} onOpenChange={setDateOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" disabled={searching} className={cn("h-10 justify-start font-normal min-w-[200px]", !range?.from && "text-muted-foreground")}>
+                <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                <span className="truncate">{searching ? "Searching all orders" : dateLabel}</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0 pointer-events-auto" align="start">
+              <div className="flex flex-wrap gap-1 p-2 border-b">
+                <Button size="sm" variant="ghost" onClick={() => setQuick("today")}>Today</Button>
+                <Button size="sm" variant="ghost" onClick={() => setQuick("7d")}>Last 7 days</Button>
+                <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
+                <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
+              </div>
+              <Calendar mode="range" selected={range} onSelect={(r) => { setRange(r); setPage(0); }} numberOfMonths={1} defaultMonth={range?.from} className="pointer-events-auto [--cell-size:2.25rem]" />
+            </PopoverContent>
+          </Popover>
+          <Button variant="outline" size="sm" onClick={exportXlsx} className="h-10 ml-auto"><Download className="h-4 w-4 mr-2" />Export</Button>
         </CardContent>
       </Card>
 
       {/* Minimal grouped summary */}
       <Card>
         <CardContent className="p-3 sm:p-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryBlock label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10">
               <SummaryLine label="Sales" value={fmtSAR(summary.cashSales)} muted />
               <SummaryLine label="Completed" value={fmtSAR(summary.cashCompletedSales)} accent />
@@ -265,6 +279,14 @@ function OrdersList() {
               <SummaryLine label="Completed" value={fmtSAR(summary.totalCompletedSales)} accent />
               <SummaryFoot value={`${summary.completedCount} / ${summary.totalCount} completed`} />
             </SummaryBlock>
+            <SummaryBlock label="Completed orders" tone="from-emerald-50 to-transparent dark:from-emerald-500/10">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-xs text-muted-foreground">Count</span>
+                <span className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">{summary.completedCount}</span>
+              </div>
+              <SummaryLine label="Total orders" value={String(summary.totalCount)} muted />
+              <SummaryFoot value={summary.totalCount > 0 ? `${((summary.completedCount / summary.totalCount) * 100).toFixed(1)}% completion rate` : "—"} />
+            </SummaryBlock>
           </div>
         </CardContent>
       </Card>
@@ -274,34 +296,34 @@ function OrdersList() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">CC ✓</TableHead>
-                  <TableHead>Order #</TableHead>
-                  <TableHead className="hidden sm:table-cell">Date</TableHead>
-                  <TableHead className="hidden lg:table-cell">Team</TableHead>
-                  <TableHead className="hidden md:table-cell">Agent</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead className="hidden md:table-cell">Phone</TableHead>
-                  <TableHead className="hidden lg:table-cell">Type</TableHead>
-                  <TableHead className="hidden md:table-cell">Branch</TableHead>
-                  <TableHead className="hidden xl:table-cell">City</TableHead>
-                  <TableHead>Invoice #</TableHead>
-                  <TableHead className="text-right">Value</TableHead>
-                  <TableHead>Status</TableHead>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-12 text-center">CC ✓</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Order #</TableHead>
+                  <TableHead className="hidden sm:table-cell text-xs uppercase tracking-wider font-semibold">Date</TableHead>
+                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold">Team</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold">Agent</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Customer</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold">Phone</TableHead>
+                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold">Type</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold">Branch</TableHead>
+                  <TableHead className="hidden xl:table-cell text-xs uppercase tracking-wider font-semibold">City</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Invoice #</TableHead>
+                  <TableHead className="text-right text-xs uppercase tracking-wider font-semibold">Value</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Status</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading && <TableRow><TableCell colSpan={14} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
                 {!isLoading && pageRows.length === 0 && <TableRow><TableCell colSpan={14} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
-                {pageRows.map((o: any) => {
+                {pageRows.map((o: any, idx: number) => {
                   const owned = user?.id === o.agent_id;
                   const editable = owned || isAdmin;
                   const verified = !!o.call_center_verified;
                   return (
-                    <TableRow key={o.id} className={cn(verified && "bg-green-50/60 dark:bg-green-500/5")}>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1">
+                    <TableRow key={o.id} className={cn("transition-colors", idx % 2 === 1 && "bg-muted/20", verified && "bg-green-50/60 dark:bg-green-500/5", "hover:bg-accent/40")}>
+                      <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
                           <Checkbox checked={verified} disabled={!editable} onCheckedChange={(v) => toggleVerified(o.id, !!v)} aria-label="Call Center invoice verified" />
                           {verified && <CheckCircle2 className="h-4 w-4 text-green-600" />}
                         </div>
@@ -372,7 +394,7 @@ function TeamBadge({ team }: { team: string }) {
 }
 
 function StatusBadge({ s }: { s: string }) {
-  return <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[s] ?? "bg-muted"}`}>{s}</span>;
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[s] ?? "bg-muted"}`}>{s}</span>;
 }
 
 function SummaryBlock({ label, tone, highlight, children }: { label: string; tone: string; highlight?: boolean; children: React.ReactNode }) {
