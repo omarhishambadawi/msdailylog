@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Search, ShieldAlert, Pencil } from "lucide-react";
+import { Plus, Search, ShieldAlert, Pencil, Download } from "lucide-react";
 import { COMPLAINT_STATUSES, STATUS_STYLES } from "@/lib/branches";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { hasPerm } from "@/lib/permissions";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export const Route = createFileRoute("/_app/complaints/")({
   head: () => ({ meta: [{ title: "Complaints" }] }),
