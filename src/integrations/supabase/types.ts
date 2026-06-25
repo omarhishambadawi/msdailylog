@@ -121,8 +121,8 @@ export type Database = {
           branch_no: string | null
           call_center_verified: boolean
           created_at: string
-          customer_name: string
-          customer_phone: string
+          customer_name: string | null
+          customer_phone: string | null
           delivery_type: string | null
           display_no: string
           id: string
@@ -140,8 +140,8 @@ export type Database = {
           branch_no?: string | null
           call_center_verified?: boolean
           created_at?: string
-          customer_name?: string
-          customer_phone?: string
+          customer_name?: string | null
+          customer_phone?: string | null
           delivery_type?: string | null
           display_no?: string
           id?: string
@@ -159,8 +159,8 @@ export type Database = {
           branch_no?: string | null
           call_center_verified?: boolean
           created_at?: string
-          customer_name?: string
-          customer_phone?: string
+          customer_name?: string | null
+          customer_phone?: string | null
           delivery_type?: string | null
           display_no?: string
           id?: string

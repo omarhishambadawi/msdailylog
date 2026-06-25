@@ -12,8 +12,9 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGri
 import { fmtSAR } from "@/lib/branches";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
+import * as XLSX from "xlsx";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — MilaServ Daily Log" }] }),
@@ -57,11 +58,21 @@ function Dashboard() {
   const { data: agents } = useQuery({
     queryKey: ["dashboard-agents"],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("id,full_name,agent_code").order("full_name");
-      return data ?? [];
+      const [{ data: profiles }, { data: roles }] = await Promise.all([
+        supabase.from("profiles").select("id,full_name,agent_code").order("full_name"),
+        supabase.from("user_roles").select("user_id,role"),
+      ]);
+      const rm = new Map((roles ?? []).map((r: any) => [r.user_id, r.role]));
+      return (profiles ?? []).map((p: any) => ({ ...p, role: rm.get(p.id) ?? null }));
     },
     enabled: isAdmin,
   });
+
+  const filteredAgents = useMemo(() => {
+    if (!agents) return [];
+    if (teamFilter === "all") return agents;
+    return agents.filter((a: any) => a.role === teamFilter || a.role === "admin");
+  }, [agents, teamFilter]);
 
   const { data } = useQuery({
     queryKey: ["dashboard", from, to, effectiveAgent, effectiveTeam, isAdmin, user?.id],
@@ -273,7 +284,7 @@ function Dashboard() {
           </Popover>
           {isAdmin ? (
             <>
-              <Select value={teamFilter} onValueChange={setTeamFilter}>
+              <Select value={teamFilter} onValueChange={(v) => { setTeamFilter(v); setAgentFilter("all"); }}>
                 <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="All teams" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All teams</SelectItem>
@@ -285,7 +296,7 @@ function Dashboard() {
                 <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All agents</SelectItem>
-                  {(agents ?? []).map((a: any) => (
+                  {filteredAgents.map((a: any) => (
                     <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
                   ))}
                 </SelectContent>
@@ -296,30 +307,49 @@ function Dashboard() {
               {mineOnly ? "My data" : "All data"}
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={() => exportDashboard(data, { from, to, agentLabel: selectedAgentLabel, teamLabel: teamFilter })} disabled={!data}>
+            <Download className="h-4 w-4 mr-2" />Export
+          </Button>
         </div>
       </div>
 
       <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Performance for selected period</div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-          <Stat label="Total orders" value={data?.monthTotalCount ?? "—"} />
-          <Stat label="Completed orders" value={data?.monthCompletedCount ?? "—"} accent="text-green-600 dark:text-green-400" sub={`of ${data?.monthTotalCount ?? 0}`} />
-          <Stat label="Cash sales" value={data ? fmtSAR(data.monthCashSales) : "—"} />
-          <Stat label="Wasfaty sales" value={data ? fmtSAR(data.monthWasSales) : "—"} />
-          <Stat label="Total sales" value={data ? fmtSAR(data.monthAll) : "—"} />
-          <Stat label="Completed sales" value={data ? fmtSAR(data.monthCompleted) : "—"} accent="text-green-600 dark:text-green-400" />
+        <SectionTitle title="Performance for selected period" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiBlock label="Total orders" tone="from-slate-50 to-transparent dark:from-slate-500/10">
+            <KpiBig value={data?.monthTotalCount ?? 0} />
+            <KpiLine label="Pending" value={String(data?.pending ?? 0)} accent="text-amber-600 dark:text-amber-400" />
+            <KpiLine label="Cancelled" value={String(data?.cancelled ?? 0)} accent="text-red-600 dark:text-red-400" />
+            <KpiFoot value={`Avg ${data && data.monthTotalCount > 0 ? fmtSAR(data.monthAll / data.monthTotalCount) : "—"}`} />
+          </KpiBlock>
+          <KpiBlock label="Completed" tone="from-emerald-50 to-transparent dark:from-emerald-500/10" highlight>
+            <KpiBig value={data?.monthCompletedCount ?? 0} accent="text-green-600 dark:text-green-400" />
+            <KpiLine label="Completion rate" value={data ? `${data.completionRate.toFixed(1)}%` : "—"} />
+            <KpiLine label="Completed sales" value={data ? fmtSAR(data.monthCompleted) : "—"} accent="text-green-600 dark:text-green-400" />
+            <KpiFoot value={`of ${data?.monthTotalCount ?? 0} orders`} />
+          </KpiBlock>
+          <KpiBlock label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10">
+            <KpiBig value={data ? fmtSAR(data.monthCashSales) : "—"} />
+            <KpiLine label="Sales" value={data ? fmtSAR(data.monthCashSales) : "—"} muted />
+            <KpiFoot value="Cash orders" />
+          </KpiBlock>
+          <KpiBlock label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10">
+            <KpiBig value={data ? fmtSAR(data.monthWasSales) : "—"} />
+            <KpiLine label="Sales" value={data ? fmtSAR(data.monthWasSales) : "—"} muted />
+            <KpiFoot value="Wasfaty orders" />
+          </KpiBlock>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3">
-          <Stat label="Pending" value={data?.pending ?? 0} accent="text-yellow-600 dark:text-yellow-400" />
-          <Stat label="Cancelled" value={data?.cancelled ?? 0} accent="text-red-600 dark:text-red-400" />
-          <Stat label="Completion rate" value={data ? `${data.completionRate.toFixed(1)}%` : "—"} />
-          <Stat label="Avg order value" value={data && data.monthTotalCount > 0 ? fmtSAR(data.monthAll / data.monthTotalCount) : "—"} />
+          <Stat label="Total sales" value={data ? fmtSAR(data.monthAll) : "—"} />
+          <Stat label="Verified invoices" value={data?.totalVerified ?? 0} accent="text-green-600 dark:text-green-400" />
+          <Stat label="Verification rate" value={data ? `${data.verifRate.toFixed(1)}%` : "—"} />
+          <Stat label="Verified value" value={data ? fmtSAR(data.totalVerifiedValue) : "—"} />
         </div>
       </div>
 
       {/* Call Center Invoice Verification */}
       <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Call Center Invoice verification</div>
+        <SectionTitle title="Call Center Invoice verification" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           <Stat label="Verified invoices" value={data?.totalVerified ?? 0} accent="text-green-600 dark:text-green-400" />
           <Stat label="Non-verified" value={data?.totalNonVerified ?? 0} accent="text-yellow-600 dark:text-yellow-400" />
@@ -456,7 +486,7 @@ function Dashboard() {
 
       {/* Delivery method analysis */}
       <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Delivery methods</div>
+        <SectionTitle title="Delivery methods" />
         <Card>
           <CardHeader><CardTitle className="text-base">Delivery method performance</CardTitle></CardHeader>
           <CardContent className="p-0 overflow-x-auto">
@@ -492,7 +522,7 @@ function Dashboard() {
 
       {/* Complaints analytics */}
       <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Complaints</div>
+        <SectionTitle title="Complaints" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           <Stat label="Total complaints" value={data?.cmpTotal ?? 0} />
           <Stat label="In progress" value={data?.cmpInProg ?? 0} accent="text-amber-600 dark:text-amber-400" />
@@ -587,4 +617,91 @@ function DeliveryMatrix({ title, matrix, methods }: { title: string; matrix: Rec
       </CardContent>
     </Card>
   );
+}
+
+function SectionTitle({ title }: { title: string }) {
+  return (
+    <div className="mb-3 mt-2 flex items-end gap-3">
+      <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-foreground">{title}</h2>
+      <div className="flex-1 h-px bg-border" />
+    </div>
+  );
+}
+
+function KpiBlock({ label, tone, highlight, children }: { label: string; tone: string; highlight?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={cn("relative rounded-lg border bg-gradient-to-br p-4", tone, highlight && "border-primary/40 shadow-sm")}>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
+      <div className="mt-2 space-y-1.5">{children}</div>
+    </div>
+  );
+}
+function KpiBig({ value, accent }: { value: string | number; accent?: string }) {
+  return <div className={cn("text-2xl sm:text-3xl font-bold tabular-nums leading-tight", accent)}>{value}</div>;
+}
+function KpiLine({ label, value, accent, muted }: { label: string; value: string; accent?: string; muted?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={cn("text-sm font-semibold tabular-nums truncate", accent, muted && !accent && "text-foreground")}>{value}</span>
+    </div>
+  );
+}
+function KpiFoot({ value }: { value: string }) {
+  return <div className="text-[11px] text-muted-foreground mt-1 pt-1.5 border-t border-border/60">{value}</div>;
+}
+
+function exportDashboard(
+  data: any,
+  ctx: { from: string; to: string; agentLabel: string | null; teamLabel: string },
+) {
+  if (!data) return;
+  const wb = XLSX.utils.book_new();
+  const teamLbl = ctx.teamLabel === "customer_care" ? "Customer Care" : ctx.teamLabel === "telesales" ? "Telesales" : "All Teams";
+  const summary = [
+    ["MilaServ Daily Log — Dashboard Export"],
+    ["Period", `${ctx.from} to ${ctx.to}`],
+    ["Team", teamLbl],
+    ["Agent", ctx.agentLabel ?? "All agents"],
+    [],
+    ["KPI", "Value"],
+    ["Total orders", data.monthTotalCount],
+    ["Completed orders", data.monthCompletedCount],
+    ["Pending", data.pending],
+    ["Cancelled", data.cancelled],
+    ["Completion rate (%)", Number(data.completionRate.toFixed(2))],
+    ["Total sales", data.monthAll],
+    ["Completed sales", data.monthCompleted],
+    ["Cash sales", data.monthCashSales],
+    ["Wasfaty sales", data.monthWasSales],
+    ["Avg order value", data.monthTotalCount > 0 ? data.monthAll / data.monthTotalCount : 0],
+    ["Verified invoices", data.totalVerified],
+    ["Non-verified", data.totalNonVerified],
+    ["Verification rate (%)", Number(data.verifRate.toFixed(2))],
+    ["Verified value", data.totalVerifiedValue],
+    [],
+    ["Complaints", ""],
+    ["Total complaints", data.cmpTotal],
+    ["In progress", data.cmpInProg],
+    ["Resolved", data.cmpResolved],
+    ["Resolution rate (%)", Number(data.cmpResolutionRate.toFixed(2))],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "Summary");
+
+  const sheet = (name: string, rows: any[]) => {
+    if (!rows || rows.length === 0) return;
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name.slice(0, 31));
+  };
+  sheet("Daily Sales", (data.byDay ?? []).map((d: any) => ({ Date: d.date, "All Sales": d.total, "Completed Sales": d.completed })));
+  sheet("By Status", (data.byStatus ?? []).map((s: any) => ({ Status: s.name, Count: s.value })));
+  sheet("By Team", (data.byTeam ?? []).map((t: any) => ({ Team: t.name, Orders: t.count, "Completed Sales": t.sales, "Completion Rate %": Number(t.rate.toFixed(1)) })));
+  sheet("By Agent", (data.byAgent ?? []).map((a: any) => ({ Agent: a.name, Orders: a.count, "Completed Sales": a.sales, "Completion Rate %": Number(a.rate.toFixed(1)) })));
+  sheet("By Branch", (data.byBranch ?? []).map((b: any) => ({ Branch: b.name, Orders: b.count, "Completed Sales": b.sales, "Completion Rate %": Number(b.rate.toFixed(1)) })));
+  sheet("By City", (data.byCity ?? []).map((c: any) => ({ City: c.name, Orders: c.count, "Completed Sales": c.sales, "Completion Rate %": Number(c.rate.toFixed(1)) })));
+  sheet("Delivery Methods", (data.byDelivery ?? []).map((d: any) => ({ Method: d.name, Orders: d.count, "Completed Sales": d.sales, "Completion Rate %": Number(d.rate.toFixed(1)) })));
+  sheet("CC Verification by Agent", (data.verifAgentRows ?? []).map((r: any) => ({ Agent: r.name, "Total Orders": r.total, Verified: r.verified, "Non-verified": r.nonVerified, "Rate %": Number(r.rate.toFixed(1)), "Verified Value": r.verifiedValue })));
+  sheet("Complaints by Branch", (data.cmpBranchRows ?? []).map((r: any) => ({ Branch: r.name, Total: r.total, Resolved: r.resolved, Open: r.open, "Resolution Rate %": Number(r.rate.toFixed(1)) })));
+  sheet("Complaints by City", (data.cmpCityRows ?? []).map((r: any) => ({ City: r.name, Total: r.total, "Resolution Rate %": Number(r.rate.toFixed(1)) })));
+
+  XLSX.writeFile(wb, `dashboard_${ctx.from}_${ctx.to}.xlsx`);
 }

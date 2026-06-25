@@ -47,10 +47,10 @@ function AuthPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-accent to-background px-4">
       <Card className="w-full max-w-md shadow-xl border-border/60">
-        <CardHeader className="text-center space-y-3">
-          <img src={logo.url} alt="MilaServ" className="mx-auto h-20 w-20 object-contain" />
-          <CardTitle className="text-2xl">MilaServ Daily Log</CardTitle>
-          <CardDescription>Sign in to log and manage your daily orders</CardDescription>
+        <CardHeader className="text-center space-y-1 pb-4">
+          <img src={logo.url} alt="MilaServ" className="mx-auto h-16 w-16 object-contain -mb-1" />
+          <CardTitle className="text-2xl leading-tight">MilaServ Daily Log</CardTitle>
+          <CardDescription className="pt-1">Sign in to log and manage your daily orders</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
