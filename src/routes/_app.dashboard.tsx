@@ -279,7 +279,7 @@ function Dashboard() {
                 <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
                 <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
               </div>
-              <Calendar mode="range" selected={range} onSelect={setRange} numberOfMonths={1} defaultMonth={range?.from} className="pointer-events-auto" />
+              <Calendar mode="range" selected={range} onSelect={setRange} numberOfMonths={1} defaultMonth={range?.from} className="pointer-events-auto [--cell-size:2.25rem]" />
             </PopoverContent>
           </Popover>
           {isAdmin ? (
