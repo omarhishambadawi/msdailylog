@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ShieldAlert, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
-import { ALL_PERMISSIONS, defaultPermsForRole } from "@/lib/permissions";
+import { ALL_PERMISSIONS, defaultPermsForRole, PERMISSION_GROUPS } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app/admin/users")({
   head: () => ({ meta: [{ title: "Users — Admin" }] }),
