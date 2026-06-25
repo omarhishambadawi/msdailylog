@@ -153,3 +153,21 @@ function ComplaintsList() {
     </div>
   );
 }
+
+function exportComplaints(rows: any[]) {
+  const xrows = rows.map((c) => ({
+    "#": c.display_no,
+    Date: c.complaint_date,
+    "Customer Name": c.customer_name ?? "",
+    "Customer Phone": c.customer_phone ?? "",
+    "Branch No.": c.branch_no ?? "",
+    City: c.city ?? "",
+    Agent: c.agent_name ?? "",
+    Notes: c.description ?? "",
+    Status: c.status,
+  }));
+  const ws = XLSX.utils.json_to_sheet(xrows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Complaints");
+  XLSX.writeFile(wb, `complaints_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
