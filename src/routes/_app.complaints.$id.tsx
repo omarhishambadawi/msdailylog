@@ -57,7 +57,9 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
   });
 
   const isOwner = existing && user && existing.agent_id === user.id;
+  const isAuditor = role === "auditor";
   const canEditThis = mode === "create" ? canCreate : (canEditPerm && (role === "admin" || isOwner));
+  const readOnly = mode === "edit" && !canEditThis;
 
   const [form, setForm] = useState({
     complaint_date: new Date().toISOString().slice(0, 10),
@@ -86,8 +88,9 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
 
   const cityFor = useMemo(() => (b: string | null) => branches?.find((x) => x.branch_no === b)?.city ?? "", [branches]);
 
-  if (mode === "edit" && existing && !canEditThis) {
-    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You can only edit your own complaints.</p></div>;
+  if (mode === "edit" && existing && !canEditThis && !isAuditor && role !== "admin") {
+    // Only block for users who are neither owner, admin, nor auditor
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access.</p></div>;
   }
   if (mode === "create" && !canCreate) {
     return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have permission.</p></div>;
