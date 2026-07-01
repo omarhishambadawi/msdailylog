@@ -53,10 +53,13 @@ async function getAccessToken(): Promise<string> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username: env.id, password: env.secret }),
   });
-  if (!res.ok) throw new Error(`Yeastar auth ${res.status}`);
+  if (!res.ok) throw new Error(`Yeastar auth HTTP ${res.status}`);
   const json: any = await res.json();
   if (json.errcode !== 0 || !json.access_token) {
-    throw new Error(`Yeastar auth error: ${json.errmsg ?? "unknown"}`);
+    if (json.errcode === 70087) {
+      throw new Error("IP_FORBIDDEN: PBX rejected the server IP. Allowlist the Lovable server IP in Yeastar → Settings → PBX → General → API, or set the allowlist to any.");
+    }
+    throw new Error(`Yeastar auth error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
   }
   const ttlSec = Number(json.expire_time ?? 1800);
   cachedToken = { token: json.access_token, expiresAt: now + ttlSec * 1000 };
