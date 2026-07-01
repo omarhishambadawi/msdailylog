@@ -67,11 +67,12 @@ function OrdersList() {
     enabled: isAdmin,
   });
 
-  // Filter agent list according to selected team (Customer Care vs Telesales)
+  // Filter agent list: only operational agents (exclude admin/auditor), further narrow by selected team
   const filteredAgentOpts = useMemo(() => {
     if (!agentOpts) return [];
-    if (team === "all") return agentOpts;
-    return agentOpts.filter((a: any) => a.role === team || a.role === "admin");
+    const base = agentOpts.filter((a: any) => a.role === "customer_care" || a.role === "telesales");
+    if (team === "all") return base;
+    return base.filter((a: any) => a.role === team);
   }, [agentOpts, team]);
 
 
