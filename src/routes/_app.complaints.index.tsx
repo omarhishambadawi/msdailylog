@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Search, ShieldAlert, Pencil, Download } from "lucide-react";
+import { Plus, Search, ShieldAlert, Pencil, Eye, Download } from "lucide-react";
 import { COMPLAINT_STATUSES, STATUS_STYLES } from "@/lib/branches";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { hasPerm } from "@/lib/permissions";
@@ -136,9 +136,13 @@ function ComplaintsList() {
                         <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[c.status] ?? "bg-muted"}`}>{c.status}</span>
                       </TableCell>
                       <TableCell>
-                        {canEditRow && (
+                        {canEditRow ? (
                           <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/complaints/$id", params: { id: c.id } })} aria-label="Edit">
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/complaints/$id", params: { id: c.id } })} aria-label="View">
+                            <Eye className="h-4 w-4" />
                           </Button>
                         )}
                       </TableCell>

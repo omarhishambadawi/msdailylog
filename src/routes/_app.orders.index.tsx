@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle2, ChevronLeft, ChevronRight, Download, Pencil, Plus, Search } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, Pencil, Plus, Search } from "lucide-react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import * as XLSX from "xlsx";
@@ -313,9 +313,13 @@ function OrdersList() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {editable && (
+                        {editable ? (
                           <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="Edit order">
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="View order">
+                            <Eye className="h-4 w-4" />
                           </Button>
                         )}
                       </TableCell>
