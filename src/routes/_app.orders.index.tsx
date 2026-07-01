@@ -277,8 +277,17 @@ function OrdersList() {
                 {!isLoading && pageRows.length === 0 && <TableRow><TableCell colSpan={14} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
                 {pageRows.map((o: any, idx: number) => {
                   const owned = user?.id === o.agent_id;
-                  const editable = owned || isAdmin;
+                  const editable = canEditAll || (owned && canEditOwn);
+                  const canVerifyRow = canVerifyAll || (owned && canVerifyOwn);
                   const verified = !!o.call_center_verified;
+                  return (
+                    <TableRow key={o.id} className={cn("transition-colors", idx % 2 === 1 && "bg-muted/20", verified && "bg-green-50/60 dark:bg-green-500/5", "hover:bg-accent/40")}>
+                      <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
+                          <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o.id, !!v)} aria-label="Call Center invoice verified" />
+                          {verified && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                        </div>
+                      </TableCell>
                   return (
                     <TableRow key={o.id} className={cn("transition-colors", idx % 2 === 1 && "bg-muted/20", verified && "bg-green-50/60 dark:bg-green-500/5", "hover:bg-accent/40")}>
                       <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
