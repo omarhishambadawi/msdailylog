@@ -328,7 +328,9 @@ export async function fetchCdr(fromDate: string, toDate: string): Promise<Yeasta
       url.searchParams.set("end_time", fmtDateEnd(toDate));
       url.searchParams.set("page", String(currentPage));
       url.searchParams.set("page_size", String(pageSize));
-      const res = await timedFetch(url.toString());
+      const res = await timedFetch(url.toString(), {
+        headers: { "Accept": "application/json", "User-Agent": USER_AGENT },
+      });
       if (!res.ok) throw new Error(`Yeastar CDR HTTP ${res.status}`);
       const json: any = await res.json();
       if (json.errcode !== 0) {
