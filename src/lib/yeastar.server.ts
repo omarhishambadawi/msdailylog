@@ -35,6 +35,10 @@ async function timedFetch(url: string, init?: RequestInit): Promise<Response> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function isRetriable(err: unknown): boolean {
+  const diag = (err as any)?.diagnostic as YeastarDiagnostic | undefined;
+  if (diag) {
+    return ["timeout", "network", "dns", "ip_forbidden", "http_error"].includes(diag.category);
+  }
   const msg = err instanceof Error ? err.message : String(err);
   return (
     /IP_FORBIDDEN/i.test(msg) ||
