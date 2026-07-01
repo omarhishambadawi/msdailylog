@@ -39,18 +39,27 @@ function Stat({ icon: Icon, label, value, tone }: { icon: any; label: string; va
 
 export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
   const fetchStats = useServerFn(getYeastarCallStats);
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["yeastar-stats", from, to, team, agentId ?? "all"],
     queryFn: () => fetchStats({ data: { from, to, team, agentId } }),
-    staleTime: 60_000, // cache 1 min
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
+    retry: 1,
   });
 
   if (isLoading) {
     return <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading call center analytics…</CardContent></Card>;
   }
   if (isError || !data) {
-    return <Card><CardContent className="p-6 text-sm text-muted-foreground">Unable to load call center analytics.</CardContent></Card>;
+    return (
+      <Card>
+        <CardHeader><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
+        <CardContent className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
+          <span>Unable to load call center analytics.</span>
+          <button onClick={() => refetch()} className="text-xs font-medium text-primary hover:underline">Retry</button>
+        </CardContent>
+      </Card>
+    );
   }
 
   if (!("configured" in data) || !data.configured) {
@@ -58,7 +67,7 @@ export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
       <Card>
         <CardHeader><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          Yeastar PBX is not connected yet. Ask an administrator to set the <code className="px-1 py-0.5 rounded bg-muted">YEASTAR_BASE_URL</code> secret pointing to your PBX (e.g. <code className="px-1 py-0.5 rounded bg-muted">https://your-pbx.example.com</code>) to enable call analytics.
+          Yeastar PBX is not connected yet. Ask an administrator to set the <code className="px-1 py-0.5 rounded bg-muted">YEASTAR_BASE_URL</code> secret to enable call analytics.
         </CardContent>
       </Card>
     );
@@ -67,8 +76,16 @@ export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
   if ("error" in data && data.error) {
     return (
       <Card>
-        <CardHeader><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
-        <CardContent className="text-sm text-muted-foreground">{String(data.error)}</CardContent>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+            <PhoneOff className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+            <div className="flex-1 text-foreground/80">{String(data.error)}</div>
+            <button onClick={() => refetch()} disabled={isFetching} className="text-xs font-medium text-primary hover:underline disabled:opacity-50">
+              {isFetching ? "Retrying…" : "Retry"}
+            </button>
+          </div>
+        </CardContent>
       </Card>
     );
   }
