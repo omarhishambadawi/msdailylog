@@ -118,6 +118,7 @@ function AdminUsers() {
                     <SelectContent>
                       <SelectItem value="customer_care">Customer Care</SelectItem>
                       <SelectItem value="telesales">Telesales</SelectItem>
+                      <SelectItem value="auditor">Auditor (read-only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>

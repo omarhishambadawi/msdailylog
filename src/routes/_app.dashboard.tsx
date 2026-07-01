@@ -577,6 +577,54 @@ function SectionTitle({ title }: { title: string }) {
   );
 }
 
+function DashKpiCard({ label, tone, highlight, data, sales, filter }: {
+  label: string; tone: string; highlight?: boolean;
+  data: any; sales: number; filter: (r: any) => boolean;
+}) {
+  // We compute counts from summary data available in scope
+  const total = data?._raw ? data._raw.filter(filter).length : (label === "Total" ? (data?.monthTotalCount ?? 0) : 0);
+  const completed = label === "Total" ? (data?.monthCompletedCount ?? 0) : 0;
+  const pending = label === "Total" ? (data?.pending ?? 0) : 0;
+  const cancelled = label === "Total" ? (data?.cancelled ?? 0) : 0;
+  const completionRate = total > 0 ? (completed / total) * 100 : 0;
+  return (
+    <div className={cn("relative rounded-xl border bg-gradient-to-br p-4 shadow-sm", tone, highlight && "border-primary/40 shadow-md")}>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
+      <div className="mt-3 space-y-1.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-muted-foreground">Total sales</span>
+          <span className="text-base font-semibold tabular-nums truncate">{fmtSAR(sales)}</span>
+        </div>
+        {label === "Total" && (
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs text-muted-foreground">Completed sales</span>
+            <span className="text-base font-semibold tabular-nums truncate text-green-600 dark:text-green-400">{fmtSAR(data?.monthCompleted ?? 0)}</span>
+          </div>
+        )}
+      </div>
+      {label === "Total" && (
+        <>
+          <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-2">
+            <div className="text-left">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total orders</div>
+              <div className="text-2xl font-bold tabular-nums leading-tight">{total}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Completed</div>
+              <div className="text-2xl font-bold tabular-nums leading-tight text-green-600 dark:text-green-400">{completed}</div>
+            </div>
+          </div>
+          <div className="mt-2 pt-2 border-t border-border/40 grid grid-cols-3 gap-1 text-[11px]">
+            <div><span className="text-muted-foreground">Rate </span><span className="font-semibold">{completionRate.toFixed(1)}%</span></div>
+            <div><span className="text-muted-foreground">Pending </span><span className="font-semibold text-amber-600 dark:text-amber-400">{pending}</span></div>
+            <div><span className="text-muted-foreground">Cancelled </span><span className="font-semibold text-red-600 dark:text-red-400">{cancelled}</span></div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function KpiBlock({ label, tone, highlight, children }: { label: string; tone: string; highlight?: boolean; children: React.ReactNode }) {
   return (
     <div className={cn("relative rounded-lg border bg-gradient-to-br p-4", tone, highlight && "border-primary/40 shadow-sm")}>
