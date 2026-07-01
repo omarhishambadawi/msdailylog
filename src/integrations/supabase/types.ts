@@ -80,6 +80,45 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          entity_id: string | null
+          entity_type: string | null
+          id: string
+          kind: string
+          link: string | null
+          read_at: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          kind: string
+          link?: string | null
+          read_at?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          kind?: string
+          link?: string | null
+          read_at?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       order_activity: {
         Row: {
           action: string
@@ -244,9 +283,21 @@ export type Database = {
         Returns: boolean
       }
       is_active: { Args: { _user_id: string }; Returns: boolean }
+      notify_users: {
+        Args: {
+          _body: string
+          _entity_id: string
+          _entity_type: string
+          _kind: string
+          _link: string
+          _title: string
+          _user_ids: string[]
+        }
+        Returns: undefined
+      }
     }
     Enums: {
-      app_role: "admin" | "customer_care" | "telesales"
+      app_role: "admin" | "customer_care" | "telesales" | "auditor"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -374,7 +425,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "customer_care", "telesales"],
+      app_role: ["admin", "customer_care", "telesales", "auditor"],
     },
   },
 } as const
