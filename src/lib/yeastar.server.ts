@@ -19,6 +19,8 @@ interface TokenState {
 let cachedToken: TokenState | null = null;
 
 const FETCH_TIMEOUT_MS = 12_000;
+const MAX_RETRIES = 3;
+const BASE_BACKOFF_MS = 500;
 
 async function timedFetch(url: string, init?: RequestInit): Promise<Response> {
   const ctl = new AbortController();
@@ -28,6 +30,37 @@ async function timedFetch(url: string, init?: RequestInit): Promise<Response> {
   } finally {
     clearTimeout(t);
   }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function isRetriable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    /IP_FORBIDDEN/i.test(msg) ||
+    /abort/i.test(msg) ||
+    /timeout/i.test(msg) ||
+    /network/i.test(msg) ||
+    /fetch failed/i.test(msg) ||
+    /HTTP 5\d\d/.test(msg) ||
+    /HTTP 429/.test(msg)
+  );
+}
+
+async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt === MAX_RETRIES - 1 || !isRetriable(err)) break;
+      const delay = BASE_BACKOFF_MS * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
+      console.warn(`[yeastar] ${label} attempt ${attempt + 1} failed, retrying in ${delay}ms:`, err instanceof Error ? err.message : err);
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
 }
 
 function requireEnv() {
