@@ -81,22 +81,25 @@ async function getAccessToken(): Promise<string> {
   const now = Date.now();
   if (cachedToken && cachedToken.expiresAt - 30_000 > now) return cachedToken.token;
 
-  const res = await timedFetch(`${env.base}/openapi/v1.0/get_token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: env.id, password: env.secret }),
-  });
-  if (!res.ok) throw new Error(`Yeastar auth HTTP ${res.status}`);
-  const json: any = await res.json();
-  if (json.errcode !== 0 || !json.access_token) {
-    if (json.errcode === 70087) {
-      throw new Error("IP_FORBIDDEN: PBX rejected the server IP. Allowlist the Lovable server IP in Yeastar → Settings → PBX → General → API, or set the allowlist to any.");
+  const token = await withRetry("auth", async () => {
+    const res = await timedFetch(`${env.base}/openapi/v1.0/get_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: env.id, password: env.secret }),
+    });
+    if (!res.ok) throw new Error(`Yeastar auth HTTP ${res.status}`);
+    const json: any = await res.json();
+    if (json.errcode !== 0 || !json.access_token) {
+      if (json.errcode === 70087) {
+        throw new Error("IP_FORBIDDEN: PBX rejected the server IP. Allowlist the Lovable server IP in Yeastar → Settings → PBX → General → API, or set the allowlist to any.");
+      }
+      throw new Error(`Yeastar auth error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
     }
-    throw new Error(`Yeastar auth error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
-  }
-  const ttlSec = Number(json.expire_time ?? 1800);
-  cachedToken = { token: json.access_token, expiresAt: now + ttlSec * 1000 };
-  return cachedToken.token;
+    const ttlSec = Number(json.expire_time ?? 1800);
+    cachedToken = { token: json.access_token, expiresAt: now + ttlSec * 1000 };
+    return json.access_token as string;
+  });
+  return token;
 }
 
 export interface YeastarCdrRecord {
