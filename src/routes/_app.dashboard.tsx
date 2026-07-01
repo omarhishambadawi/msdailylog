@@ -454,7 +454,7 @@ function Dashboard() {
       <div>
         <SectionTitle title="Geographic distribution" />
         <div className="mt-3">
-          <SaudiSalesMap cities={(data?.byCity ?? []).map((c) => ({ name: c.name, sales: c.sales, count: c.count }))} />
+          <SaudiSalesMap cities={(data?.byCity ?? []).map((c: any) => ({ name: c.name, sales: c.sales, count: c.count, total: c.total ?? c.sales, completed: c.completed ?? 0 }))} />
         </div>
       </div>
 
