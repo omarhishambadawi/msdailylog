@@ -288,14 +288,6 @@ function OrdersList() {
                           {verified && <CheckCircle2 className="h-4 w-4 text-green-600" />}
                         </div>
                       </TableCell>
-                  return (
-                    <TableRow key={o.id} className={cn("transition-colors", idx % 2 === 1 && "bg-muted/20", verified && "bg-green-50/60 dark:bg-green-500/5", "hover:bg-accent/40")}>
-                      <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <Checkbox checked={verified} disabled={!editable} onCheckedChange={(v) => toggleVerified(o.id, !!v)} aria-label="Call Center invoice verified" />
-                          {verified && <CheckCircle2 className="h-4 w-4 text-green-600" />}
-                        </div>
-                      </TableCell>
                       <TableCell className="font-mono font-semibold whitespace-nowrap">{formatOrderNo(o.team, o.display_no)}</TableCell>
                       <TableCell className="hidden sm:table-cell whitespace-nowrap">{o.order_date}</TableCell>
                       <TableCell className="hidden lg:table-cell"><TeamBadge team={o.team} /></TableCell>
@@ -365,22 +357,33 @@ function StatusBadge({ s }: { s: string }) {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[s] ?? "bg-muted"}`}>{s}</span>;
 }
 
-function SummaryBlock({ label, tone, highlight, children }: { label: string; tone: string; highlight?: boolean; children: React.ReactNode }) {
+function KpiCard({ label, tone, highlight, totalSales, completedSales, totalOrders, completedOrders }: {
+  label: string; tone: string; highlight?: boolean;
+  totalSales: number; completedSales: number; totalOrders: number; completedOrders: number;
+}) {
   return (
-    <div className={cn("relative rounded-lg border bg-gradient-to-br p-3", tone, highlight && "border-primary/30")}>
+    <div className={cn("relative rounded-xl border bg-gradient-to-br p-4 shadow-sm", tone, highlight && "border-primary/40 shadow-md")}>
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
-      <div className="mt-2 space-y-1.5">{children}</div>
+      <div className="mt-3 space-y-1.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-muted-foreground">Total sales</span>
+          <span className="text-base font-semibold tabular-nums truncate">{fmtSAR(totalSales)}</span>
+        </div>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-muted-foreground">Completed sales</span>
+          <span className="text-base font-semibold tabular-nums truncate text-green-600 dark:text-green-400">{fmtSAR(completedSales)}</span>
+        </div>
+      </div>
+      <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-2">
+        <div className="text-left">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total orders</div>
+          <div className="text-2xl font-bold tabular-nums leading-tight">{totalOrders}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Completed</div>
+          <div className="text-2xl font-bold tabular-nums leading-tight text-green-600 dark:text-green-400">{completedOrders}</div>
+        </div>
+      </div>
     </div>
   );
-}
-function SummaryLine({ label, value, accent, muted }: { label: string; value: string; accent?: boolean; muted?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={cn("text-sm sm:text-base font-semibold tabular-nums truncate", accent && "text-green-600 dark:text-green-400", muted && !accent && "text-foreground")}>{value}</span>
-    </div>
-  );
-}
-function SummaryFoot({ value }: { value: string }) {
-  return <div className="text-[11px] text-muted-foreground mt-1 pt-1.5 border-t border-border/60">{value}</div>;
 }
