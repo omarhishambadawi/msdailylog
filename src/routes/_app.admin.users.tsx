@@ -42,7 +42,7 @@ function AdminUsers() {
   });
 
   const [openNew, setOpenNew] = useState(false);
-  const [nf, setNf] = useState({ email: "", password: "", fullName: "", agentCode: "", role: "customer_care" as "admin" | "customer_care" | "telesales" });
+  const [nf, setNf] = useState({ email: "", password: "", fullName: "", agentCode: "", role: "customer_care" as "admin" | "customer_care" | "telesales" | "auditor" });
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
   const [pwUser, setPwUser] = useState<any | null>(null);

@@ -225,7 +225,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
             </div>
             <div className="space-y-2">
               <Label>City (auto)</Label>
-              <Input value={cityFor(form.branch_no) || "—"} readOnly className="h-10 bg-muted/60 text-sm leading-none" placeholder="—" />
+              <Input value={cityFor(form.branch_no) || ""} readOnly className="h-10 bg-muted/60 leading-normal py-2" placeholder="—" />
             </div>
             <div className="space-y-2">
               <Label>Order value ({CURRENCY})</Label>
@@ -302,7 +302,7 @@ function OrderActivityTimeline({ orderId }: { orderId: string }) {
               <div className="min-w-0 flex-1">
                 <div className="font-medium">{describe(e)}</div>
                 <div className="text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">{e.actor_name}</span> · {fmtCairo(e.created_at)} (Cairo)
+                  <span className="font-medium text-foreground">{e.actor_name}</span> · {fmtCairo(e.created_at)}
                 </div>
               </div>
             </li>

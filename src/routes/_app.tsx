@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut,
+  LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut, CalendarDays,
   ShieldAlert, MessageSquareWarning, Menu, X,
 } from "lucide-react";
 import logo from "@/assets/milaserv-logo.png.asset.json";
@@ -48,11 +48,13 @@ function AppLayout() {
   }
 
   const canCreate = hasPerm(role, profile?.permissions as any, "create_orders");
+  const canWorkforce = hasPerm(role, profile?.permissions as any, "view_workforce");
   const nav = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/orders", label: "Orders", icon: ListOrdered },
     ...(canCreate ? [{ to: "/orders/new", label: "New Order", icon: Plus }] : []),
     { to: "/complaints", label: "Complaints", icon: MessageSquareWarning },
+    ...(canWorkforce ? [{ to: "/workforce", label: "Workforce", icon: CalendarDays }] : []),
     ...(role === "admin"
       ? [
           { to: "/admin/users", label: "Users", icon: Users },

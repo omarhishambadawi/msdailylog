@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle2, ChevronLeft, ChevronRight, Download, Pencil, Plus, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Eye, Pencil, Plus, Search } from "lucide-react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import * as XLSX from "xlsx";
@@ -67,11 +67,12 @@ function OrdersList() {
     enabled: isAdmin,
   });
 
-  // Filter agent list according to selected team (Customer Care vs Telesales)
+  // Filter agent list: only operational agents (exclude admin/auditor), further narrow by selected team
   const filteredAgentOpts = useMemo(() => {
     if (!agentOpts) return [];
-    if (team === "all") return agentOpts;
-    return agentOpts.filter((a: any) => a.role === team || a.role === "admin");
+    const base = agentOpts.filter((a: any) => a.role === "customer_care" || a.role === "telesales");
+    if (team === "all") return base;
+    return base.filter((a: any) => a.role === team);
   }, [agentOpts, team]);
 
 
@@ -252,23 +253,23 @@ function OrdersList() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
+          <div className="w-full overflow-x-auto">
+            <Table className="table-fixed w-full">
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="w-12 text-center">CC ✓</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Order #</TableHead>
-                  <TableHead className="hidden sm:table-cell text-xs uppercase tracking-wider font-semibold">Date</TableHead>
-                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold">Team</TableHead>
+                  <TableHead className="w-10 text-center px-1">✓</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Order</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-24">Date</TableHead>
+                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold w-28">Team</TableHead>
                   <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold">Agent</TableHead>
                   <TableHead className="text-xs uppercase tracking-wider font-semibold">Customer</TableHead>
-                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold">Phone</TableHead>
-                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold">Type</TableHead>
-                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold">Branch</TableHead>
+                  <TableHead className="hidden xl:table-cell text-xs uppercase tracking-wider font-semibold">Phone</TableHead>
+                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold w-20">Type</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-24">Branch</TableHead>
                   <TableHead className="hidden xl:table-cell text-xs uppercase tracking-wider font-semibold">City</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Invoice #</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-wider font-semibold">Value</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Status</TableHead>
+                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold">Invoice</TableHead>
+                  <TableHead className="text-right text-xs uppercase tracking-wider font-semibold w-24">Value</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[120px]">Status</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -282,27 +283,36 @@ function OrdersList() {
                   const verified = !!o.call_center_verified;
                   return (
                     <TableRow key={o.id} className={cn("transition-colors", idx % 2 === 1 && "bg-muted/20", verified && "bg-green-50/60 dark:bg-green-500/5", "hover:bg-accent/40")}>
-                      <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o.id, !!v)} aria-label="Call Center invoice verified" />
-                          {verified && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                      <TableCell className="text-center px-1" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o.id, !!v)} aria-label="Call Center invoice verified" />
+                      </TableCell>
+                      <TableCell className="font-mono font-semibold whitespace-nowrap">
+                        <div>{formatOrderNo(o.team, o.display_no)}</div>
+                        {/* Mobile-only secondary info: team + branch + delivery + city */}
+                        <div className="md:hidden mt-1 flex flex-wrap gap-1 text-[10px] font-sans font-normal text-muted-foreground">
+                          <TeamBadge team={o.team} />
+                          <span>{o.order_date}</span>
+                          {o.branch_no && <span>· {o.branch_no}{o.city ? ` — ${o.city}` : ""}</span>}
+                          {o.delivery_type && <span>· {o.delivery_type}</span>}
+                          {o.invoice_no && <span>· Inv {o.invoice_no}</span>}
+                          {o.order_type && <span>· {o.order_type}</span>}
+                          {o.agent_name && <span>· {o.agent_name}</span>}
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono font-semibold whitespace-nowrap">{formatOrderNo(o.team, o.display_no)}</TableCell>
-                      <TableCell className="hidden sm:table-cell whitespace-nowrap">{o.order_date}</TableCell>
+                      <TableCell className="hidden md:table-cell whitespace-nowrap text-xs">{o.order_date}</TableCell>
                       <TableCell className="hidden lg:table-cell"><TeamBadge team={o.team} /></TableCell>
-                      <TableCell className="hidden md:table-cell whitespace-nowrap">{o.agent_name}</TableCell>
-                      <TableCell className="whitespace-nowrap">{o.customer_name || "—"}</TableCell>
-                      <TableCell className="hidden md:table-cell whitespace-nowrap font-mono text-xs">{o.customer_phone || "—"}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{o.order_type}</TableCell>
-                      <TableCell className="hidden md:table-cell">{o.branch_no ?? "—"}</TableCell>
-                      <TableCell className="hidden xl:table-cell">{o.city || "—"}</TableCell>
-                      <TableCell className="font-mono text-xs">{o.invoice_no || "—"}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{fmtSAR(o.invoice_value)}</TableCell>
+                      <TableCell className="hidden md:table-cell whitespace-nowrap truncate max-w-[140px]">{o.agent_name}</TableCell>
+                      <TableCell className="truncate max-w-[160px]">{o.customer_name || "—"}</TableCell>
+                      <TableCell className="hidden xl:table-cell whitespace-nowrap font-mono text-xs">{o.customer_phone || "—"}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs">{o.order_type}</TableCell>
+                      <TableCell className="hidden md:table-cell font-mono text-xs">{o.branch_no ?? "—"}</TableCell>
+                      <TableCell className="hidden xl:table-cell text-xs">{o.city || "—"}</TableCell>
+                      <TableCell className="hidden lg:table-cell font-mono text-xs">{o.invoice_no || "—"}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap text-xs font-mono">{fmtSAR(o.invoice_value)}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o.id, v)}>
-                            <SelectTrigger className={`h-8 w-[130px] border ${STATUS_STYLES[o.status] ?? ""}`}><SelectValue /></SelectTrigger>
+                            <SelectTrigger className={`h-8 w-full border ${STATUS_STYLES[o.status] ?? ""}`}><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
@@ -312,9 +322,13 @@ function OrdersList() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {editable && (
+                        {editable ? (
                           <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="Edit order">
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="View order">
+                            <Eye className="h-4 w-4" />
                           </Button>
                         )}
                       </TableCell>
@@ -324,6 +338,7 @@ function OrdersList() {
               </TableBody>
             </Table>
           </div>
+
 
           {rows.length > PAGE_SIZE && (
             <div className="flex items-center justify-between p-3 border-t text-sm">
