@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, Pencil, Plus, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Eye, Pencil, Plus, Search } from "lucide-react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import * as XLSX from "xlsx";
