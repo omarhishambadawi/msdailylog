@@ -52,7 +52,7 @@ function ScheduleTable({ schedule }: { schedule: Schedule }) {
 function Workforce() {
   const { role, profile } = useAuth();
   const canView = hasPerm(role, profile?.permissions as any, "view_workforce");
-  const canManage = role === "admin" || hasPerm(role, profile?.permissions as any, "manage_workforce");
+  const canManage = hasPerm(role, profile?.permissions as any, "manage_workforce");
   const [tab, setTab] = useState("cc");
 
   if (!canView) {

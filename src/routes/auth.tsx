@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import logo from "@/assets/milaserv-logo.png.asset.json";
+import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — MilaServ Daily Log" }] }),
@@ -15,14 +16,16 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
-  const { session, loading } = useAuth();
+  const { session, loading, role, profile } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   if (!loading && session) {
-    navigate({ to: "/dashboard", replace: true });
+    if (hasPerm(role, profile?.permissions, "view_dashboard")) navigate({ to: "/dashboard", replace: true });
+    else if (hasPerm(role, profile?.permissions, "view_orders")) navigate({ to: "/orders", replace: true });
+    else navigate({ to: "/", replace: true });
   }
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -32,7 +35,7 @@ function AuthPage() {
     setBusy(false);
     if (error) { toast.error(error.message); return; }
     toast.success("Signed in");
-    navigate({ to: "/dashboard", replace: true });
+    navigate({ to: "/", replace: true });
   };
 
   const onForgot = async () => {
