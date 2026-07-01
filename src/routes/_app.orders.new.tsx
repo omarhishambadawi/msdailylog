@@ -20,11 +20,11 @@ import { z } from "zod";
 const schema = z.object({
   order_date: z.string().min(1),
   team: z.enum(["customer_care", "telesales"]),
-  order_type: z.string().min(1),
+  order_type: z.string().min(1, "Order type is required"),
   customer_name: z.string().trim().max(120).optional().nullable(),
   customer_phone: z.string().trim().max(40).optional().nullable(),
-  branch_no: z.string().nullable().optional(),
-  delivery_type: z.string().min(1, "Please choose a delivery / pickup method"),
+  branch_no: z.string().min(1, "Branch number is required"),
+  delivery_type: z.string().min(1, "Delivery / pickup method is required"),
   invoice_no: z.string().max(50).optional().nullable(),
   invoice_value: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().nonnegative().nullable()),
   notes: z.string().max(500).optional().nullable(),
@@ -116,7 +116,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         ...form,
         customer_name: form.customer_name || null,
         customer_phone: form.customer_phone || null,
-        branch_no: form.branch_no || null,
+        branch_no: form.branch_no || "",
         invoice_no: form.invoice_no || null,
         notes: form.notes || null,
         status: mode === "create" ? "Pending" : form.status,
@@ -182,7 +182,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="Optional" />
             </div>
             <div className="space-y-2">
-              <Label>Order type</Label>
+              <Label>Order type <span className="text-destructive">*</span></Label>
               <Select value={form.order_type} onValueChange={(v) => setForm({ ...form, order_type: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{ORDER_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
@@ -196,7 +196,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Branch No.</Label>
+              <Label>Branch No. <span className="text-destructive">*</span></Label>
               <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
