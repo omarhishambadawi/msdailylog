@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const RoleEnum = z.enum(["admin", "customer_care", "telesales"]);
+const RoleEnum = z.enum(["admin", "customer_care", "telesales", "auditor"]);
 
 async function assertAdmin(supabase: any, userId: string) {
   const { data, error } = await supabase
@@ -17,7 +17,7 @@ async function assertAdmin(supabase: any, userId: string) {
 
 export const adminCreateUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string; password: string; fullName: string; agentCode?: string; role: "admin" | "customer_care" | "telesales" }) =>
+  .inputValidator((d: { email: string; password: string; fullName: string; agentCode?: string; role: "admin" | "customer_care" | "telesales" | "auditor" }) =>
     z
       .object({
         email: z.string().email(),
@@ -59,7 +59,7 @@ export const adminSetActive = createServerFn({ method: "POST" })
 
 export const adminSetRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; role: "admin" | "customer_care" | "telesales" }) =>
+  .inputValidator((d: { userId: string; role: "admin" | "customer_care" | "telesales" | "auditor" }) =>
     z.object({ userId: z.string().uuid(), role: RoleEnum }).parse(d),
   )
   .handler(async ({ data, context }) => {
