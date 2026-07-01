@@ -73,22 +73,59 @@ export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
     );
   }
 
-  if ("error" in data && data.error) {
+  if ("diagnostic" in data && data.diagnostic && !data.diagnostic.ok) {
+    const d: any = data.diagnostic;
+    const rows: Array<[string, string | number | undefined]> = [
+      ["Failure category", d.category],
+      ["Base URL", d.baseUrl ?? "(not set)"],
+      ["Endpoint", d.endpoint ?? "(n/a)"],
+      ["User-Agent", d.userAgent],
+      ["HTTP status", d.httpStatus ?? "—"],
+      ["errcode", d.errcode ?? "—"],
+      ["errmsg", d.errmsg ?? "—"],
+    ];
     return (
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
-            <PhoneOff className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-            <div className="flex-1 text-foreground/80">{String(data.error)}</div>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <PhoneOff className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            Yeastar connection diagnostic
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+            <div className="font-medium">{d.message}</div>
+            {d.hint && <div className="mt-1 text-xs text-muted-foreground">{d.hint}</div>}
+          </div>
+          <div className="rounded-md border overflow-hidden">
+            <table className="w-full text-xs">
+              <tbody>
+                {rows.map(([k, v]) => (
+                  <tr key={k} className="border-b last:border-0">
+                    <td className="px-3 py-1.5 font-medium text-muted-foreground w-40">{k}</td>
+                    <td className="px-3 py-1.5 font-mono break-all">{String(v ?? "—")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {d.responseBody && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">Response body</div>
+              <pre className="text-[11px] bg-muted rounded p-2 overflow-x-auto max-h-40">{String(d.responseBody).slice(0, 1000)}</pre>
+            </div>
+          )}
+          <div className="flex justify-end">
             <button onClick={() => refetch()} disabled={isFetching} className="text-xs font-medium text-primary hover:underline disabled:opacity-50">
-              {isFetching ? "Retrying…" : "Retry"}
+              {isFetching ? "Re-running diagnostic…" : "Re-run diagnostic"}
             </button>
           </div>
+          <p className="text-[11px] text-muted-foreground">Call Analytics are paused until a valid access token is obtained.</p>
         </CardContent>
       </Card>
     );
   }
+
 
   const teamData = [
     { name: "Customer Care", calls: data.byTeam.customerCare, fill: COLORS.cc },
