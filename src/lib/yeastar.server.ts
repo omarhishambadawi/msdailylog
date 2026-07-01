@@ -143,9 +143,11 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
     };
   }
   const endpoint = `${env.base}/openapi/v1.0/get_token`;
-  const { createHash } = await import("crypto");
-  const hashed = /^[a-f0-9]{32}$/i.test(env.secret) ? env.secret.toLowerCase() : createHash("md5").update(env.secret).digest("hex");
 
+  // Per Yeastar P-Series OpenAPI (Appliance/Software/Cloud editions), the
+  // request body is JSON with `username` = Client ID and `password` = Client
+  // Secret, sent EXACTLY as configured on the PBX web portal (no MD5, no
+  // hashing, no url-encoding). The User-Agent header is required.
   let res: Response;
   try {
     res = await timedFetch(endpoint, {
@@ -155,7 +157,7 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
         "Accept": "application/json",
         "User-Agent": USER_AGENT,
       },
-      body: JSON.stringify({ username: env.id, password: hashed }),
+      body: JSON.stringify({ username: env.id, password: env.secret }),
     });
   } catch (err) {
     const { category, message } = classifyNetworkError(err);
@@ -165,16 +167,17 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
 
   const bodyText = await res.text().catch(() => "");
   const httpStatus = res.status;
-  console.log(`[yeastar diagnostic] HTTP ${httpStatus} from ${endpoint}`);
-  console.log(`[yeastar diagnostic] body: ${bodyText.slice(0, 500)}`);
+  console.log(`[yeastar diagnostic] auth HTTP ${httpStatus} from ${endpoint}`);
+  console.log(`[yeastar diagnostic] auth body: ${bodyText.slice(0, 500)}`);
 
   if (httpStatus === 404) {
     return { ok: false, category: "invalid_endpoint", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-      httpStatus, responseBody: bodyText, message: "Endpoint not found (HTTP 404). Verify the Base URL and API version path." };
+      httpStatus, responseBody: bodyText,
+      message: "Endpoint not found (HTTP 404). Verify the Base URL includes scheme + host + port (e.g. https://pbx.example.com:8088) and no trailing slash." };
   }
   if (httpStatus === 400 && /user.?agent|header/i.test(bodyText)) {
     return { ok: false, category: "missing_headers", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-      httpStatus, responseBody: bodyText, message: "PBX rejected the request headers." };
+      httpStatus, responseBody: bodyText, message: "PBX rejected the request headers (User-Agent required)." };
   }
 
   let json: any = null;
@@ -186,10 +189,54 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
   }
 
   if (json && json.errcode === 0 && json.access_token) {
-    const ttlSec = Number(json.expire_time ?? 1800);
+    // P-Series returns `access_token_expire_time` (seconds). Older docs used `expire_time`.
+    const ttlSec = Number(json.access_token_expire_time ?? json.expire_time ?? 1800);
     cachedToken = { token: json.access_token, expiresAt: Date.now() + ttlSec * 1000 };
-    return { ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-      httpStatus, errcode: 0, message: `Authentication successful. Token valid for ${ttlSec}s.` };
+
+    // Step 2: probe a simple authenticated endpoint (Extension List) to confirm
+    // the token actually works before we consider auth successful.
+    const probeUrl = `${env.base}${PROBE_ENDPOINT}?access_token=${encodeURIComponent(json.access_token)}&page=1&page_size=1&sort_by=id&order_by=asc`;
+    let probeStatus: number | undefined;
+    let probeBody = "";
+    let probeJson: any = null;
+    try {
+      const p = await timedFetch(probeUrl, {
+        method: "GET",
+        headers: { "Accept": "application/json", "User-Agent": USER_AGENT },
+      });
+      probeStatus = p.status;
+      probeBody = await p.text().catch(() => "");
+      try { probeJson = probeBody ? JSON.parse(probeBody) : null; } catch { /* non-JSON */ }
+      console.log(`[yeastar diagnostic] probe HTTP ${probeStatus} from ${PROBE_ENDPOINT}`);
+    } catch (err) {
+      const { category, message } = classifyNetworkError(err);
+      cachedToken = null;
+      return {
+        ok: false, category, baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+        httpStatus, errcode: 0,
+        message: `Got an access token but the probe request to ${PROBE_ENDPOINT} failed: ${message}`,
+        probe: { endpoint: PROBE_ENDPOINT, ok: false, body: message },
+      };
+    }
+
+    const probeOk = probeStatus === 200 && probeJson?.errcode === 0;
+    if (!probeOk) {
+      cachedToken = null;
+      return {
+        ok: false, category: "probe_failed", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+        httpStatus, errcode: 0,
+        message: `Access token obtained, but probe endpoint ${PROBE_ENDPOINT} returned HTTP ${probeStatus}${probeJson?.errcode != null ? ` (errcode ${probeJson.errcode}: ${probeJson.errmsg ?? ""})` : ""}.`,
+        hint: "Verify the API app on the PBX has the required permissions (Extension, CDR).",
+        probe: { endpoint: PROBE_ENDPOINT, httpStatus: probeStatus, errcode: probeJson?.errcode, errmsg: probeJson?.errmsg, ok: false, body: probeBody.slice(0, 500) },
+      };
+    }
+
+    return {
+      ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      httpStatus, errcode: 0,
+      message: `Authentication successful. Token valid for ${ttlSec}s. Probe ${PROBE_ENDPOINT} returned HTTP 200 (errcode 0).`,
+      probe: { endpoint: PROBE_ENDPOINT, httpStatus: probeStatus, errcode: 0, ok: true },
+    };
   }
 
   const errcode = json?.errcode;
@@ -202,14 +249,14 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
         hint: "Allowlist the Lovable server IP in Yeastar → Settings → PBX → General → API (or set it to Any)." };
     case 40002:
       return { ...base, category: "invalid_client_secret",
-        message: `Invalid parameters (errcode 40002): ${errmsg ?? ""}. Client Secret is likely wrong or not MD5-hashed correctly.`,
-        hint: "Verify YEASTAR_CLIENT_SECRET matches the PBX API app secret." };
+        message: `Invalid parameters (errcode 40002): ${errmsg ?? ""}. Verify the Client Secret is copied exactly from the PBX API app (case-sensitive, no whitespace).`,
+        hint: "In Yeastar → Integrations → API, open the app and re-copy the Client Secret into YEASTAR_CLIENT_SECRET." };
     case 40004:
     case 40005:
     case 40011:
       return { ...base, category: "invalid_client_id",
         message: `Invalid Client ID (errcode ${errcode}): ${errmsg ?? ""}.`,
-        hint: "Verify YEASTAR_CLIENT_ID matches the PBX API app ID." };
+        hint: "Verify YEASTAR_CLIENT_ID matches the PBX API app ID exactly." };
     case 40001:
     case 40003:
       return { ...base, category: "authentication",
@@ -219,6 +266,7 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
         message: `Authentication failed${errcode != null ? ` (errcode ${errcode})` : ""}: ${errmsg ?? "no access_token returned"}.` };
   }
 }
+
 
 async function getAccessToken(): Promise<string> {
   const env = requireEnv();
