@@ -81,11 +81,16 @@ async function getAccessToken(): Promise<string> {
   const now = Date.now();
   if (cachedToken && cachedToken.expiresAt - 30_000 > now) return cachedToken.token;
 
+  const { createHash } = await import("crypto");
+  // Yeastar OpenAPI requires the password as a lowercase MD5 hex hash.
+  const hashed = /^[a-f0-9]{32}$/i.test(env.secret)
+    ? env.secret.toLowerCase()
+    : createHash("md5").update(env.secret).digest("hex");
   const token = await withRetry("auth", async () => {
     const res = await timedFetch(`${env.base}/openapi/v1.0/get_token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: env.id, password: env.secret }),
+      body: JSON.stringify({ username: env.id, password: hashed }),
     });
     if (!res.ok) throw new Error(`Yeastar auth HTTP ${res.status}`);
     const json: any = await res.json();
