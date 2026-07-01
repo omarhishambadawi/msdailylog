@@ -55,6 +55,11 @@ const AUDITOR_PERMS: PermKey[] = [
   "export_reports",
 ];
 
+const AUDITOR_SAFE_READ_PERMS: PermKey[] = [
+  ...AUDITOR_PERMS,
+  "view_workforce",
+];
+
 const ROLE_DEFAULTS: Record<AppRole, PermKey[]> = {
   admin: ALL_PERMISSIONS.map((p) => p.key),
   customer_care: [
@@ -76,8 +81,12 @@ const ROLE_DEFAULTS: Record<AppRole, PermKey[]> = {
 export function hasPerm(role: AppRole | null, permissions: string[] | null | undefined, perm: PermKey): boolean {
   if (!role) return false;
   if (role === "admin") return true;
-  // Auditor is strictly read-only — never grant mutating perms
-  if (role === "auditor") return AUDITOR_PERMS.includes(perm);
+  // Auditor is strictly read-only — custom grants may add read-only modules, never mutating perms
+  if (role === "auditor") {
+    if (!AUDITOR_SAFE_READ_PERMS.includes(perm)) return false;
+    if (permissions && permissions.length > 0) return permissions.includes(perm);
+    return AUDITOR_PERMS.includes(perm);
+  }
   if (permissions && permissions.length > 0) return permissions.includes(perm);
   return ROLE_DEFAULTS[role].includes(perm);
 }

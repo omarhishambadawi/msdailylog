@@ -145,20 +145,3 @@ export const adminListUsers = createServerFn({ method: "GET" })
       role: roleMap.get(p.id) ?? null,
     }));
   });
-
-export const adminBootstrapFirstAdmin = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { count } = await supabaseAdmin
-      .from("user_roles")
-      .select("*", { count: "exact", head: true })
-      .eq("role", "admin");
-    if ((count ?? 0) > 0) throw new Error("An admin already exists");
-    await supabaseAdmin.from("user_roles").delete().eq("user_id", context.userId);
-    const { error } = await supabaseAdmin
-      .from("user_roles")
-      .insert({ user_id: context.userId, role: "admin" });
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
