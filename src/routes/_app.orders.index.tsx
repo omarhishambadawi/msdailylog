@@ -128,8 +128,8 @@ function OrdersList() {
     const completed = (xs: any[]) => xs.filter((o: any) => o.status === "Completed");
     const sum = (xs: any[]) => xs.reduce((s, o) => s + num(o.invoice_value), 0);
     return {
-      cashSales: sum(cash), cashCompletedSales: sum(completed(cash)), cashCount: cash.length,
-      wasSales: sum(was), wasCompletedSales: sum(completed(was)), wasCount: was.length,
+      cashSales: sum(cash), cashCompletedSales: sum(completed(cash)), cashCount: cash.length, cashCompletedCount: completed(cash).length,
+      wasSales: sum(was), wasCompletedSales: sum(completed(was)), wasCount: was.length, wasCompletedCount: completed(was).length,
       totalSales: sum(rows), totalCompletedSales: sum(completed(rows)),
       totalCount: rows.length, completedCount: completed(rows).length,
     };
