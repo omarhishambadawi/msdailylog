@@ -84,9 +84,10 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
 
   useEffect(() => {
     if (existing) {
+      const t = (existing.team === "customer_care" || existing.team === "telesales") ? existing.team : "customer_care";
       setForm({
         order_date: existing.order_date,
-        team: existing.team === "admin" ? "customer_care" : existing.team,
+        team: t,
         order_type: existing.order_type,
         customer_name: (existing as any).customer_name ?? "",
         customer_phone: (existing as any).customer_phone ?? "",
