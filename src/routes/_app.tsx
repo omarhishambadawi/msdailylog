@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import logo from "@/assets/milaserv-logo.png.asset.json";
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/notification-bell";
+import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -45,10 +47,11 @@ function AppLayout() {
     );
   }
 
+  const canCreate = hasPerm(role, profile?.permissions as any, "create_orders");
   const nav = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/orders", label: "Orders", icon: ListOrdered },
-    { to: "/orders/new", label: "New Order", icon: Plus },
+    ...(canCreate ? [{ to: "/orders/new", label: "New Order", icon: Plus }] : []),
     { to: "/complaints", label: "Complaints", icon: MessageSquareWarning },
     ...(role === "admin"
       ? [
@@ -62,12 +65,12 @@ function AppLayout() {
 
   const SidebarContent = (
     <>
-      <div className={cn("px-4 py-4 border-b border-border flex items-center gap-2", collapsed && "justify-center px-2")}>
-        <img src={logo.url} alt="MilaServ" className="h-9 w-9 shrink-0 object-contain" />
+      <div className={cn("px-4 py-4 border-b border-border flex items-center gap-2.5", collapsed && "justify-center px-2")}>
+        <img src={logo.url} alt="MilaServ" className={cn("shrink-0 object-contain", collapsed ? "h-10 w-10" : "h-12 w-12")} />
         {!collapsed && (
           <div className="min-w-0">
-            <div className="text-sm font-semibold leading-tight truncate">MilaServ</div>
-            <div className="text-[11px] text-muted-foreground">Daily Log</div>
+            <div className="text-base font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
+            <div className="text-[11px] text-muted-foreground font-medium">Daily Log</div>
           </div>
         )}
       </div>
@@ -145,7 +148,8 @@ function AppLayout() {
           <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={() => setCollapsed((v) => !v)} aria-label="Toggle sidebar">
             <Menu className="h-5 w-5" />
           </Button>
-          <div className="text-sm font-medium text-muted-foreground truncate">MilaServ · Daily Log</div>
+          <div className="text-sm font-medium text-muted-foreground truncate flex-1">MilaServ · Daily Log</div>
+          <NotificationBell />
         </div>
         <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
           <Outlet />
