@@ -79,7 +79,11 @@ export function isYeastarConfigured(): boolean {
   return !!requireEnv();
 }
 
-const USER_AGENT = "Lovable-MSDailyLog/1.0 (+yeastar-integration)";
+// Per Yeastar P-Series OpenAPI docs, the User-Agent header is REQUIRED.
+// The docs use `User-Agent: OpenAPI` as the example value.
+const USER_AGENT = "OpenAPI";
+const PROBE_ENDPOINT = "/openapi/v1.0/extension/list";
+
 
 export interface YeastarDiagnostic {
   ok: boolean;
