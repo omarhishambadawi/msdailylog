@@ -232,57 +232,23 @@ function OrdersList() {
               {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Popover open={dateOpen} onOpenChange={setDateOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" disabled={searching} className={cn("h-10 justify-start font-normal min-w-[200px]", !range?.from && "text-muted-foreground")}>
-                <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                <span className="truncate">{searching ? "Searching all orders" : dateLabel}</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0 pointer-events-auto" align="start">
-              <div className="flex flex-wrap gap-1 p-2 border-b">
-                <Button size="sm" variant="ghost" onClick={() => setQuick("today")}>Today</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("7d")}>Last 7 days</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
-              </div>
-              <Calendar mode="range" selected={range} onSelect={(r) => { setRange(r); setPage(0); }} numberOfMonths={1} defaultMonth={range?.from} className="pointer-events-auto [--cell-size:2.25rem]" />
-            </PopoverContent>
-          </Popover>
+          <DateRangePicker range={range} onChange={(r) => { setRange(r); setPage(0); }} disabled={searching} />
           <Button variant="outline" size="sm" onClick={exportXlsx} className="h-10 ml-auto"><Download className="h-4 w-4 mr-2" />Export</Button>
         </CardContent>
       </Card>
 
-      {/* Minimal grouped summary */}
-      <Card>
-        <CardContent className="p-3 sm:p-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryBlock label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10">
-              <SummaryLine label="Sales" value={fmtSAR(summary.cashSales)} muted />
-              <SummaryLine label="Completed" value={fmtSAR(summary.cashCompletedSales)} accent />
-              <SummaryFoot value={`${summary.cashCount} orders`} />
-            </SummaryBlock>
-            <SummaryBlock label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10">
-              <SummaryLine label="Sales" value={fmtSAR(summary.wasSales)} muted />
-              <SummaryLine label="Completed" value={fmtSAR(summary.wasCompletedSales)} accent />
-              <SummaryFoot value={`${summary.wasCount} orders`} />
-            </SummaryBlock>
-            <SummaryBlock label="Total" tone="from-primary/10 to-transparent" highlight>
-              <SummaryLine label="Sales" value={fmtSAR(summary.totalSales)} muted />
-              <SummaryLine label="Completed" value={fmtSAR(summary.totalCompletedSales)} accent />
-              <SummaryFoot value={`${summary.completedCount} / ${summary.totalCount} completed`} />
-            </SummaryBlock>
-            <SummaryBlock label="Completed orders" tone="from-emerald-50 to-transparent dark:from-emerald-500/10">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-xs text-muted-foreground">Count</span>
-                <span className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">{summary.completedCount}</span>
-              </div>
-              <SummaryLine label="Total orders" value={String(summary.totalCount)} muted />
-              <SummaryFoot value={summary.totalCount > 0 ? `${((summary.completedCount / summary.totalCount) * 100).toFixed(1)}% completion rate` : "—"} />
-            </SummaryBlock>
-          </div>
-        </CardContent>
-      </Card>
+      {/* KPI summary: 3 cards — Cash · Wasfaty · Total (each shows sales + completed sales + total/completed orders split) */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <KpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10"
+          totalSales={summary.cashSales} completedSales={summary.cashCompletedSales}
+          totalOrders={summary.cashCount} completedOrders={summary.cashCompletedCount} />
+        <KpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10"
+          totalSales={summary.wasSales} completedSales={summary.wasCompletedSales}
+          totalOrders={summary.wasCount} completedOrders={summary.wasCompletedCount} />
+        <KpiCard label="Total" tone="from-primary/10 to-transparent" highlight
+          totalSales={summary.totalSales} completedSales={summary.totalCompletedSales}
+          totalOrders={summary.totalCount} completedOrders={summary.completedCount} />
+      </div>
 
       <Card>
         <CardContent className="p-0">
