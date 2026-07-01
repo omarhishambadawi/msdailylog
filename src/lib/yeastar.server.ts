@@ -135,17 +135,23 @@ export async function fetchCdr(fromDate: string, toDate: string): Promise<Yeasta
   let page = 1;
   // Hard safety cap: 20 pages = 10k records
   while (page <= 20) {
-    const url = new URL(`${env.base}/openapi/v1.0/cdr/list`);
-    url.searchParams.set("access_token", token);
-    url.searchParams.set("start_time", fmtDate(fromDate));
-    url.searchParams.set("end_time", fmtDateEnd(toDate));
-    url.searchParams.set("page", String(page));
-    url.searchParams.set("page_size", String(pageSize));
-    const res = await timedFetch(url.toString());
-    if (!res.ok) throw new Error(`Yeastar CDR ${res.status}`);
-    const json: any = await res.json();
-    if (json.errcode !== 0) throw new Error(`Yeastar CDR error: ${json.errmsg ?? "unknown"}`);
-    const rows: YeastarCdrRecord[] = json.cdr_list ?? [];
+    const currentPage = page;
+    const rows = await withRetry(`cdr page ${currentPage}`, async () => {
+      const url = new URL(`${env.base}/openapi/v1.0/cdr/list`);
+      url.searchParams.set("access_token", token);
+      url.searchParams.set("start_time", fmtDate(fromDate));
+      url.searchParams.set("end_time", fmtDateEnd(toDate));
+      url.searchParams.set("page", String(currentPage));
+      url.searchParams.set("page_size", String(pageSize));
+      const res = await timedFetch(url.toString());
+      if (!res.ok) throw new Error(`Yeastar CDR HTTP ${res.status}`);
+      const json: any = await res.json();
+      if (json.errcode !== 0) {
+        if (json.errcode === 70087) throw new Error("IP_FORBIDDEN: PBX rejected the server IP.");
+        throw new Error(`Yeastar CDR error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
+      }
+      return (json.cdr_list ?? []) as YeastarCdrRecord[];
+    });
     results.push(...rows);
     if (rows.length < pageSize) break;
     page += 1;
