@@ -24,7 +24,13 @@ function ComplaintsList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { role, profile, user } = useAuth();
+  const canView = hasPerm(role, profile?.permissions as any, "view_complaints");
   const canCreate = hasPerm(role, profile?.permissions as any, "create_complaints");
+  const canEditAll = hasPerm(role, profile?.permissions as any, "edit_all_complaints");
+  const canEditOwn = hasPerm(role, profile?.permissions as any, "edit_complaints");
+  const canResolveAll = hasPerm(role, profile?.permissions as any, "resolve_all_complaints");
+  const canResolveOwn = hasPerm(role, profile?.permissions as any, "resolve_complaints");
+  const canExport = hasPerm(role, profile?.permissions as any, "export_reports");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [mineOnly, setMineOnly] = useState(false);
@@ -57,14 +63,17 @@ function ComplaintsList() {
     );
   }, [data, q]);
 
-  const toggleStatus = async (id: string, resolved: boolean) => {
+  const toggleStatus = async (complaint: any, resolved: boolean) => {
+    const owned = complaint.agent_id === user?.id;
+    if (!(canResolveAll || (owned && canResolveOwn))) { toast.error("You don't have permission to resolve this complaint"); return; }
+    const id = complaint.id;
     const { error } = await supabase.from("complaints" as any).update({ status: resolved ? "Resolved" : "In Progress" } as any).eq("id", id);
     if (error) { toast.error(error.message); return; }
     qc.invalidateQueries({ queryKey: ["complaints"] });
   };
 
-  if (role === "telesales" && !hasPerm(role, profile?.permissions as any, "create_complaints")) {
-    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">Not available for your role.</p></div>;
+  if (!canView) {
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to Complaints.</p></div>;
   }
 
   return (
@@ -76,7 +85,7 @@ function ComplaintsList() {
         </div>
         <div className="flex gap-2 items-center">
           <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>{mineOnly ? "Mine" : "All"}</Button>
-          <Button variant="outline" size="sm" onClick={() => exportComplaints(filtered)}><Download className="h-4 w-4 mr-2" />Export</Button>
+          {canExport && <Button variant="outline" size="sm" onClick={() => exportComplaints(filtered)}><Download className="h-4 w-4 mr-2" />Export</Button>}
           {canCreate && <Button onClick={() => navigate({ to: "/complaints/new" })}><Plus className="h-4 w-4 mr-2" />New complaint</Button>}
         </div>
       </div>
@@ -119,12 +128,13 @@ function ComplaintsList() {
                 {!isLoading && filtered.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No complaints</TableCell></TableRow>}
                 {filtered.map((c: any) => {
                   const owned = c.agent_id === user?.id;
-                  const canEditRow = role === "admin" || owned;
+                  const canEditRow = canEditAll || (owned && canEditOwn);
+                  const canResolveRow = canResolveAll || (owned && canResolveOwn);
                   const resolved = c.status === "Resolved";
                   return (
                     <TableRow key={c.id} className={resolved ? "bg-green-50/40 dark:bg-green-500/5" : ""}>
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox checked={resolved} disabled={!canEditRow} onCheckedChange={(v) => toggleStatus(c.id, !!v)} aria-label="Resolved" />
+                        <Checkbox checked={resolved} disabled={!canResolveRow} onCheckedChange={(v) => toggleStatus(c, !!v)} aria-label="Resolved" />
                       </TableCell>
                       <TableCell className="font-mono font-semibold">{c.display_no}</TableCell>
                       <TableCell className="hidden sm:table-cell whitespace-nowrap">{c.complaint_date}</TableCell>

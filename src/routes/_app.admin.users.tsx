@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ShieldAlert, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
-import { ALL_PERMISSIONS, defaultPermsForRole, PERMISSION_GROUPS } from "@/lib/permissions";
+import { ALL_PERMISSIONS, defaultPermsForRole, PERMISSION_GROUPS, hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app/admin/users")({
   head: () => ({ meta: [{ title: "Users — Admin" }] }),
@@ -25,7 +25,8 @@ export const Route = createFileRoute("/_app/admin/users")({
 });
 
 function AdminUsers() {
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
+  const canManageUsers = role === "admin" && hasPerm(role, profile?.permissions as any, "manage_users");
   const qc = useQueryClient();
   const listFn = useServerFn(adminListUsers);
   const createFn = useServerFn(adminCreateUser);
@@ -38,7 +39,7 @@ function AdminUsers() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-users"],
     queryFn: () => listFn(),
-    enabled: role === "admin",
+    enabled: canManageUsers,
   });
 
   const [openNew, setOpenNew] = useState(false);
@@ -48,8 +49,8 @@ function AdminUsers() {
   const [pwUser, setPwUser] = useState<any | null>(null);
   const [newPw, setNewPw] = useState("");
 
-  if (role !== "admin") {
-    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">Admins only.</p></div>;
+  if (!canManageUsers) {
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to user management.</p></div>;
   }
 
   const reload = () => qc.invalidateQueries({ queryKey: ["admin-users"] });

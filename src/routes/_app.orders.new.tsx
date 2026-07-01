@@ -12,10 +12,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronsUpDown, Clock, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronsUpDown, Clock, ShieldAlert, Trash2 } from "lucide-react";
 import { ORDER_TYPES, DELIVERY_TYPES, TEAMS, CURRENCY, formatOrderNo } from "@/lib/branches";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
+import { hasPerm } from "@/lib/permissions";
 
 const schema = z.object({
   order_date: z.string().min(1),
@@ -42,7 +43,7 @@ export const Route = createFileRoute("/_app/orders/new")({
 
 export function OrderForm({ mode }: { mode: "create" | "edit" }) {
   const navigate = useNavigate();
-  const { user, role } = useAuth();
+  const { user, role, profile } = useAuth();
   const qc = useQueryClient();
   const params = useParams({ strict: false }) as { id?: string };
   const id = params?.id;
@@ -82,6 +83,15 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
 
+  const canView = hasPerm(role, profile?.permissions as any, "view_orders");
+  const canCreate = hasPerm(role, profile?.permissions as any, "create_orders");
+  const canEditAll = hasPerm(role, profile?.permissions as any, "edit_all_orders");
+  const canEditOwn = hasPerm(role, profile?.permissions as any, "edit_orders");
+  const canDelete = hasPerm(role, profile?.permissions as any, "delete_orders");
+  const isOwner = !!existing && !!user && existing.agent_id === user.id;
+  const canEditThis = mode === "create" ? canCreate : (canEditAll || (isOwner && canEditOwn));
+  const readOnly = mode === "edit" && !canEditThis;
+
   useEffect(() => {
     if (existing) {
       const t = (existing.team === "customer_care" || existing.team === "telesales") ? existing.team : "customer_care";
@@ -110,6 +120,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (!canEditThis) { toast.error("You don't have permission to modify this order"); return; }
     setBusy(true);
     try {
       const parsed = schema.parse({
@@ -142,6 +153,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
 
   const del = async () => {
     if (!id) return;
+    if (!canDelete) { toast.error("You don't have permission to delete orders"); return; }
     if (!confirm("Delete this order?")) return;
     const { error } = await supabase.from("orders").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
@@ -150,25 +162,34 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
     navigate({ to: "/orders" });
   };
 
+  if (mode === "create" && !canCreate) {
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have permission to create orders.</p></div>;
+  }
+
+  if (mode === "edit" && existing && !canView) {
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to this order.</p></div>;
+  }
+
   return (
     <div className="max-w-3xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <Link to="/orders" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4 mr-1" /> Back to orders</Link>
-        {mode === "edit" && role === "admin" && (
+        {mode === "edit" && canDelete && (
           <Button variant="outline" size="sm" onClick={del}><Trash2 className="h-4 w-4 mr-2" />Delete</Button>
         )}
       </div>
       <Card>
-        <CardHeader><CardTitle>{mode === "create" ? "New order" : `Edit order ${formatOrderNo(existing?.team, existing?.display_no)}`}</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{mode === "create" ? "New order" : `${readOnly ? "View" : "Edit"} order ${formatOrderNo(existing?.team, existing?.display_no)}`}</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={submit} className="grid md:grid-cols-2 gap-4">
+            <fieldset disabled={readOnly} className="contents">
             <div className="space-y-2">
               <Label>Date</Label>
               <Input type="date" value={form.order_date} onChange={(e) => setForm({ ...form, order_date: e.target.value })} required />
             </div>
             <div className="space-y-2">
               <Label>Team</Label>
-              <Select value={form.team} onValueChange={(v) => setForm({ ...form, team: v as any })}>
+              <Select value={form.team} onValueChange={(v) => setForm({ ...form, team: v as any })} disabled={readOnly || (mode === "edit" && !canEditAll)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{TEAMS.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
               </Select>
@@ -183,14 +204,14 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
             </div>
             <div className="space-y-2">
               <Label>Order type <span className="text-destructive">*</span></Label>
-              <Select value={form.order_type} onValueChange={(v) => setForm({ ...form, order_type: v })}>
+              <Select value={form.order_type} onValueChange={(v) => setForm({ ...form, order_type: v })} disabled={readOnly}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{ORDER_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Delivery & Pickup <span className="text-destructive">*</span></Label>
-              <Select value={form.delivery_type} onValueChange={(v) => setForm({ ...form, delivery_type: v })}>
+              <Select value={form.delivery_type} onValueChange={(v) => setForm({ ...form, delivery_type: v })} disabled={readOnly}>
                 <SelectTrigger><SelectValue placeholder="Select a method…" /></SelectTrigger>
                 <SelectContent>{DELIVERY_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
               </Select>
@@ -199,7 +220,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               <Label>Branch No. <span className="text-destructive">*</span></Label>
               <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                  <Button variant="outline" role="combobox" className="w-full justify-between font-normal" disabled={readOnly}>
                     {form.branch_no ? `${form.branch_no} — ${cityFor(form.branch_no)}` : "Select branch…"}
                     <ChevronsUpDown className="h-4 w-4 opacity-50" />
                   </Button>
@@ -239,9 +260,10 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               <Label>Notes</Label>
               <Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
+            </fieldset>
             <div className="md:col-span-2 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => navigate({ to: "/orders" })}>Cancel</Button>
-              <Button type="submit" disabled={busy}>{busy ? "Saving…" : mode === "create" ? "Save order" : "Update order"}</Button>
+              <Button type="button" variant="outline" onClick={() => navigate({ to: "/orders" })}>{readOnly ? "Close" : "Cancel"}</Button>
+              {!readOnly && <Button type="submit" disabled={busy}>{busy ? "Saving…" : mode === "create" ? "Save order" : "Update order"}</Button>}
             </div>
           </form>
         </CardContent>

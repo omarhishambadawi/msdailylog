@@ -10,10 +10,11 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGri
 import { fmtSAR } from "@/lib/branches";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { Download } from "lucide-react";
+import { Download, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import * as XLSX from "xlsx";
 import { DateRangePicker } from "@/components/date-range-picker";
+import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — MilaServ Daily Log" }] }),
@@ -23,8 +24,12 @@ export const Route = createFileRoute("/_app/dashboard")({
 const toISO = (d: Date) => format(d, "yyyy-MM-dd");
 
 function Dashboard() {
-  const { user, role } = useAuth();
-  const isAdmin = role === "admin";
+  const { user, role, profile } = useAuth();
+  const canViewDashboard = hasPerm(role, profile?.permissions as any, "view_dashboard");
+  const canViewTeamAnalytics = hasPerm(role, profile?.permissions as any, "view_team_analytics");
+  const canViewAllAgents = hasPerm(role, profile?.permissions as any, "view_all_agents");
+  const canExport = hasPerm(role, profile?.permissions as any, "export_reports");
+  const isAdmin = canViewAllAgents;
   const [mineOnly, setMineOnly] = useState(false);
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [teamFilter, setTeamFilter] = useState<string>("all");
@@ -43,8 +48,8 @@ function Dashboard() {
   }, [range]);
 
 
-  const effectiveAgent = isAdmin ? agentFilter : (mineOnly && user?.id ? user.id : "all");
-  const effectiveTeam = isAdmin ? teamFilter : "all";
+  const effectiveAgent = canViewAllAgents ? agentFilter : (!canViewTeamAnalytics && user?.id ? user.id : (mineOnly && user?.id ? user.id : "all"));
+  const effectiveTeam = canViewTeamAnalytics ? teamFilter : "all";
 
   const { data: agents } = useQuery({
     queryKey: ["dashboard-agents"],
@@ -56,7 +61,7 @@ function Dashboard() {
       const rm = new Map((roles ?? []).map((r: any) => [r.user_id, r.role]));
       return (profiles ?? []).map((p: any) => ({ ...p, role: rm.get(p.id) ?? null }));
     },
-    enabled: isAdmin,
+    enabled: canViewAllAgents,
   });
 
   const filteredAgents = useMemo(() => {
@@ -150,7 +155,7 @@ function Dashboard() {
         agentId, ...r, rate: r.total > 0 ? (r.verified / r.total) * 100 : 0,
       })).sort((a, b) => b.verified - a.verified);
       // Privacy: non-admin agents only see their own row in the CC Invoices tracking table
-      if (!isAdmin && user?.id) {
+      if (!canViewAllAgents && user?.id) {
         verifAgentRows = verifAgentRows.filter((r) => r.agentId === user.id);
       }
 
@@ -245,9 +250,13 @@ function Dashboard() {
   );
 
   const deliveryMethods = Array.from(new Set((data?.byDelivery ?? []).map((d) => d.name)));
-  const selectedAgentLabel = isAdmin && agentFilter !== "all"
+  const selectedAgentLabel = canViewAllAgents && agentFilter !== "all"
     ? (agents?.find((a: any) => a.id === agentFilter)?.full_name ?? "agent")
     : null;
+
+  if (!canViewDashboard) {
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to Dashboard.</p></div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -260,7 +269,7 @@ function Dashboard() {
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <DateRangePicker range={range} onChange={setRange} align="end" size="sm" />
-          {isAdmin ? (
+          {canViewTeamAnalytics ? (
             <>
               <Select value={teamFilter} onValueChange={(v) => { setTeamFilter(v); setAgentFilter("all"); }}>
                 <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="All teams" /></SelectTrigger>
@@ -270,24 +279,26 @@ function Dashboard() {
                   <SelectItem value="telesales">Telesales</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={agentFilter} onValueChange={setAgentFilter}>
-                <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All agents</SelectItem>
-                  {filteredAgents.map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {canViewAllAgents && (
+                <Select value={agentFilter} onValueChange={setAgentFilter}>
+                  <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All agents</SelectItem>
+                    {filteredAgents.map((a: any) => (
+                      <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </>
           ) : (
-            <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
+            canViewTeamAnalytics && <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
               {mineOnly ? "My data" : "All data"}
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => exportDashboard(data, { from, to, agentLabel: selectedAgentLabel, teamLabel: teamFilter })} disabled={!data}>
+          {canExport && <Button variant="outline" size="sm" onClick={() => exportDashboard(data, { from, to, agentLabel: selectedAgentLabel, teamLabel: teamFilter })} disabled={!data}>
             <Download className="h-4 w-4 mr-2" />Export
-          </Button>
+          </Button>}
         </div>
       </div>
 

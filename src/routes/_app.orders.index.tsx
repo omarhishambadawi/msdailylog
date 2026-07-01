@@ -13,7 +13,7 @@ import { ChevronLeft, ChevronRight, Download, Eye, Pencil, Plus, Search } from "
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import * as XLSX from "xlsx";
-import { STATUSES, STATUS_STYLES, TEAMS, CURRENCY, fmtSAR, formatOrderNo, stripOrderPrefix } from "@/lib/branches";
+import { STATUSES, STATUS_STYLES, TEAMS, CURRENCY, fmtSAR, formatOrderNo } from "@/lib/branches";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { DateRangePicker } from "@/components/date-range-picker";
@@ -82,19 +82,7 @@ function OrdersList() {
     queryKey: ["orders", from, to, team, agent, status, mineOnly, user?.id, term],
     queryFn: async () => {
       let qb = supabase.from("orders").select("*");
-      if (searching && term) {
-        // Database-wide search ignores date filter so results from any page surface
-        const numeric = stripOrderPrefix(term);
-        const orParts = [
-          `display_no.ilike.%${numeric}%`,
-          `invoice_no.ilike.%${term}%`,
-          `customer_name.ilike.%${term}%`,
-          `customer_phone.ilike.%${term}%`,
-          `branch_no.ilike.%${term}%`,
-          `notes.ilike.%${term}%`,
-        ];
-        qb = qb.or(orParts.join(","));
-      } else {
+      if (!searching || !term) {
         qb = qb.gte("order_date", from).lte("order_date", to);
       }
       qb = qb.order("order_date", { ascending: false }).order("created_at", { ascending: false }).limit(2000);
@@ -111,12 +99,25 @@ function OrdersList() {
       if (error) throw error;
       const nm = new Map((profiles ?? []).map((p: any) => [p.id, p]));
       const bm = new Map((branches ?? []).map((b: any) => [b.branch_no, b.city]));
-      return (orders ?? []).map((o: any) => ({
+      const mapped = (orders ?? []).map((o: any) => ({
         ...o,
         agent_name: nm.get(o.agent_id)?.full_name ?? "—",
         agent_code: nm.get(o.agent_id)?.agent_code ?? "",
         city: bm.get(o.branch_no) ?? "",
       }));
+      if (!searching || !term) return mapped;
+      const needle = term.toLowerCase();
+      return mapped.filter((o: any) => [
+        formatOrderNo(o.team, o.display_no),
+        o.display_no,
+        o.invoice_no,
+        o.customer_name,
+        o.customer_phone,
+        o.branch_no,
+        o.city,
+        o.notes,
+        o.agent_name,
+      ].filter(Boolean).some((v) => String(v).toLowerCase().includes(needle)));
     },
   });
 

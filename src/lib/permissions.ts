@@ -60,6 +60,23 @@ const AUDITOR_SAFE_READ_PERMS: PermKey[] = [
   "view_workforce",
 ];
 
+const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin">, PermKey[]> = {
+  customer_care: [
+    "view_orders", "create_orders", "edit_orders",
+    "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
+    "view_dashboard", "view_team_analytics",
+    "verify_own_orders", "view_invoice_analytics",
+    "export_reports", "view_workforce",
+  ],
+  telesales: [
+    "view_orders", "create_orders", "edit_orders",
+    "view_dashboard", "view_team_analytics",
+    "verify_own_orders", "view_invoice_analytics",
+    "export_reports", "view_workforce",
+  ],
+  auditor: AUDITOR_SAFE_READ_PERMS,
+};
+
 const ROLE_DEFAULTS: Record<AppRole, PermKey[]> = {
   admin: ALL_PERMISSIONS.map((p) => p.key),
   customer_care: [
@@ -87,7 +104,7 @@ export function hasPerm(role: AppRole | null, permissions: string[] | null | und
     if (permissions && permissions.length > 0) return permissions.includes(perm);
     return AUDITOR_PERMS.includes(perm);
   }
-  if (permissions && permissions.length > 0) return permissions.includes(perm);
+  if (permissions && permissions.length > 0) return ROLE_ALLOWED_PERMS[role].includes(perm) && permissions.includes(perm);
   return ROLE_DEFAULTS[role].includes(perm);
 }
 

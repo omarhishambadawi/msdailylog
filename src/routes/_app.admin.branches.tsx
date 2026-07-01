@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Pencil, Plus, ShieldAlert, Trash2, Search } from "lucide-react";
+import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app/admin/branches")({
   head: () => ({ meta: [{ title: "Branches — Admin" }] }),
@@ -18,7 +19,8 @@ export const Route = createFileRoute("/_app/admin/branches")({
 });
 
 function AdminBranches() {
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
+  const canManageBranches = hasPerm(role, profile?.permissions as any, "admin_access");
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -31,11 +33,11 @@ function AdminBranches() {
       if (error) throw error;
       return data ?? [];
     },
-    enabled: role === "admin",
+    enabled: canManageBranches,
   });
 
-  if (role !== "admin") {
-    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">Admins only.</p></div>;
+  if (!canManageBranches) {
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to branch administration.</p></div>;
   }
 
   const filtered = (data ?? []).filter((b: any) => {

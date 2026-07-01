@@ -39,7 +39,10 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
   const id = params?.id;
 
   const canCreate = hasPerm(role, profile?.permissions as any, "create_complaints");
-  const canEditPerm = hasPerm(role, profile?.permissions as any, "edit_complaints");
+  const canView = hasPerm(role, profile?.permissions as any, "view_complaints");
+  const canEditAll = hasPerm(role, profile?.permissions as any, "edit_all_complaints");
+  const canEditOwn = hasPerm(role, profile?.permissions as any, "edit_complaints");
+  const canDelete = hasPerm(role, profile?.permissions as any, "delete_complaints");
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -58,7 +61,7 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
 
   const isOwner = existing && user && existing.agent_id === user.id;
   const isAuditor = role === "auditor";
-  const canEditThis = mode === "create" ? canCreate : (canEditPerm && (role === "admin" || isOwner));
+  const canEditThis = mode === "create" ? canCreate : (canEditAll || (isOwner && canEditOwn));
   const readOnly = mode === "edit" && !canEditThis;
 
   const [form, setForm] = useState({
@@ -88,8 +91,7 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
 
   const cityFor = useMemo(() => (b: string | null) => branches?.find((x) => x.branch_no === b)?.city ?? "", [branches]);
 
-  if (mode === "edit" && existing && !canEditThis && !isAuditor && role !== "admin") {
-    // Only block for users who are neither owner, admin, nor auditor
+  if (mode === "edit" && existing && !canView && !isAuditor) {
     return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access.</p></div>;
   }
   if (mode === "create" && !canCreate) {
@@ -99,6 +101,7 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (!canEditThis) { toast.error("You don't have permission to modify this complaint"); return; }
     setBusy(true);
     try {
       const parsed = schema.parse({
@@ -126,6 +129,7 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
 
   const del = async () => {
     if (!id) return;
+    if (!canDelete) { toast.error("You don't have permission to delete complaints"); return; }
     if (!confirm("Delete this complaint?")) return;
     const { error } = await supabase.from("complaints" as any).delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
@@ -138,7 +142,7 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
     <div className="max-w-3xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <Link to="/complaints" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4 mr-1" /> Back</Link>
-        {mode === "edit" && role === "admin" && <Button variant="outline" size="sm" onClick={del}><Trash2 className="h-4 w-4 mr-2" />Delete</Button>}
+        {mode === "edit" && canDelete && <Button variant="outline" size="sm" onClick={del}><Trash2 className="h-4 w-4 mr-2" />Delete</Button>}
       </div>
       <Card>
         <CardHeader><CardTitle>{mode === "create" ? "New complaint" : `${readOnly ? "View" : "Edit"} complaint ${existing?.display_no ?? ""}`}</CardTitle></CardHeader>
