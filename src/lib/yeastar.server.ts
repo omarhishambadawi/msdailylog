@@ -19,6 +19,8 @@ interface TokenState {
 let cachedToken: TokenState | null = null;
 
 const FETCH_TIMEOUT_MS = 12_000;
+const MAX_RETRIES = 3;
+const BASE_BACKOFF_MS = 500;
 
 async function timedFetch(url: string, init?: RequestInit): Promise<Response> {
   const ctl = new AbortController();
@@ -28,6 +30,37 @@ async function timedFetch(url: string, init?: RequestInit): Promise<Response> {
   } finally {
     clearTimeout(t);
   }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function isRetriable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    /IP_FORBIDDEN/i.test(msg) ||
+    /abort/i.test(msg) ||
+    /timeout/i.test(msg) ||
+    /network/i.test(msg) ||
+    /fetch failed/i.test(msg) ||
+    /HTTP 5\d\d/.test(msg) ||
+    /HTTP 429/.test(msg)
+  );
+}
+
+async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt === MAX_RETRIES - 1 || !isRetriable(err)) break;
+      const delay = BASE_BACKOFF_MS * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
+      console.warn(`[yeastar] ${label} attempt ${attempt + 1} failed, retrying in ${delay}ms:`, err instanceof Error ? err.message : err);
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
 }
 
 function requireEnv() {
@@ -48,22 +81,25 @@ async function getAccessToken(): Promise<string> {
   const now = Date.now();
   if (cachedToken && cachedToken.expiresAt - 30_000 > now) return cachedToken.token;
 
-  const res = await timedFetch(`${env.base}/openapi/v1.0/get_token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: env.id, password: env.secret }),
-  });
-  if (!res.ok) throw new Error(`Yeastar auth HTTP ${res.status}`);
-  const json: any = await res.json();
-  if (json.errcode !== 0 || !json.access_token) {
-    if (json.errcode === 70087) {
-      throw new Error("IP_FORBIDDEN: PBX rejected the server IP. Allowlist the Lovable server IP in Yeastar → Settings → PBX → General → API, or set the allowlist to any.");
+  const token = await withRetry("auth", async () => {
+    const res = await timedFetch(`${env.base}/openapi/v1.0/get_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: env.id, password: env.secret }),
+    });
+    if (!res.ok) throw new Error(`Yeastar auth HTTP ${res.status}`);
+    const json: any = await res.json();
+    if (json.errcode !== 0 || !json.access_token) {
+      if (json.errcode === 70087) {
+        throw new Error("IP_FORBIDDEN: PBX rejected the server IP. Allowlist the Lovable server IP in Yeastar → Settings → PBX → General → API, or set the allowlist to any.");
+      }
+      throw new Error(`Yeastar auth error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
     }
-    throw new Error(`Yeastar auth error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
-  }
-  const ttlSec = Number(json.expire_time ?? 1800);
-  cachedToken = { token: json.access_token, expiresAt: now + ttlSec * 1000 };
-  return cachedToken.token;
+    const ttlSec = Number(json.expire_time ?? 1800);
+    cachedToken = { token: json.access_token, expiresAt: now + ttlSec * 1000 };
+    return json.access_token as string;
+  });
+  return token;
 }
 
 export interface YeastarCdrRecord {
@@ -99,17 +135,23 @@ export async function fetchCdr(fromDate: string, toDate: string): Promise<Yeasta
   let page = 1;
   // Hard safety cap: 20 pages = 10k records
   while (page <= 20) {
-    const url = new URL(`${env.base}/openapi/v1.0/cdr/list`);
-    url.searchParams.set("access_token", token);
-    url.searchParams.set("start_time", fmtDate(fromDate));
-    url.searchParams.set("end_time", fmtDateEnd(toDate));
-    url.searchParams.set("page", String(page));
-    url.searchParams.set("page_size", String(pageSize));
-    const res = await timedFetch(url.toString());
-    if (!res.ok) throw new Error(`Yeastar CDR ${res.status}`);
-    const json: any = await res.json();
-    if (json.errcode !== 0) throw new Error(`Yeastar CDR error: ${json.errmsg ?? "unknown"}`);
-    const rows: YeastarCdrRecord[] = json.cdr_list ?? [];
+    const currentPage = page;
+    const rows = await withRetry(`cdr page ${currentPage}`, async () => {
+      const url = new URL(`${env.base}/openapi/v1.0/cdr/list`);
+      url.searchParams.set("access_token", token);
+      url.searchParams.set("start_time", fmtDate(fromDate));
+      url.searchParams.set("end_time", fmtDateEnd(toDate));
+      url.searchParams.set("page", String(currentPage));
+      url.searchParams.set("page_size", String(pageSize));
+      const res = await timedFetch(url.toString());
+      if (!res.ok) throw new Error(`Yeastar CDR HTTP ${res.status}`);
+      const json: any = await res.json();
+      if (json.errcode !== 0) {
+        if (json.errcode === 70087) throw new Error("IP_FORBIDDEN: PBX rejected the server IP.");
+        throw new Error(`Yeastar CDR error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
+      }
+      return (json.cdr_list ?? []) as YeastarCdrRecord[];
+    });
     results.push(...rows);
     if (rows.length < pageSize) break;
     page += 1;
