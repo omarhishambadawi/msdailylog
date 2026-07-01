@@ -29,7 +29,6 @@ function Dashboard() {
   const [mineOnly, setMineOnly] = useState(false);
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [teamFilter, setTeamFilter] = useState<string>("all");
-  const [dateOpen, setDateOpen] = useState(false);
 
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -44,13 +43,6 @@ function Dashboard() {
     return `${format(range.from, "PP")} — ${format(range.to, "PP")}`;
   }, [range]);
 
-  const setQuick = (kind: "today" | "7d" | "30d" | "month") => {
-    const t = new Date();
-    if (kind === "today") { setRange({ from: t, to: t }); return; }
-    if (kind === "7d") { const f = new Date(); f.setDate(f.getDate() - 6); setRange({ from: f, to: t }); return; }
-    if (kind === "30d") { const f = new Date(); f.setDate(f.getDate() - 29); setRange({ from: f, to: t }); return; }
-    if (kind === "month") { setRange({ from: new Date(t.getFullYear(), t.getMonth(), 1), to: new Date(t.getFullYear(), t.getMonth() + 1, 0) }); return; }
-  };
 
   const effectiveAgent = isAdmin ? agentFilter : (mineOnly && user?.id ? user.id : "all");
   const effectiveTeam = isAdmin ? teamFilter : "all";
