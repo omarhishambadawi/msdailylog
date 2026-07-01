@@ -47,20 +47,21 @@ function AppLayout() {
     );
   }
 
+  const canDashboard = hasPerm(role, profile?.permissions as any, "view_dashboard");
+  const canOrders = hasPerm(role, profile?.permissions as any, "view_orders");
   const canCreate = hasPerm(role, profile?.permissions as any, "create_orders");
+  const canComplaints = hasPerm(role, profile?.permissions as any, "view_complaints");
   const canWorkforce = hasPerm(role, profile?.permissions as any, "view_workforce");
+  const canUsers = hasPerm(role, profile?.permissions as any, "manage_users");
+  const canAdminBranches = hasPerm(role, profile?.permissions as any, "admin_access");
   const nav = [
-    { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { to: "/orders", label: "Orders", icon: ListOrdered },
+    ...(canDashboard ? [{ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] : []),
+    ...(canOrders ? [{ to: "/orders", label: "Orders", icon: ListOrdered }] : []),
     ...(canCreate ? [{ to: "/orders/new", label: "New Order", icon: Plus }] : []),
-    { to: "/complaints", label: "Complaints", icon: MessageSquareWarning },
+    ...(canComplaints ? [{ to: "/complaints", label: "Complaints", icon: MessageSquareWarning }] : []),
     ...(canWorkforce ? [{ to: "/workforce", label: "Workforce", icon: CalendarDays }] : []),
-    ...(role === "admin"
-      ? [
-          { to: "/admin/users", label: "Users", icon: Users },
-          { to: "/admin/branches", label: "Branches", icon: MapPin },
-        ]
-      : []),
+    ...(canUsers ? [{ to: "/admin/users", label: "Users", icon: Users }] : []),
+    ...(canAdminBranches ? [{ to: "/admin/branches", label: "Branches", icon: MapPin }] : []),
   ] as const;
 
   const sidebarWidth = collapsed ? "w-16" : "w-60";

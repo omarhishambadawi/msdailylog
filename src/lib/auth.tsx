@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { hasPerm } from "@/lib/permissions";
 
 export type AppRole = "admin" | "customer_care" | "telesales" | "auditor";
 
@@ -20,6 +21,7 @@ interface AuthCtx {
   loading: boolean;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
+  hasPermission: (permission: string) => boolean;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -69,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh: async () => {
       if (session?.user) await loadProfile(session.user.id);
     },
+    hasPermission: (permission: string) => hasPerm(role, profile?.permissions, permission),
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -26,12 +26,14 @@ export const Route = createFileRoute("/_app/orders/")({
 
 const toISO = (d: Date) => format(d, "yyyy-MM-dd");
 const PAGE_SIZE = 50;
+const normalizeSearchTerm = (value: string) => value.replace(/[,%.*()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
 
 function OrdersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user, role, profile } = useAuth();
   const isAdmin = role === "admin";
+  const canView = hasPerm(role, profile?.permissions as any, "view_orders");
   const canCreate = hasPerm(role, profile?.permissions as any, "create_orders");
   const canEditAll = isAdmin || hasPerm(role, profile?.permissions as any, "edit_all_orders");
   const canEditOwn = hasPerm(role, profile?.permissions as any, "edit_orders");
@@ -51,7 +53,7 @@ function OrdersList() {
   const [page, setPage] = useState(0);
 
   const searching = q.trim().length > 0;
-  const term = q.trim();
+  const term = normalizeSearchTerm(q);
 
   // Agents list for admin filter, with role for team-based dependency
   const { data: agentOpts } = useQuery({
@@ -80,7 +82,7 @@ function OrdersList() {
     queryKey: ["orders", from, to, team, agent, status, mineOnly, user?.id, term],
     queryFn: async () => {
       let qb = supabase.from("orders").select("*");
-      if (searching) {
+      if (searching && term) {
         // Database-wide search ignores date filter so results from any page surface
         const numeric = stripOrderPrefix(term);
         const orParts = [
@@ -142,7 +144,12 @@ function OrdersList() {
     return `${format(range.from, "PP")} — ${format(range.to, "PP")}`;
   }, [range]);
 
-  const updateStatus = async (orderId: string, newStatus: string) => {
+  const canEditOrder = (order: any) => canEditAll || (user?.id === order.agent_id && canEditOwn);
+  const canVerifyOrder = (order: any) => canVerifyAll || (user?.id === order.agent_id && canVerifyOwn);
+
+  const updateStatus = async (order: any, newStatus: string) => {
+    if (!canEditOrder(order)) { toast.error("You don't have permission to edit this order"); return; }
+    const orderId = order.id;
     const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
     if (error) { toast.error(error.message); return; }
     toast.success("Status updated");
@@ -150,7 +157,9 @@ function OrdersList() {
     qc.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
-  const toggleVerified = async (orderId: string, value: boolean) => {
+  const toggleVerified = async (order: any, value: boolean) => {
+    if (!canVerifyOrder(order)) { toast.error("You don't have permission to verify this order"); return; }
+    const orderId = order.id;
     const { error } = await supabase.from("orders").update({ call_center_verified: value } as any).eq("id", orderId);
     if (error) { toast.error(error.message); return; }
     qc.invalidateQueries({ queryKey: ["orders"] });
@@ -158,6 +167,7 @@ function OrdersList() {
   };
 
   const exportXlsx = () => {
+    if (!hasPerm(role, profile?.permissions as any, "export_reports")) { toast.error("You don't have permission to export reports"); return; }
     const xrows = rows.map((o: any) => ({
       "Order #": formatOrderNo(o.team, o.display_no),
       Date: o.order_date,
@@ -185,6 +195,10 @@ function OrdersList() {
   // Reset to first page when filters change
   const onFilterChange = (fn: () => void) => { fn(); setPage(0); };
 
+  if (!canView) {
+    return <div className="text-center py-16"><Eye className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to Orders.</p></div>;
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
@@ -198,7 +212,7 @@ function OrdersList() {
           <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => onFilterChange(() => setMineOnly((v) => !v))}>
             {mineOnly ? "My orders" : "All orders"}
           </Button>
-          <Button size="sm" onClick={() => navigate({ to: "/orders/new" })}><Plus className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">New order</span></Button>
+          {canCreate && <Button size="sm" onClick={() => navigate({ to: "/orders/new" })}><Plus className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">New order</span></Button>}
         </div>
       </div>
 
@@ -206,7 +220,7 @@ function OrdersList() {
         <CardContent className="p-3 sm:p-4 flex flex-wrap items-center gap-2 lg:gap-3">
           <div className="relative flex-1 min-w-[200px] lg:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search order, invoice, customer, phone…" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} className="pl-9 h-10" />
+            <Input placeholder="Search order, invoice, customer, phone…" value={q} maxLength={80} onChange={(e) => { setQ(e.target.value); setPage(0); }} className="pl-9 h-10" />
           </div>
           <Select value={team} onValueChange={(v) => onFilterChange(() => { setTeam(v); setAgent("all"); })}>
             <SelectTrigger className="h-10 w-[150px]"><SelectValue placeholder="Team" /></SelectTrigger>
@@ -234,7 +248,7 @@ function OrdersList() {
             </SelectContent>
           </Select>
           <DateRangePicker range={range} onChange={(r) => { setRange(r); setPage(0); }} disabled={searching} />
-          <Button variant="outline" size="sm" onClick={exportXlsx} className="h-10 ml-auto"><Download className="h-4 w-4 mr-2" />Export</Button>
+          {hasPerm(role, profile?.permissions as any, "export_reports") && <Button variant="outline" size="sm" onClick={exportXlsx} className="h-10 ml-auto"><Download className="h-4 w-4 mr-2" />Export</Button>}
         </CardContent>
       </Card>
 
@@ -253,66 +267,54 @@ function OrdersList() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="w-full overflow-x-auto">
-            <Table className="table-fixed w-full">
+          <div className="w-full overflow-hidden">
+            <Table className="table-fixed w-full min-w-0">
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="w-10 text-center px-1">✓</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Order</TableHead>
-                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-24">Date</TableHead>
-                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold w-28">Team</TableHead>
-                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold">Agent</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Customer</TableHead>
-                  <TableHead className="hidden xl:table-cell text-xs uppercase tracking-wider font-semibold">Phone</TableHead>
-                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold w-20">Type</TableHead>
-                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-24">Branch</TableHead>
-                  <TableHead className="hidden xl:table-cell text-xs uppercase tracking-wider font-semibold">City</TableHead>
-                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold">Invoice</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-wider font-semibold w-24">Value</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[120px]">Status</TableHead>
-                  <TableHead className="w-10"></TableHead>
+                  <TableHead className="w-8 sm:w-10 text-center px-1">✓</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[34%] md:w-[28%]">Order</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-20">Date</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[22%] md:w-[18%]">Customer</TableHead>
+                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold w-16">Type</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-20">Branch</TableHead>
+                  <TableHead className="text-right text-xs uppercase tracking-wider font-semibold w-20 sm:w-24">Value</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[104px] sm:w-[116px]">Status</TableHead>
+                  <TableHead className="w-9 sm:w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={14} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
-                {!isLoading && pageRows.length === 0 && <TableRow><TableCell colSpan={14} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
+                {isLoading && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
+                {!isLoading && pageRows.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
                 {pageRows.map((o: any, idx: number) => {
                   const owned = user?.id === o.agent_id;
-                  const editable = canEditAll || (owned && canEditOwn);
-                  const canVerifyRow = canVerifyAll || (owned && canVerifyOwn);
+                  const editable = canEditOrder(o);
+                  const canVerifyRow = canVerifyOrder(o);
                   const verified = !!o.call_center_verified;
                   return (
                     <TableRow key={o.id} className={cn("transition-colors", idx % 2 === 1 && "bg-muted/20", verified && "bg-green-50/60 dark:bg-green-500/5", "hover:bg-accent/40")}>
                       <TableCell className="text-center px-1" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o.id, !!v)} aria-label="Call Center invoice verified" />
+                        <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </TableCell>
-                      <TableCell className="font-mono font-semibold whitespace-nowrap">
-                        <div>{formatOrderNo(o.team, o.display_no)}</div>
-                        {/* Mobile-only secondary info: team + branch + delivery + city */}
-                        <div className="md:hidden mt-1 flex flex-wrap gap-1 text-[10px] font-sans font-normal text-muted-foreground">
+                      <TableCell className="font-mono font-semibold whitespace-nowrap overflow-hidden">
+                        <div className="truncate">{formatOrderNo(o.team, o.display_no)}</div>
+                        <div className="mt-1 flex min-w-0 flex-wrap gap-x-1 gap-y-0.5 text-[10px] font-sans font-normal text-muted-foreground">
                           <TeamBadge team={o.team} />
-                          <span>{o.order_date}</span>
+                          <span className="md:hidden">{o.order_date}</span>
                           {o.branch_no && <span>· {o.branch_no}{o.city ? ` — ${o.city}` : ""}</span>}
                           {o.delivery_type && <span>· {o.delivery_type}</span>}
                           {o.invoice_no && <span>· Inv {o.invoice_no}</span>}
-                          {o.order_type && <span>· {o.order_type}</span>}
                           {o.agent_name && <span>· {o.agent_name}</span>}
                         </div>
                       </TableCell>
                       <TableCell className="hidden md:table-cell whitespace-nowrap text-xs">{o.order_date}</TableCell>
-                      <TableCell className="hidden lg:table-cell"><TeamBadge team={o.team} /></TableCell>
-                      <TableCell className="hidden md:table-cell whitespace-nowrap truncate max-w-[140px]">{o.agent_name}</TableCell>
-                      <TableCell className="truncate max-w-[160px]">{o.customer_name || "—"}</TableCell>
-                      <TableCell className="hidden xl:table-cell whitespace-nowrap font-mono text-xs">{o.customer_phone || "—"}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs">{o.order_type}</TableCell>
-                      <TableCell className="hidden md:table-cell font-mono text-xs">{o.branch_no ?? "—"}</TableCell>
-                      <TableCell className="hidden xl:table-cell text-xs">{o.city || "—"}</TableCell>
-                      <TableCell className="hidden lg:table-cell font-mono text-xs">{o.invoice_no || "—"}</TableCell>
+                      <TableCell className="truncate overflow-hidden">{o.customer_name || "—"}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs truncate">{o.order_type}</TableCell>
+                      <TableCell className="hidden md:table-cell font-mono text-xs truncate">{o.branch_no ?? "—"}</TableCell>
                       <TableCell className="text-right whitespace-nowrap text-xs font-mono">{fmtSAR(o.invoice_value)}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         {editable ? (
-                          <Select value={o.status} onValueChange={(v) => updateStatus(o.id, v)}>
-                            <SelectTrigger className={`h-8 w-full border ${STATUS_STYLES[o.status] ?? ""}`}><SelectValue /></SelectTrigger>
+                          <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
+                            <SelectTrigger className={`h-8 w-full border px-2 text-xs ${STATUS_STYLES[o.status] ?? ""}`}><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
@@ -363,9 +365,9 @@ function OrdersList() {
 
 function TeamBadge({ team }: { team: string }) {
   if (team === "telesales") {
-    return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-chart-3/15 text-chart-3 border-chart-3/30">Telesales</span>;
+    return <span className="inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] sm:text-xs font-medium bg-chart-3/15 text-chart-3 border-chart-3/30">Telesales</span>;
   }
-  return <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-primary/15 text-primary border-primary/30">Customer Care</span>;
+  return <span className="inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] sm:text-xs font-medium bg-primary/15 text-primary border-primary/30">Customer Care</span>;
 }
 
 function StatusBadge({ s }: { s: string }) {
