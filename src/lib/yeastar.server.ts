@@ -75,37 +75,151 @@ export function isYeastarConfigured(): boolean {
   return !!requireEnv();
 }
 
+const USER_AGENT = "Lovable-MSDailyLog/1.0 (+yeastar-integration)";
+
+export interface YeastarDiagnostic {
+  ok: boolean;
+  category:
+    | "ok"
+    | "not_configured"
+    | "dns"
+    | "ssl_tls"
+    | "timeout"
+    | "network"
+    | "invalid_endpoint"
+    | "missing_headers"
+    | "authentication"
+    | "invalid_client_id"
+    | "invalid_client_secret"
+    | "ip_forbidden"
+    | "http_error"
+    | "unknown";
+  baseUrl: string | null;
+  endpoint: string | null;
+  userAgent: string;
+  httpStatus?: number;
+  responseBody?: string;
+  errcode?: number;
+  errmsg?: string;
+  message: string;
+  hint?: string;
+}
+
+function classifyNetworkError(err: unknown): { category: YeastarDiagnostic["category"]; message: string } {
+  const msg = err instanceof Error ? err.message : String(err);
+  const cause = (err as any)?.cause?.code || (err as any)?.code || "";
+  const s = `${msg} ${cause}`.toLowerCase();
+  if (/abort|timeout/i.test(s)) return { category: "timeout", message: `Request timed out after ${FETCH_TIMEOUT_MS}ms` };
+  if (/enotfound|eai_again|dns/i.test(s)) return { category: "dns", message: `DNS lookup failed: ${msg}` };
+  if (/cert|ssl|tls|self.signed|unable to verify/i.test(s)) return { category: "ssl_tls", message: `SSL/TLS error: ${msg}` };
+  if (/econnrefused|econnreset|network|fetch failed/i.test(s)) return { category: "network", message: `Network error: ${msg}` };
+  return { category: "unknown", message: msg };
+}
+
+export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
+  const env = requireEnv();
+  if (!env) {
+    return {
+      ok: false, category: "not_configured", baseUrl: null, endpoint: null, userAgent: USER_AGENT,
+      message: "Yeastar is not configured. Missing YEASTAR_BASE_URL, YEASTAR_CLIENT_ID, or YEASTAR_CLIENT_SECRET.",
+    };
+  }
+  const endpoint = `${env.base}/openapi/v1.0/get_token`;
+  const { createHash } = await import("crypto");
+  const hashed = /^[a-f0-9]{32}$/i.test(env.secret) ? env.secret.toLowerCase() : createHash("md5").update(env.secret).digest("hex");
+
+  let res: Response;
+  try {
+    res = await timedFetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": USER_AGENT,
+      },
+      body: JSON.stringify({ username: env.id, password: hashed }),
+    });
+  } catch (err) {
+    const { category, message } = classifyNetworkError(err);
+    console.error("[yeastar diagnostic] transport failure:", category, message);
+    return { ok: false, category, baseUrl: env.base, endpoint, userAgent: USER_AGENT, message };
+  }
+
+  const bodyText = await res.text().catch(() => "");
+  const httpStatus = res.status;
+  console.log(`[yeastar diagnostic] HTTP ${httpStatus} from ${endpoint}`);
+  console.log(`[yeastar diagnostic] body: ${bodyText.slice(0, 500)}`);
+
+  if (httpStatus === 404) {
+    return { ok: false, category: "invalid_endpoint", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      httpStatus, responseBody: bodyText, message: "Endpoint not found (HTTP 404). Verify the Base URL and API version path." };
+  }
+  if (httpStatus === 400 && /user.?agent|header/i.test(bodyText)) {
+    return { ok: false, category: "missing_headers", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      httpStatus, responseBody: bodyText, message: "PBX rejected the request headers." };
+  }
+
+  let json: any = null;
+  try { json = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON */ }
+
+  if (!res.ok) {
+    return { ok: false, category: "http_error", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      httpStatus, responseBody: bodyText, message: `PBX returned HTTP ${httpStatus}.` };
+  }
+
+  if (json && json.errcode === 0 && json.access_token) {
+    const ttlSec = Number(json.expire_time ?? 1800);
+    cachedToken = { token: json.access_token, expiresAt: Date.now() + ttlSec * 1000 };
+    return { ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      httpStatus, errcode: 0, message: `Authentication successful. Token valid for ${ttlSec}s.` };
+  }
+
+  const errcode = json?.errcode;
+  const errmsg = json?.errmsg;
+  const base = { ok: false as const, baseUrl: env.base, endpoint, userAgent: USER_AGENT, httpStatus, responseBody: bodyText, errcode, errmsg };
+  switch (errcode) {
+    case 70087:
+      return { ...base, category: "ip_forbidden",
+        message: `IP forbidden (errcode 70087): ${errmsg ?? "PBX rejected the server IP."}`,
+        hint: "Allowlist the Lovable server IP in Yeastar → Settings → PBX → General → API (or set it to Any)." };
+    case 40002:
+      return { ...base, category: "invalid_client_secret",
+        message: `Invalid parameters (errcode 40002): ${errmsg ?? ""}. Client Secret is likely wrong or not MD5-hashed correctly.`,
+        hint: "Verify YEASTAR_CLIENT_SECRET matches the PBX API app secret." };
+    case 40004:
+    case 40005:
+    case 40011:
+      return { ...base, category: "invalid_client_id",
+        message: `Invalid Client ID (errcode ${errcode}): ${errmsg ?? ""}.`,
+        hint: "Verify YEASTAR_CLIENT_ID matches the PBX API app ID." };
+    case 40001:
+    case 40003:
+      return { ...base, category: "authentication",
+        message: `Authentication failed (errcode ${errcode}): ${errmsg ?? ""}.` };
+    default:
+      return { ...base, category: "authentication",
+        message: `Authentication failed${errcode != null ? ` (errcode ${errcode})` : ""}: ${errmsg ?? "no access_token returned"}.` };
+  }
+}
+
 async function getAccessToken(): Promise<string> {
   const env = requireEnv();
   if (!env) throw new Error("Yeastar not configured");
   const now = Date.now();
   if (cachedToken && cachedToken.expiresAt - 30_000 > now) return cachedToken.token;
 
-  const { createHash } = await import("crypto");
-  // Yeastar OpenAPI requires the password as a lowercase MD5 hex hash.
-  const hashed = /^[a-f0-9]{32}$/i.test(env.secret)
-    ? env.secret.toLowerCase()
-    : createHash("md5").update(env.secret).digest("hex");
   const token = await withRetry("auth", async () => {
-    const res = await timedFetch(`${env.base}/openapi/v1.0/get_token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: env.id, password: hashed }),
-    });
-    if (!res.ok) throw new Error(`Yeastar auth HTTP ${res.status}`);
-    const json: any = await res.json();
-    if (json.errcode !== 0 || !json.access_token) {
-      if (json.errcode === 70087) {
-        throw new Error("IP_FORBIDDEN: PBX rejected the server IP. Allowlist the Lovable server IP in Yeastar → Settings → PBX → General → API, or set the allowlist to any.");
-      }
-      throw new Error(`Yeastar auth error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
+    const diag = await diagnoseYeastar();
+    if (!diag.ok || !cachedToken) {
+      const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(diag)}`);
+      err.diagnostic = diag;
+      throw err;
     }
-    const ttlSec = Number(json.expire_time ?? 1800);
-    cachedToken = { token: json.access_token, expiresAt: now + ttlSec * 1000 };
-    return json.access_token as string;
+    return cachedToken.token;
   });
   return token;
 }
+
 
 export interface YeastarCdrRecord {
   call_id: string;
