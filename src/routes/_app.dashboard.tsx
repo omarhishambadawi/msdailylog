@@ -257,23 +257,7 @@ function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <Popover open={dateOpen} onOpenChange={setDateOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className={cn("font-normal", !range?.from && "text-muted-foreground")}>
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                <span className="truncate max-w-[180px]">{dateLabel}</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0 pointer-events-auto" align="end">
-              <div className="flex flex-wrap gap-1 p-2 border-b">
-                <Button size="sm" variant="ghost" onClick={() => setQuick("today")}>Today</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("7d")}>Last 7 days</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
-              </div>
-              <Calendar mode="range" selected={range} onSelect={setRange} numberOfMonths={1} defaultMonth={range?.from} className="pointer-events-auto [--cell-size:2.25rem]" />
-            </PopoverContent>
-          </Popover>
+          <DateRangePicker range={range} onChange={setRange} align="end" size="sm" />
           {isAdmin ? (
             <>
               <Select value={teamFilter} onValueChange={(v) => { setTeamFilter(v); setAgentFilter("all"); }}>
@@ -307,24 +291,17 @@ function Dashboard() {
 
       <div>
         <SectionTitle title="Performance for selected period" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiBlock label="Total orders" tone="from-slate-50 to-transparent dark:from-slate-500/10">
-            <KpiBig value={data?.monthTotalCount ?? 0} />
-            <KpiLine label="Pending" value={String(data?.pending ?? 0)} accent="text-amber-600 dark:text-amber-400" />
-            <KpiLine label="Cancelled" value={String(data?.cancelled ?? 0)} accent="text-red-600 dark:text-red-400" />
-            <KpiFoot value={`Avg ${data && data.monthTotalCount > 0 ? fmtSAR(data.monthAll / data.monthTotalCount) : "—"}`} />
-          </KpiBlock>
-          <KpiBlock label="Completed" tone="from-emerald-50 to-transparent dark:from-emerald-500/10" highlight>
-            <KpiBig value={data?.monthCompletedCount ?? 0} accent="text-green-600 dark:text-green-400" />
-            <KpiLine label="Completion rate" value={data ? `${data.completionRate.toFixed(1)}%` : "—"} />
-            <KpiLine label="Completed sales" value={data ? fmtSAR(data.monthCompleted) : "—"} accent="text-green-600 dark:text-green-400" />
-            <KpiFoot value={`of ${data?.monthTotalCount ?? 0} orders`} />
-          </KpiBlock>
-          <KpiBlock label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10">
-            <KpiBig value={data ? fmtSAR(data.monthCashSales) : "—"} />
-            <KpiLine label="Sales" value={data ? fmtSAR(data.monthCashSales) : "—"} muted />
-            <KpiFoot value="Cash orders" />
-          </KpiBlock>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <DashKpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10"
+            data={data} sales={data?.monthCashSales ?? 0}
+            filter={(r: any) => r.order_type === "Cash"} />
+          <DashKpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10"
+            data={data} sales={data?.monthWasSales ?? 0}
+            filter={(r: any) => r.order_type === "Wasfaty"} />
+          <DashKpiCard label="Total" tone="from-primary/10 to-transparent" highlight
+            data={data} sales={data?.monthAll ?? 0} filter={() => true} />
+        </div>
+      </div>
           <KpiBlock label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10">
             <KpiBig value={data ? fmtSAR(data.monthWasSales) : "—"} />
             <KpiLine label="Sales" value={data ? fmtSAR(data.monthWasSales) : "—"} muted />
