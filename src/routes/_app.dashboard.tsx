@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import * as XLSX from "xlsx";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { hasPerm } from "@/lib/permissions";
+import { SaudiSalesMap } from "@/components/saudi-sales-map";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — MilaServ Daily Log" }] }),
@@ -445,6 +446,14 @@ function Dashboard() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Geographic heat map */}
+      <div>
+        <SectionTitle title="Geographic distribution" />
+        <div className="mt-3">
+          <SaudiSalesMap cities={(data?.byCity ?? []).map((c) => ({ name: c.name, sales: c.sales, count: c.count }))} />
+        </div>
       </div>
 
       {/* Delivery method analysis */}
