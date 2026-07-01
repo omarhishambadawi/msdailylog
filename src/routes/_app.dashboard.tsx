@@ -111,11 +111,12 @@ function Dashboard() {
 
       // Generic aggregation: counts, completed-sales, completed count, completion rate
       const groupAgg = (rows: any[], keyFn: (o: any) => string) => {
-        const m: Record<string, { count: number; sales: number; completed: number }> = {};
+        const m: Record<string, { count: number; sales: number; completed: number; total: number }> = {};
         for (const o of rows) {
           const k = keyFn(o) || "—";
-          if (!m[k]) m[k] = { count: 0, sales: 0, completed: 0 };
+          if (!m[k]) m[k] = { count: 0, sales: 0, completed: 0, total: 0 };
           m[k].count += 1;
+          m[k].total += num(o.invoice_value);
           if (o.status === "Completed") {
             m[k].sales += num(o.invoice_value);
             m[k].completed += 1;
@@ -453,7 +454,7 @@ function Dashboard() {
       <div>
         <SectionTitle title="Geographic distribution" />
         <div className="mt-3">
-          <SaudiSalesMap cities={(data?.byCity ?? []).map((c) => ({ name: c.name, sales: c.sales, count: c.count }))} />
+          <SaudiSalesMap cities={(data?.byCity ?? []).map((c: any) => ({ name: c.name, sales: c.sales, count: c.count, total: c.total ?? c.sales, completed: c.completed ?? 0 }))} />
         </div>
       </div>
 
