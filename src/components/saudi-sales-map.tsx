@@ -92,9 +92,12 @@ const KSA_OUTLINE: Array<[number, number]> = [
   [37.4, 24.6], [36.7, 25.6], [36.0, 26.5], [35.2, 27.4], [34.6, 28.1],
 ];
 
-const LON_MIN = 34.0, LON_MAX = 56.0;
-const LAT_MIN = 16.0, LAT_MAX = 33.0;
-const W = 800, H = 520;
+// Projection bounds — add small padding so bubbles near edges aren't clipped
+const LON_MIN = 33.5, LON_MAX = 56.5;
+const LAT_MIN = 15.5, LAT_MAX = 32.8;
+// Keep viewBox aspect ratio equal to lon:lat span so the country isn't squished
+const W = 800;
+const H = Math.round((W * (LAT_MAX - LAT_MIN)) / (LON_MAX - LON_MIN)); // ≈ 602
 
 function project(lon: number, lat: number): [number, number] {
   const x = ((lon - LON_MIN) / (LON_MAX - LON_MIN)) * W;
