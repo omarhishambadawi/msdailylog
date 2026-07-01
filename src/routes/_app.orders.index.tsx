@@ -8,16 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarIcon, CheckCircle2, ChevronLeft, ChevronRight, Download, Pencil, Plus, Search } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Download, Pencil, Plus, Search } from "lucide-react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import * as XLSX from "xlsx";
 import { STATUSES, STATUS_STYLES, TEAMS, CURRENCY, fmtSAR, formatOrderNo, stripOrderPrefix } from "@/lib/branches";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app/orders/")({
   head: () => ({ meta: [{ title: "Orders" }] }),
@@ -30,13 +30,15 @@ const PAGE_SIZE = 50;
 function OrdersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { user, role } = useAuth();
+  const { user, role, profile } = useAuth();
   const isAdmin = role === "admin";
+  const canCreate = hasPerm(role, profile?.permissions as any, "create_orders");
+  const canEditAll = isAdmin || hasPerm(role, profile?.permissions as any, "edit_all_orders");
+  const canEditOwn = hasPerm(role, profile?.permissions as any, "edit_orders");
+  const canVerifyAll = isAdmin || hasPerm(role, profile?.permissions as any, "verify_all_orders");
+  const canVerifyOwn = hasPerm(role, profile?.permissions as any, "verify_own_orders");
 
   const today = new Date();
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  // Orders default = Today (per spec). Quick range presets still available.
   const [range, setRange] = useState<DateRange | undefined>({ from: today, to: today });
   const from = range?.from ? toISO(range.from) : toISO(today);
   const to = range?.to ? toISO(range.to) : from;
@@ -46,7 +48,6 @@ function OrdersList() {
   const [agent, setAgent] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
   const [mineOnly, setMineOnly] = useState<boolean>(false);
-  const [dateOpen, setDateOpen] = useState(false);
   const [page, setPage] = useState(0);
 
   const searching = q.trim().length > 0;
@@ -139,14 +140,6 @@ function OrdersList() {
     if (!range.to || toISO(range.from) === toISO(range.to)) return format(range.from, "PP");
     return `${format(range.from, "PP")} — ${format(range.to, "PP")}`;
   }, [range]);
-
-  const setQuick = (kind: "today" | "7d" | "30d" | "month") => {
-    const t = new Date();
-    if (kind === "today") { setRange({ from: t, to: t }); return; }
-    if (kind === "7d") { const f = new Date(); f.setDate(f.getDate() - 6); setRange({ from: f, to: t }); return; }
-    if (kind === "30d") { const f = new Date(); f.setDate(f.getDate() - 29); setRange({ from: f, to: t }); return; }
-    if (kind === "month") { setRange({ from: new Date(t.getFullYear(), t.getMonth(), 1), to: new Date(t.getFullYear(), t.getMonth() + 1, 0) }); return; }
-  };
 
   const updateStatus = async (orderId: string, newStatus: string) => {
     const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
