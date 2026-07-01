@@ -101,6 +101,7 @@ export interface YeastarDiagnostic {
     | "invalid_client_secret"
     | "ip_forbidden"
     | "http_error"
+    | "probe_failed"
     | "unknown";
   baseUrl: string | null;
   endpoint: string | null;
@@ -111,7 +112,16 @@ export interface YeastarDiagnostic {
   errmsg?: string;
   message: string;
   hint?: string;
+  probe?: {
+    endpoint: string;
+    httpStatus?: number;
+    errcode?: number;
+    errmsg?: string;
+    ok: boolean;
+    body?: string;
+  };
 }
+
 
 function classifyNetworkError(err: unknown): { category: YeastarDiagnostic["category"]; message: string } {
   const msg = err instanceof Error ? err.message : String(err);
