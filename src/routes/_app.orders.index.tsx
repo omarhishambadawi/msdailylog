@@ -269,25 +269,24 @@ function OrdersList() {
       <Card>
         <CardContent className="p-0">
           <div className="w-full overflow-hidden">
-            <Table className="table-fixed w-full min-w-0">
+            <Table className="table-fixed w-full">
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="w-8 sm:w-10 text-center px-1">✓</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[34%] md:w-[28%]">Order</TableHead>
+                  <TableHead className="w-8 text-center px-1">✓</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Order</TableHead>
                   <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-20">Date</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[22%] md:w-[18%]">Customer</TableHead>
+                  <TableHead className="hidden sm:table-cell text-xs uppercase tracking-wider font-semibold w-[22%] md:w-[18%]">Customer</TableHead>
                   <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold w-16">Type</TableHead>
                   <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-20">Branch</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-wider font-semibold w-20 sm:w-24">Value</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[104px] sm:w-[116px]">Status</TableHead>
-                  <TableHead className="w-9 sm:w-10"></TableHead>
+                  <TableHead className="text-right text-xs uppercase tracking-wider font-semibold w-[74px] sm:w-24">Value</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[92px] sm:w-[116px]">Status</TableHead>
+                  <TableHead className="w-8 sm:w-10 px-0"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
                 {!isLoading && pageRows.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
                 {pageRows.map((o: any, idx: number) => {
-                  const owned = user?.id === o.agent_id;
                   const editable = canEditOrder(o);
                   const canVerifyRow = canVerifyOrder(o);
                   const verified = !!o.call_center_verified;
@@ -296,26 +295,27 @@ function OrdersList() {
                       <TableCell className="text-center px-1" onClick={(e) => e.stopPropagation()}>
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </TableCell>
-                      <TableCell className="font-mono font-semibold whitespace-nowrap overflow-hidden">
+                      <TableCell className="font-mono font-semibold overflow-hidden">
                         <div className="truncate">{formatOrderNo(o.team, o.display_no)}</div>
                         <div className="mt-1 flex min-w-0 flex-wrap gap-x-1 gap-y-0.5 text-[10px] font-sans font-normal text-muted-foreground">
                           <TeamBadge team={o.team} />
+                          <span className="sm:hidden truncate max-w-full">{o.customer_name || "—"}</span>
                           <span className="md:hidden">{o.order_date}</span>
-                          {o.branch_no && <span>· {o.branch_no}{o.city ? ` — ${o.city}` : ""}</span>}
+                          {o.branch_no && <span className="md:hidden">· {o.branch_no}{o.city ? ` — ${o.city}` : ""}</span>}
                           {o.delivery_type && <span>· {o.delivery_type}</span>}
                           {o.invoice_no && <span>· Inv {o.invoice_no}</span>}
                           {o.agent_name && <span>· {o.agent_name}</span>}
                         </div>
                       </TableCell>
                       <TableCell className="hidden md:table-cell whitespace-nowrap text-xs">{o.order_date}</TableCell>
-                      <TableCell className="truncate overflow-hidden">{o.customer_name || "—"}</TableCell>
+                      <TableCell className="hidden sm:table-cell truncate overflow-hidden">{o.customer_name || "—"}</TableCell>
                       <TableCell className="hidden lg:table-cell text-xs truncate">{o.order_type}</TableCell>
                       <TableCell className="hidden md:table-cell font-mono text-xs truncate">{o.branch_no ?? "—"}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap text-xs font-mono">{fmtSAR(o.invoice_value)}</TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="text-right whitespace-nowrap text-[11px] sm:text-xs font-mono">{fmtSAR(o.invoice_value)}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()} className="px-1 sm:px-2">
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
-                            <SelectTrigger className={`h-8 w-full border px-2 text-xs ${STATUS_STYLES[o.status] ?? ""}`}><SelectValue /></SelectTrigger>
+                            <SelectTrigger className={`h-8 w-full border px-1.5 sm:px-2 text-[11px] sm:text-xs ${STATUS_STYLES[o.status] ?? ""}`}><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
@@ -324,13 +324,13 @@ function OrdersList() {
                           <StatusBadge s={o.status} />
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="px-0 text-center">
                         {editable ? (
-                          <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="Edit order">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="Edit order">
                             <Pencil className="h-4 w-4" />
                           </Button>
                         ) : (
-                          <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="View order">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="View order">
                             <Eye className="h-4 w-4" />
                           </Button>
                         )}
