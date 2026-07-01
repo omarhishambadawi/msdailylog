@@ -448,6 +448,14 @@ function Dashboard() {
         </Card>
       </div>
 
+      {/* Geographic heat map */}
+      <div>
+        <SectionTitle title="Geographic distribution" />
+        <div className="mt-3">
+          <SaudiSalesMap cities={(data?.byCity ?? []).map((c) => ({ name: c.name, sales: c.sales, count: c.count }))} />
+        </div>
+      </div>
+
       {/* Delivery method analysis */}
       <div>
         <SectionTitle title="Delivery methods" />
