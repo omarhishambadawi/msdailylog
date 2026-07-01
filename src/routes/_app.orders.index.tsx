@@ -365,10 +365,24 @@ function OrdersList() {
 }
 
 function TeamBadge({ team }: { team: string }) {
-  if (team === "telesales") {
-    return <span className="inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] sm:text-xs font-medium bg-chart-3/15 text-chart-3 border-chart-3/30">Telesales</span>;
-  }
-  return <span className="inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] sm:text-xs font-medium bg-primary/15 text-primary border-primary/30">Customer Care</span>;
+  const isTs = team === "telesales";
+  const cls = isTs
+    ? "bg-chart-3/15 text-chart-3 border-chart-3/30"
+    : "bg-primary/15 text-primary border-primary/30";
+  const full = isTs ? "Telesales" : "Customer Care";
+  const abbr = isTs ? "TS" : "CC";
+  return (
+    <span
+      title={full}
+      className={cn(
+        "inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] sm:text-xs font-medium",
+        cls,
+      )}
+    >
+      <span className="sm:hidden">{abbr}</span>
+      <span className="hidden sm:inline">{full}</span>
+    </span>
+  );
 }
 
 function StatusBadge({ s }: { s: string }) {
