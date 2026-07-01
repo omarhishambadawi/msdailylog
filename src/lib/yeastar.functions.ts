@@ -64,11 +64,14 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
         extension: extensionFilter,
       });
     } catch (err) {
-      console.error("[Yeastar] fetch failed:", err);
-      // Graceful fallback: keep the dashboard responsive.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[Yeastar] fetch failed:", msg);
+      const friendly = msg.startsWith("IP_FORBIDDEN")
+        ? "Yeastar PBX rejected the request (IP allowlist). Ask your PBX admin to allow the Lovable server IP in Settings → PBX → General → API."
+        : "Call analytics are temporarily unavailable. We'll retry automatically.";
       return {
         configured: true as const,
-        error: "Unable to reach Yeastar PBX right now.",
+        error: friendly,
         total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0,
         byTeam: { customerCare: 0, telesales: 0 },
         byAgent: [] as Array<{
