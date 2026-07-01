@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut, CalendarDays,
+  LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut,
   ShieldAlert, MessageSquareWarning, Menu, X,
 } from "lucide-react";
 import logo from "@/assets/milaserv-logo.png.asset.json";
@@ -51,7 +51,6 @@ function AppLayout() {
   const canOrders = hasPerm(role, profile?.permissions as any, "view_orders");
   const canCreate = hasPerm(role, profile?.permissions as any, "create_orders");
   const canComplaints = hasPerm(role, profile?.permissions as any, "view_complaints");
-  const canWorkforce = hasPerm(role, profile?.permissions as any, "view_workforce");
   const canUsers = hasPerm(role, profile?.permissions as any, "manage_users");
   const canAdminBranches = hasPerm(role, profile?.permissions as any, "admin_access");
   const nav = [
@@ -59,7 +58,6 @@ function AppLayout() {
     ...(canOrders ? [{ to: "/orders", label: "Orders", icon: ListOrdered }] : []),
     ...(canCreate ? [{ to: "/orders/new", label: "New Order", icon: Plus }] : []),
     ...(canComplaints ? [{ to: "/complaints", label: "Complaints", icon: MessageSquareWarning }] : []),
-    ...(canWorkforce ? [{ to: "/workforce", label: "Workforce", icon: CalendarDays }] : []),
     ...(canUsers ? [{ to: "/admin/users", label: "Users", icon: Users }] : []),
     ...(canAdminBranches ? [{ to: "/admin/branches", label: "Branches", icon: MapPin }] : []),
   ] as const;

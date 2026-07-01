@@ -1,6 +1,6 @@
 import type { AppRole } from "@/lib/auth";
 
-export type PermissionGroup = "Orders" | "Complaints" | "Dashboard" | "Invoice Verification" | "Workforce" | "Administration";
+export type PermissionGroup = "Orders" | "Complaints" | "Dashboard" | "Invoice Verification" | "Administration";
 
 export interface PermissionDef {
   key: string;
@@ -32,9 +32,6 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   { key: "verify_own_orders", label: "Verify Own Orders", group: "Invoice Verification" },
   { key: "verify_all_orders", label: "Verify All Orders", group: "Invoice Verification" },
   { key: "view_invoice_analytics", label: "View Invoice Analytics", group: "Invoice Verification" },
-  // Workforce
-  { key: "view_workforce", label: "View Workforce Management", group: "Workforce" },
-  { key: "manage_workforce", label: "Manage Workforce (create/edit/delete)", group: "Workforce" },
   // Administration
   { key: "view_reports", label: "View All Reports", group: "Administration" },
   { key: "manage_users", label: "Manage Users", group: "Administration" },
@@ -55,10 +52,7 @@ const AUDITOR_PERMS: PermKey[] = [
   "export_reports",
 ];
 
-const AUDITOR_SAFE_READ_PERMS: PermKey[] = [
-  ...AUDITOR_PERMS,
-  "view_workforce",
-];
+const AUDITOR_SAFE_READ_PERMS: PermKey[] = [...AUDITOR_PERMS];
 
 const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin">, PermKey[]> = {
   customer_care: [
@@ -66,13 +60,13 @@ const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin">, PermKey[]> = {
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
     "view_dashboard", "view_team_analytics",
     "verify_own_orders", "view_invoice_analytics",
-    "export_reports", "view_workforce",
+    "export_reports",
   ],
   telesales: [
     "view_orders", "create_orders", "edit_orders",
     "view_dashboard", "view_team_analytics",
     "verify_own_orders", "view_invoice_analytics",
-    "export_reports", "view_workforce",
+    "export_reports",
   ],
   auditor: AUDITOR_SAFE_READ_PERMS,
 };
@@ -84,13 +78,11 @@ const ROLE_DEFAULTS: Record<AppRole, PermKey[]> = {
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
     "view_dashboard", "view_team_analytics",
     "verify_own_orders",
-    "view_workforce",
   ],
   telesales: [
     "view_orders", "create_orders", "edit_orders",
     "view_dashboard",
     "verify_own_orders",
-    "view_workforce",
   ],
   auditor: AUDITOR_PERMS,
 };
@@ -112,4 +104,4 @@ export function defaultPermsForRole(role: AppRole): PermKey[] {
   return ROLE_DEFAULTS[role];
 }
 
-export const PERMISSION_GROUPS: PermissionGroup[] = ["Orders", "Complaints", "Dashboard", "Invoice Verification", "Workforce", "Administration"];
+export const PERMISSION_GROUPS: PermissionGroup[] = ["Orders", "Complaints", "Dashboard", "Invoice Verification", "Administration"];

@@ -13,7 +13,6 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppWorkforceRouteImport } from './routes/_app.workforce'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppOrdersIndexRouteImport } from './routes/_app.orders.index'
 import { Route as AppComplaintsIndexRouteImport } from './routes/_app.complaints.index'
@@ -42,11 +41,6 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AppWorkforceRoute = AppWorkforceRouteImport.update({
-  id: '/workforce',
-  path: '/workforce',
-  getParentRoute: () => AppRoute,
 } as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
@@ -99,7 +93,6 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
   '/dashboard': typeof AppDashboardRoute
-  '/workforce': typeof AppWorkforceRoute
   '/admin/branches': typeof AppAdminBranchesRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/complaints/$id': typeof AppComplaintsIdRoute
@@ -114,7 +107,6 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
   '/dashboard': typeof AppDashboardRoute
-  '/workforce': typeof AppWorkforceRoute
   '/admin/branches': typeof AppAdminBranchesRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/complaints/$id': typeof AppComplaintsIdRoute
@@ -131,7 +123,6 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
   '/_app/dashboard': typeof AppDashboardRoute
-  '/_app/workforce': typeof AppWorkforceRoute
   '/_app/admin/branches': typeof AppAdminBranchesRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/complaints/$id': typeof AppComplaintsIdRoute
@@ -148,7 +139,6 @@ export interface FileRouteTypes {
     | '/auth'
     | '/reset-password'
     | '/dashboard'
-    | '/workforce'
     | '/admin/branches'
     | '/admin/users'
     | '/complaints/$id'
@@ -163,7 +153,6 @@ export interface FileRouteTypes {
     | '/auth'
     | '/reset-password'
     | '/dashboard'
-    | '/workforce'
     | '/admin/branches'
     | '/admin/users'
     | '/complaints/$id'
@@ -179,7 +168,6 @@ export interface FileRouteTypes {
     | '/auth'
     | '/reset-password'
     | '/_app/dashboard'
-    | '/_app/workforce'
     | '/_app/admin/branches'
     | '/_app/admin/users'
     | '/_app/complaints/$id'
@@ -226,13 +214,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_app/workforce': {
-      id: '/_app/workforce'
-      path: '/workforce'
-      fullPath: '/workforce'
-      preLoaderRoute: typeof AppWorkforceRouteImport
-      parentRoute: typeof AppRoute
     }
     '/_app/dashboard': {
       id: '/_app/dashboard'
@@ -302,7 +283,6 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
-  AppWorkforceRoute: typeof AppWorkforceRoute
   AppAdminBranchesRoute: typeof AppAdminBranchesRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppComplaintsIdRoute: typeof AppComplaintsIdRoute
@@ -315,7 +295,6 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
-  AppWorkforceRoute: AppWorkforceRoute,
   AppAdminBranchesRoute: AppAdminBranchesRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppComplaintsIdRoute: AppComplaintsIdRoute,

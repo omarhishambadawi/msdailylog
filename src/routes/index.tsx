@@ -13,6 +13,6 @@ function Index() {
   if (hasPerm(role, profile?.permissions, "view_dashboard")) return <Navigate to="/dashboard" replace />;
   if (hasPerm(role, profile?.permissions, "view_orders")) return <Navigate to="/orders" replace />;
   if (hasPerm(role, profile?.permissions, "view_complaints")) return <Navigate to="/complaints" replace />;
-  if (hasPerm(role, profile?.permissions, "view_workforce")) return <Navigate to="/workforce" replace />;
+  
   return <div className="flex min-h-screen items-center justify-center text-muted-foreground">No permissions assigned.</div>;
 }

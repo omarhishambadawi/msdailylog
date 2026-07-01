@@ -16,6 +16,7 @@ import * as XLSX from "xlsx";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { hasPerm } from "@/lib/permissions";
 import { SaudiSalesMap } from "@/components/saudi-sales-map";
+import { CallCenterAnalytics } from "@/components/call-center-analytics";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — MilaServ Daily Log" }] }),
@@ -453,6 +454,19 @@ function Dashboard() {
         <SectionTitle title="Geographic distribution" />
         <div className="mt-3">
           <SaudiSalesMap cities={(data?.byCity ?? []).map((c) => ({ name: c.name, sales: c.sales, count: c.count }))} />
+        </div>
+      </div>
+
+      {/* Call center analytics — follows the same date / team / agent filters */}
+      <div>
+        <SectionTitle title="Call center analytics" />
+        <div className="mt-3">
+          <CallCenterAnalytics
+            from={from}
+            to={to}
+            team={(effectiveTeam === "all" ? "all" : effectiveTeam) as "customer_care" | "telesales" | "all"}
+            agentId={effectiveAgent !== "all" ? effectiveAgent : undefined}
+          />
         </div>
       </div>
 
