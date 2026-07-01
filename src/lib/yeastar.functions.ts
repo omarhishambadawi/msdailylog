@@ -21,21 +21,27 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => inputSchema.parse(input))
   .handler(async ({ data, context }) => {
-    const { fetchCdr, aggregateCdr, isYeastarConfigured } = await import("@/lib/yeastar.server");
+    const { fetchCdr, aggregateCdr, isYeastarConfigured, diagnoseYeastar } = await import("@/lib/yeastar.server");
+    const emptyStats = {
+      total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0,
+      byTeam: { customerCare: 0, telesales: 0 },
+      byAgent: [] as Array<{
+        extension: string; agentName: string;
+        total: number; answered: number; missed: number; inbound: number; outbound: number;
+      }>,
+    };
     if (!isYeastarConfigured()) {
-      return {
-        configured: false as const,
-        total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0,
-        byTeam: { customerCare: 0, telesales: 0 },
-        byAgent: [] as Array<{
-          extension: string; agentName: string;
-          total: number; answered: number; missed: number; inbound: number; outbound: number;
-        }>,
-      };
+      return { configured: false as const, ...emptyStats };
+    }
+
+    // Step 1: run connection diagnostic. Do NOT continue until we have a token.
+    const diag = await diagnoseYeastar();
+    if (!diag.ok) {
+      console.error("[Yeastar] diagnostic failed:", diag.category, diag.message);
+      return { configured: true as const, diagnostic: diag, ...emptyStats };
     }
 
     // Build agent directory from profiles + user_roles.
-    // The `profiles.agent_code` is used as the PBX extension identifier.
     const { supabase } = context;
     const [{ data: profiles }, { data: roles }] = await Promise.all([
       supabase.from("profiles").select("id,full_name,agent_code"),
@@ -50,7 +56,6 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
         return { extension: String(p.agent_code), fullName: p.full_name ?? "", team };
       });
 
-    // Resolve selected agent's extension for filtering
     let extensionFilter: string | undefined;
     if (data.agentId) {
       const match = (profiles ?? []).find((p: any) => p.id === data.agentId);
@@ -59,25 +64,23 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
 
     try {
       const records = await fetchCdr(data.from, data.to);
-      return aggregateCdr(records, directory, {
-        team: data.team === "all" ? undefined : data.team,
-        extension: extensionFilter,
-      });
+      return {
+        ...aggregateCdr(records, directory, {
+          team: data.team === "all" ? undefined : data.team,
+          extension: extensionFilter,
+        }),
+        diagnostic: diag,
+      };
     } catch (err) {
+      const anyErr = err as any;
+      const cdrDiag = anyErr?.diagnostic as Awaited<ReturnType<typeof diagnoseYeastar>> | undefined;
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[Yeastar] fetch failed:", msg);
-      const friendly = msg.startsWith("IP_FORBIDDEN")
-        ? "Yeastar PBX rejected the request (IP allowlist). Ask your PBX admin to allow the Lovable server IP in Settings → PBX → General → API."
-        : "Call analytics are temporarily unavailable. We'll retry automatically.";
+      console.error("[Yeastar] CDR fetch failed:", msg);
       return {
         configured: true as const,
-        error: friendly,
-        total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0,
-        byTeam: { customerCare: 0, telesales: 0 },
-        byAgent: [] as Array<{
-          extension: string; agentName: string;
-          total: number; answered: number; missed: number; inbound: number; outbound: number;
-        }>,
+        diagnostic: cdrDiag ?? { ...diag, ok: false, category: "http_error" as const, message: `CDR request failed: ${msg}` },
+        ...emptyStats,
       };
     }
   });
+
