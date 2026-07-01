@@ -174,7 +174,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
         <div className="relative w-full overflow-hidden rounded-md border bg-gradient-to-b from-sky-50/60 to-transparent dark:from-sky-500/5">
           <svg
             viewBox={`0 0 ${W} ${H}`}
-            className="w-full h-auto max-h-[360px]"
+            className="w-full h-auto"
+            style={{ maxHeight: "min(60vh, 440px)" }}
             preserveAspectRatio="xMidYMid meet"
             role="img"
             aria-label="Saudi Arabia sales heat map"
