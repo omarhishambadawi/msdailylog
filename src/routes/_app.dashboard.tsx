@@ -4,17 +4,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
 import { fmtSAR } from "@/lib/branches";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { CalendarIcon, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import * as XLSX from "xlsx";
+import { DateRangePicker } from "@/components/date-range-picker";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — MilaServ Daily Log" }] }),
@@ -29,7 +28,6 @@ function Dashboard() {
   const [mineOnly, setMineOnly] = useState(false);
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [teamFilter, setTeamFilter] = useState<string>("all");
-  const [dateOpen, setDateOpen] = useState(false);
 
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -44,13 +42,6 @@ function Dashboard() {
     return `${format(range.from, "PP")} — ${format(range.to, "PP")}`;
   }, [range]);
 
-  const setQuick = (kind: "today" | "7d" | "30d" | "month") => {
-    const t = new Date();
-    if (kind === "today") { setRange({ from: t, to: t }); return; }
-    if (kind === "7d") { const f = new Date(); f.setDate(f.getDate() - 6); setRange({ from: f, to: t }); return; }
-    if (kind === "30d") { const f = new Date(); f.setDate(f.getDate() - 29); setRange({ from: f, to: t }); return; }
-    if (kind === "month") { setRange({ from: new Date(t.getFullYear(), t.getMonth(), 1), to: new Date(t.getFullYear(), t.getMonth() + 1, 0) }); return; }
-  };
 
   const effectiveAgent = isAdmin ? agentFilter : (mineOnly && user?.id ? user.id : "all");
   const effectiveTeam = isAdmin ? teamFilter : "all";
@@ -265,23 +256,7 @@ function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <Popover open={dateOpen} onOpenChange={setDateOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className={cn("font-normal", !range?.from && "text-muted-foreground")}>
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                <span className="truncate max-w-[180px]">{dateLabel}</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0 pointer-events-auto" align="end">
-              <div className="flex flex-wrap gap-1 p-2 border-b">
-                <Button size="sm" variant="ghost" onClick={() => setQuick("today")}>Today</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("7d")}>Last 7 days</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
-              </div>
-              <Calendar mode="range" selected={range} onSelect={setRange} numberOfMonths={1} defaultMonth={range?.from} className="pointer-events-auto [--cell-size:2.25rem]" />
-            </PopoverContent>
-          </Popover>
+          <DateRangePicker range={range} onChange={setRange} align="end" size="sm" />
           {isAdmin ? (
             <>
               <Select value={teamFilter} onValueChange={(v) => { setTeamFilter(v); setAgentFilter("all"); }}>
@@ -315,47 +290,21 @@ function Dashboard() {
 
       <div>
         <SectionTitle title="Performance for selected period" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiBlock label="Total orders" tone="from-slate-50 to-transparent dark:from-slate-500/10">
-            <KpiBig value={data?.monthTotalCount ?? 0} />
-            <KpiLine label="Pending" value={String(data?.pending ?? 0)} accent="text-amber-600 dark:text-amber-400" />
-            <KpiLine label="Cancelled" value={String(data?.cancelled ?? 0)} accent="text-red-600 dark:text-red-400" />
-            <KpiFoot value={`Avg ${data && data.monthTotalCount > 0 ? fmtSAR(data.monthAll / data.monthTotalCount) : "—"}`} />
-          </KpiBlock>
-          <KpiBlock label="Completed" tone="from-emerald-50 to-transparent dark:from-emerald-500/10" highlight>
-            <KpiBig value={data?.monthCompletedCount ?? 0} accent="text-green-600 dark:text-green-400" />
-            <KpiLine label="Completion rate" value={data ? `${data.completionRate.toFixed(1)}%` : "—"} />
-            <KpiLine label="Completed sales" value={data ? fmtSAR(data.monthCompleted) : "—"} accent="text-green-600 dark:text-green-400" />
-            <KpiFoot value={`of ${data?.monthTotalCount ?? 0} orders`} />
-          </KpiBlock>
-          <KpiBlock label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10">
-            <KpiBig value={data ? fmtSAR(data.monthCashSales) : "—"} />
-            <KpiLine label="Sales" value={data ? fmtSAR(data.monthCashSales) : "—"} muted />
-            <KpiFoot value="Cash orders" />
-          </KpiBlock>
-          <KpiBlock label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10">
-            <KpiBig value={data ? fmtSAR(data.monthWasSales) : "—"} />
-            <KpiLine label="Sales" value={data ? fmtSAR(data.monthWasSales) : "—"} muted />
-            <KpiFoot value="Wasfaty orders" />
-          </KpiBlock>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3">
-          <Stat label="Total sales" value={data ? fmtSAR(data.monthAll) : "—"} />
-          <Stat label="Verified invoices" value={data?.totalVerified ?? 0} accent="text-green-600 dark:text-green-400" />
-          <Stat label="Verification rate" value={data ? `${data.verifRate.toFixed(1)}%` : "—"} />
-          <Stat label="Verified value" value={data ? fmtSAR(data.totalVerifiedValue) : "—"} />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <DashKpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10"
+            data={data} sales={data?.monthCashSales ?? 0}
+            filter={(r: any) => r.order_type === "Cash"} />
+          <DashKpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10"
+            data={data} sales={data?.monthWasSales ?? 0}
+            filter={(r: any) => r.order_type === "Wasfaty"} />
+          <DashKpiCard label="Total" tone="from-primary/10 to-transparent" highlight
+            data={data} sales={data?.monthAll ?? 0} filter={() => true} />
         </div>
       </div>
 
-      {/* Call Center Invoice Verification */}
+      {/* Call Center Invoice Verification — details table (redundant KPI cards removed per spec) */}
       <div>
         <SectionTitle title="Call Center Invoice verification" />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-          <Stat label="Verified invoices" value={data?.totalVerified ?? 0} accent="text-green-600 dark:text-green-400" />
-          <Stat label="Non-verified" value={data?.totalNonVerified ?? 0} accent="text-yellow-600 dark:text-yellow-400" />
-          <Stat label="Verification rate" value={data ? `${data.verifRate.toFixed(1)}%` : "—"} />
-          <Stat label="Verified value" value={data ? fmtSAR(data.totalVerifiedValue) : "—"} />
-        </div>
 
         <Card className="mt-3">
           <CardHeader><CardTitle className="text-base">Call Center Invoices Tracking</CardTitle></CardHeader>
@@ -624,6 +573,54 @@ function SectionTitle({ title }: { title: string }) {
     <div className="mb-3 mt-2 flex items-end gap-3">
       <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-foreground">{title}</h2>
       <div className="flex-1 h-px bg-border" />
+    </div>
+  );
+}
+
+function DashKpiCard({ label, tone, highlight, data, sales, filter }: {
+  label: string; tone: string; highlight?: boolean;
+  data: any; sales: number; filter: (r: any) => boolean;
+}) {
+  // We compute counts from summary data available in scope
+  const total = data?._raw ? data._raw.filter(filter).length : (label === "Total" ? (data?.monthTotalCount ?? 0) : 0);
+  const completed = label === "Total" ? (data?.monthCompletedCount ?? 0) : 0;
+  const pending = label === "Total" ? (data?.pending ?? 0) : 0;
+  const cancelled = label === "Total" ? (data?.cancelled ?? 0) : 0;
+  const completionRate = total > 0 ? (completed / total) * 100 : 0;
+  return (
+    <div className={cn("relative rounded-xl border bg-gradient-to-br p-4 shadow-sm", tone, highlight && "border-primary/40 shadow-md")}>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
+      <div className="mt-3 space-y-1.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-muted-foreground">Total sales</span>
+          <span className="text-base font-semibold tabular-nums truncate">{fmtSAR(sales)}</span>
+        </div>
+        {label === "Total" && (
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs text-muted-foreground">Completed sales</span>
+            <span className="text-base font-semibold tabular-nums truncate text-green-600 dark:text-green-400">{fmtSAR(data?.monthCompleted ?? 0)}</span>
+          </div>
+        )}
+      </div>
+      {label === "Total" && (
+        <>
+          <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-2">
+            <div className="text-left">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total orders</div>
+              <div className="text-2xl font-bold tabular-nums leading-tight">{total}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Completed</div>
+              <div className="text-2xl font-bold tabular-nums leading-tight text-green-600 dark:text-green-400">{completed}</div>
+            </div>
+          </div>
+          <div className="mt-2 pt-2 border-t border-border/40 grid grid-cols-3 gap-1 text-[11px]">
+            <div><span className="text-muted-foreground">Rate </span><span className="font-semibold">{completionRate.toFixed(1)}%</span></div>
+            <div><span className="text-muted-foreground">Pending </span><span className="font-semibold text-amber-600 dark:text-amber-400">{pending}</span></div>
+            <div><span className="text-muted-foreground">Cancelled </span><span className="font-semibold text-red-600 dark:text-red-400">{cancelled}</span></div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

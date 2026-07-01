@@ -8,16 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarIcon, CheckCircle2, ChevronLeft, ChevronRight, Download, Pencil, Plus, Search } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Download, Pencil, Plus, Search } from "lucide-react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import * as XLSX from "xlsx";
 import { STATUSES, STATUS_STYLES, TEAMS, CURRENCY, fmtSAR, formatOrderNo, stripOrderPrefix } from "@/lib/branches";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app/orders/")({
   head: () => ({ meta: [{ title: "Orders" }] }),
@@ -30,13 +30,15 @@ const PAGE_SIZE = 50;
 function OrdersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { user, role } = useAuth();
+  const { user, role, profile } = useAuth();
   const isAdmin = role === "admin";
+  const canCreate = hasPerm(role, profile?.permissions as any, "create_orders");
+  const canEditAll = isAdmin || hasPerm(role, profile?.permissions as any, "edit_all_orders");
+  const canEditOwn = hasPerm(role, profile?.permissions as any, "edit_orders");
+  const canVerifyAll = isAdmin || hasPerm(role, profile?.permissions as any, "verify_all_orders");
+  const canVerifyOwn = hasPerm(role, profile?.permissions as any, "verify_own_orders");
 
   const today = new Date();
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  // Orders default = Today (per spec). Quick range presets still available.
   const [range, setRange] = useState<DateRange | undefined>({ from: today, to: today });
   const from = range?.from ? toISO(range.from) : toISO(today);
   const to = range?.to ? toISO(range.to) : from;
@@ -46,7 +48,6 @@ function OrdersList() {
   const [agent, setAgent] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
   const [mineOnly, setMineOnly] = useState<boolean>(false);
-  const [dateOpen, setDateOpen] = useState(false);
   const [page, setPage] = useState(0);
 
   const searching = q.trim().length > 0;
@@ -127,8 +128,8 @@ function OrdersList() {
     const completed = (xs: any[]) => xs.filter((o: any) => o.status === "Completed");
     const sum = (xs: any[]) => xs.reduce((s, o) => s + num(o.invoice_value), 0);
     return {
-      cashSales: sum(cash), cashCompletedSales: sum(completed(cash)), cashCount: cash.length,
-      wasSales: sum(was), wasCompletedSales: sum(completed(was)), wasCount: was.length,
+      cashSales: sum(cash), cashCompletedSales: sum(completed(cash)), cashCount: cash.length, cashCompletedCount: completed(cash).length,
+      wasSales: sum(was), wasCompletedSales: sum(completed(was)), wasCount: was.length, wasCompletedCount: completed(was).length,
       totalSales: sum(rows), totalCompletedSales: sum(completed(rows)),
       totalCount: rows.length, completedCount: completed(rows).length,
     };
@@ -139,14 +140,6 @@ function OrdersList() {
     if (!range.to || toISO(range.from) === toISO(range.to)) return format(range.from, "PP");
     return `${format(range.from, "PP")} — ${format(range.to, "PP")}`;
   }, [range]);
-
-  const setQuick = (kind: "today" | "7d" | "30d" | "month") => {
-    const t = new Date();
-    if (kind === "today") { setRange({ from: t, to: t }); return; }
-    if (kind === "7d") { const f = new Date(); f.setDate(f.getDate() - 6); setRange({ from: f, to: t }); return; }
-    if (kind === "30d") { const f = new Date(); f.setDate(f.getDate() - 29); setRange({ from: f, to: t }); return; }
-    if (kind === "month") { setRange({ from: new Date(t.getFullYear(), t.getMonth(), 1), to: new Date(t.getFullYear(), t.getMonth() + 1, 0) }); return; }
-  };
 
   const updateStatus = async (orderId: string, newStatus: string) => {
     const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
@@ -239,57 +232,23 @@ function OrdersList() {
               {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Popover open={dateOpen} onOpenChange={setDateOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" disabled={searching} className={cn("h-10 justify-start font-normal min-w-[200px]", !range?.from && "text-muted-foreground")}>
-                <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                <span className="truncate">{searching ? "Searching all orders" : dateLabel}</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0 pointer-events-auto" align="start">
-              <div className="flex flex-wrap gap-1 p-2 border-b">
-                <Button size="sm" variant="ghost" onClick={() => setQuick("today")}>Today</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("7d")}>Last 7 days</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("30d")}>Last 30 days</Button>
-                <Button size="sm" variant="ghost" onClick={() => setQuick("month")}>This month</Button>
-              </div>
-              <Calendar mode="range" selected={range} onSelect={(r) => { setRange(r); setPage(0); }} numberOfMonths={1} defaultMonth={range?.from} className="pointer-events-auto [--cell-size:2.25rem]" />
-            </PopoverContent>
-          </Popover>
+          <DateRangePicker range={range} onChange={(r) => { setRange(r); setPage(0); }} disabled={searching} />
           <Button variant="outline" size="sm" onClick={exportXlsx} className="h-10 ml-auto"><Download className="h-4 w-4 mr-2" />Export</Button>
         </CardContent>
       </Card>
 
-      {/* Minimal grouped summary */}
-      <Card>
-        <CardContent className="p-3 sm:p-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryBlock label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10">
-              <SummaryLine label="Sales" value={fmtSAR(summary.cashSales)} muted />
-              <SummaryLine label="Completed" value={fmtSAR(summary.cashCompletedSales)} accent />
-              <SummaryFoot value={`${summary.cashCount} orders`} />
-            </SummaryBlock>
-            <SummaryBlock label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10">
-              <SummaryLine label="Sales" value={fmtSAR(summary.wasSales)} muted />
-              <SummaryLine label="Completed" value={fmtSAR(summary.wasCompletedSales)} accent />
-              <SummaryFoot value={`${summary.wasCount} orders`} />
-            </SummaryBlock>
-            <SummaryBlock label="Total" tone="from-primary/10 to-transparent" highlight>
-              <SummaryLine label="Sales" value={fmtSAR(summary.totalSales)} muted />
-              <SummaryLine label="Completed" value={fmtSAR(summary.totalCompletedSales)} accent />
-              <SummaryFoot value={`${summary.completedCount} / ${summary.totalCount} completed`} />
-            </SummaryBlock>
-            <SummaryBlock label="Completed orders" tone="from-emerald-50 to-transparent dark:from-emerald-500/10">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-xs text-muted-foreground">Count</span>
-                <span className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">{summary.completedCount}</span>
-              </div>
-              <SummaryLine label="Total orders" value={String(summary.totalCount)} muted />
-              <SummaryFoot value={summary.totalCount > 0 ? `${((summary.completedCount / summary.totalCount) * 100).toFixed(1)}% completion rate` : "—"} />
-            </SummaryBlock>
-          </div>
-        </CardContent>
-      </Card>
+      {/* KPI summary: 3 cards — Cash · Wasfaty · Total (each shows sales + completed sales + total/completed orders split) */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <KpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10"
+          totalSales={summary.cashSales} completedSales={summary.cashCompletedSales}
+          totalOrders={summary.cashCount} completedOrders={summary.cashCompletedCount} />
+        <KpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10"
+          totalSales={summary.wasSales} completedSales={summary.wasCompletedSales}
+          totalOrders={summary.wasCount} completedOrders={summary.wasCompletedCount} />
+        <KpiCard label="Total" tone="from-primary/10 to-transparent" highlight
+          totalSales={summary.totalSales} completedSales={summary.totalCompletedSales}
+          totalOrders={summary.totalCount} completedOrders={summary.completedCount} />
+      </div>
 
       <Card>
         <CardContent className="p-0">
@@ -318,13 +277,14 @@ function OrdersList() {
                 {!isLoading && pageRows.length === 0 && <TableRow><TableCell colSpan={14} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
                 {pageRows.map((o: any, idx: number) => {
                   const owned = user?.id === o.agent_id;
-                  const editable = owned || isAdmin;
+                  const editable = canEditAll || (owned && canEditOwn);
+                  const canVerifyRow = canVerifyAll || (owned && canVerifyOwn);
                   const verified = !!o.call_center_verified;
                   return (
                     <TableRow key={o.id} className={cn("transition-colors", idx % 2 === 1 && "bg-muted/20", verified && "bg-green-50/60 dark:bg-green-500/5", "hover:bg-accent/40")}>
                       <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
-                          <Checkbox checked={verified} disabled={!editable} onCheckedChange={(v) => toggleVerified(o.id, !!v)} aria-label="Call Center invoice verified" />
+                          <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o.id, !!v)} aria-label="Call Center invoice verified" />
                           {verified && <CheckCircle2 className="h-4 w-4 text-green-600" />}
                         </div>
                       </TableCell>
@@ -397,22 +357,33 @@ function StatusBadge({ s }: { s: string }) {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[s] ?? "bg-muted"}`}>{s}</span>;
 }
 
-function SummaryBlock({ label, tone, highlight, children }: { label: string; tone: string; highlight?: boolean; children: React.ReactNode }) {
+function KpiCard({ label, tone, highlight, totalSales, completedSales, totalOrders, completedOrders }: {
+  label: string; tone: string; highlight?: boolean;
+  totalSales: number; completedSales: number; totalOrders: number; completedOrders: number;
+}) {
   return (
-    <div className={cn("relative rounded-lg border bg-gradient-to-br p-3", tone, highlight && "border-primary/30")}>
+    <div className={cn("relative rounded-xl border bg-gradient-to-br p-4 shadow-sm", tone, highlight && "border-primary/40 shadow-md")}>
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
-      <div className="mt-2 space-y-1.5">{children}</div>
+      <div className="mt-3 space-y-1.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-muted-foreground">Total sales</span>
+          <span className="text-base font-semibold tabular-nums truncate">{fmtSAR(totalSales)}</span>
+        </div>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-muted-foreground">Completed sales</span>
+          <span className="text-base font-semibold tabular-nums truncate text-green-600 dark:text-green-400">{fmtSAR(completedSales)}</span>
+        </div>
+      </div>
+      <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-2">
+        <div className="text-left">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total orders</div>
+          <div className="text-2xl font-bold tabular-nums leading-tight">{totalOrders}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Completed</div>
+          <div className="text-2xl font-bold tabular-nums leading-tight text-green-600 dark:text-green-400">{completedOrders}</div>
+        </div>
+      </div>
     </div>
   );
-}
-function SummaryLine({ label, value, accent, muted }: { label: string; value: string; accent?: boolean; muted?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={cn("text-sm sm:text-base font-semibold tabular-nums truncate", accent && "text-green-600 dark:text-green-400", muted && !accent && "text-foreground")}>{value}</span>
-    </div>
-  );
-}
-function SummaryFoot({ value }: { value: string }) {
-  return <div className="text-[11px] text-muted-foreground mt-1 pt-1.5 border-t border-border/60">{value}</div>;
 }
