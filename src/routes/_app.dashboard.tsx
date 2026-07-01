@@ -302,29 +302,10 @@ function Dashboard() {
             data={data} sales={data?.monthAll ?? 0} filter={() => true} />
         </div>
       </div>
-          <KpiBlock label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10">
-            <KpiBig value={data ? fmtSAR(data.monthWasSales) : "—"} />
-            <KpiLine label="Sales" value={data ? fmtSAR(data.monthWasSales) : "—"} muted />
-            <KpiFoot value="Wasfaty orders" />
-          </KpiBlock>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3">
-          <Stat label="Total sales" value={data ? fmtSAR(data.monthAll) : "—"} />
-          <Stat label="Verified invoices" value={data?.totalVerified ?? 0} accent="text-green-600 dark:text-green-400" />
-          <Stat label="Verification rate" value={data ? `${data.verifRate.toFixed(1)}%` : "—"} />
-          <Stat label="Verified value" value={data ? fmtSAR(data.totalVerifiedValue) : "—"} />
-        </div>
-      </div>
 
-      {/* Call Center Invoice Verification */}
+      {/* Call Center Invoice Verification — details table (redundant KPI cards removed per spec) */}
       <div>
         <SectionTitle title="Call Center Invoice verification" />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-          <Stat label="Verified invoices" value={data?.totalVerified ?? 0} accent="text-green-600 dark:text-green-400" />
-          <Stat label="Non-verified" value={data?.totalNonVerified ?? 0} accent="text-yellow-600 dark:text-yellow-400" />
-          <Stat label="Verification rate" value={data ? `${data.verifRate.toFixed(1)}%` : "—"} />
-          <Stat label="Verified value" value={data ? fmtSAR(data.totalVerifiedValue) : "—"} />
-        </div>
 
         <Card className="mt-3">
           <CardHeader><CardTitle className="text-base">Call Center Invoices Tracking</CardTitle></CardHeader>
