@@ -200,9 +200,11 @@ function Dashboard() {
           const m: Record<string, Record<string, number>> = {};
           for (const o of completedRows(rangeOrders)) {
             const b = o.branch_no ?? "—";
+            const city = cityMap.get(o.branch_no) ?? "";
+            const label = city ? `${b} — ${city}` : b;
             const d = o.delivery_type ?? "—";
-            if (!m[b]) m[b] = {};
-            m[b][d] = (m[b][d] ?? 0) + num(o.invoice_value);
+            if (!m[label]) m[label] = {};
+            m[label][d] = (m[label][d] ?? 0) + num(o.invoice_value);
           }
           return m;
         })(),
