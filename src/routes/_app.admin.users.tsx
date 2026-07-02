@@ -26,7 +26,7 @@ export const Route = createFileRoute("/_app/admin/users")({
 
 function AdminUsers() {
   const { role, profile } = useAuth();
-  const canManageUsers = role === "admin" && hasPerm(role, profile?.permissions as any, "manage_users");
+  const canManageUsers = isAdministrator(role) && hasPerm(role, profile?.permissions as any, "manage_users");
   const qc = useQueryClient();
   const listFn = useServerFn(adminListUsers);
   const createFn = useServerFn(adminCreateUser);
