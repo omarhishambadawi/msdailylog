@@ -468,6 +468,9 @@ function Dashboard() {
             team={(effectiveTeam === "all" ? "all" : effectiveTeam) as "customer_care" | "telesales" | "all"}
             agentId={effectiveAgent !== "all" ? effectiveAgent : undefined}
           />
+          <div className="mt-3">
+            <ExtensionMappingValidator />
+          </div>
         </div>
       </div>
 
