@@ -521,16 +521,22 @@ export async function fetchCdr(
   while (page <= 20) {
     const currentPage = page;
     const rows = await withRetry(`cdr page ${currentPage}`, async () => {
-      const url = new URL(endpoint);
-      url.searchParams.set("access_token", token);
-      url.searchParams.set("start_time", start);
-      url.searchParams.set("end_time", end);
-      url.searchParams.set("page", String(currentPage));
-      url.searchParams.set("page_size", String(pageSize));
-      const masked = url.toString().replace(encodeURIComponent(token), "***MASKED***");
+      // Build query string manually so spaces are encoded as %20 (not '+').
+      // Some Yeastar firmware rejects '+' inside start_time / end_time and
+      // silently returns the full unfiltered CDR set.
+      const qs =
+        `access_token=${encodeURIComponent(token)}` +
+        `&start_time=${encodeURIComponent(start)}` +
+        `&end_time=${encodeURIComponent(end)}` +
+        `&page=${currentPage}` +
+        `&page_size=${pageSize}` +
+        `&sort_by=time` +
+        `&order_by=desc`;
+      const fullUrl = `${endpoint}?${qs}`;
+      const masked = fullUrl.replace(encodeURIComponent(token), "***MASKED***");
       if (currentPage === 1) diagnostic.requestUrl = masked;
       console.log(`[yeastar cdr] GET ${masked}`);
-      const res = await timedFetch(url.toString(), {
+      const res = await timedFetch(fullUrl, {
         headers: { "Accept": "application/json", "User-Agent": USER_AGENT },
       });
       const bodyText = await res.text().catch(() => "");
@@ -551,7 +557,42 @@ export async function fetchCdr(
         if (json.errcode === 70087) throw new Error("IP_FORBIDDEN: PBX rejected the server IP.");
         throw new Error(`Yeastar CDR error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
       }
-      return (json.cdr_list ?? []) as YeastarCdrRecord[];
+      // Yeastar firmware inconsistency: some builds return `cdr_list`, others
+      // return `data`. Accept both, plus a couple of legacy fallbacks.
+      const rawList =
+        json.cdr_list ?? json.data ?? json.cdr ?? json.list ?? json.result ?? [];
+      const list: any[] = Array.isArray(rawList) ? rawList : [];
+      if (currentPage === 1) {
+        console.log(
+          `[yeastar cdr] parse: Array.isArray(data)=${Array.isArray(json.data)} ` +
+          `data.length=${Array.isArray(json.data) ? json.data.length : "n/a"} ` +
+          `typeof data=${typeof json.data} ` +
+          `cdr_list.length=${Array.isArray(json.cdr_list) ? json.cdr_list.length : "n/a"} ` +
+          `chosen_field=${json.cdr_list ? "cdr_list" : json.data ? "data" : "other"} ` +
+          `records_in_page=${list.length} total_number=${json.total_number}`,
+        );
+        if (list.length > 0) {
+          console.log(`[yeastar cdr] first record: ${JSON.stringify(list[0]).slice(0, 500)}`);
+        }
+      }
+      // Normalize field names across firmware variants so the aggregator
+      // works regardless of the wire format.
+      return list.map((r: any) => ({
+        call_id: String(r.call_id ?? r.uid ?? r.id ?? ""),
+        time_start: r.time_start ?? r.time ?? r.start_time ?? "",
+        call_from: r.call_from ?? r.src_number ?? r.from ?? "",
+        call_to: r.call_to ?? r.dst_number ?? r.to ?? "",
+        src_name: r.src_name,
+        dst_name: r.dst_name,
+        src_number: r.src_number ?? r.call_from,
+        dst_number: r.dst_number ?? r.call_to,
+        extension: r.extension ?? r.extension_number ?? r.src_extension ?? r.dst_extension,
+        extension_number: r.extension_number ?? r.extension,
+        call_type: r.call_type ?? r.type ?? r.communication_type,
+        status: r.status ?? r.call_status ?? r.disposition,
+        duration: Number(r.duration ?? 0),
+        talk_duration: Number(r.talk_duration ?? r.billsec ?? 0),
+      })) as YeastarCdrRecord[];
     });
     results.push(...rows);
     if (rows.length < pageSize) break;
