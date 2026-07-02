@@ -490,6 +490,8 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
   };
   lastAuthFailure = null;
   authBlockedUntil = 0;
+  consecutiveAuthFailures = 0;
+  await persistToken(cachedToken, credFingerprint());
   logTokenSource("Refreshed Token", false);
   const ttlSec = Math.floor(remainingAccessMs() / 1000);
   return {
@@ -498,6 +500,7 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
     message: `Refreshed access token (valid for ${ttlSec}s) without opening a new session.`,
   };
 }
+
 
 /**
  * Request a brand-new access token. This is only called by the shared
