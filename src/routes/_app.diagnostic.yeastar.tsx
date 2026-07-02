@@ -33,6 +33,19 @@ interface AuthRow {
 }
 
 function YeastarDiagnosticPage() {
+  const { role } = useAuth();
+  if (role !== "admin") {
+    return (
+      <div className="mx-auto max-w-2xl p-6">
+        <Card>
+          <CardHeader><CardTitle>Not authorized</CardTitle></CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            The Yeastar diagnostic page is restricted to administrators.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   const runProbe = useServerFn(yeastarPhase1Probe);
   const runAuth = useServerFn(yeastarAuthDiagnostic);
   const forceExpire = useServerFn(yeastarForceExpire);
