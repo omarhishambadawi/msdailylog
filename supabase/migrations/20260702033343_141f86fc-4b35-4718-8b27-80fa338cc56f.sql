@@ -1,0 +1,1 @@
+CREATE POLICY "Authenticated can view agent directory" ON public.profiles FOR SELECT TO authenticated USING (true);
