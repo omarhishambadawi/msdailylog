@@ -130,23 +130,16 @@ export const yeastarRawProbe = createServerFn({ method: "POST" })
     const cdrRes = cdrResults.minimal;
 
     // Truncate raw bodies to keep the payload manageable in the UI.
-    const cap = (s: string) => (s.length > 4000 ? s.slice(0, 4000) + "…[truncated]" : s);
+    const cap = (s: string) => (s.length > 1500 ? s.slice(0, 1500) + "…[truncated]" : s);
     extRes.body = cap(extRes.body);
-    cdrRes.body = cap(cdrRes.body);
+    for (const k of Object.keys(cdrResults)) cdrResults[k].body = cap(cdrResults[k].body);
 
     return {
       ok: true as const,
       baseUrl,
-      tokenStep: {
-        url: tokenUrl,
-        method: "POST",
-        status: tokenStatus,
-        errcode: tokenErrcode,
-        errmsg: tokenErrmsg,
-        tokenObtained: true,
-      },
+      tokenStep: { url: tokenUrl, method: "POST", status: tokenStatus, errcode: tokenErrcode, errmsg: tokenErrmsg, tokenObtained: true },
       extensionList: extRes,
-      cdrList: cdrRes,
+      cdrVariants: cdrResults,
       at: new Date().toISOString(),
     };
   });
