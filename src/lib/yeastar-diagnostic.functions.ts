@@ -79,3 +79,24 @@ export const yeastarForceExpire = createServerFn({ method: "POST" })
     const { forceExpireAccessToken } = await import("@/lib/yeastar.server");
     return forceExpireAccessToken(60);
   });
+
+/**
+ * Config-only diagnostic. Reads env vars lazily inside the handler at request
+ * time and returns booleans only — no secret values are exposed.
+ */
+export const yeastarConfigDiagnostic = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context as any);
+    const baseUrlLoaded = !!process.env.YEASTAR_BASE_URL;
+    const clientIdLoaded = !!process.env.YEASTAR_CLIENT_ID;
+    const clientSecretLoaded = !!process.env.YEASTAR_CLIENT_SECRET;
+    return {
+      baseUrlLoaded,
+      clientIdLoaded,
+      clientSecretLoaded,
+      source: "process.env (Cloudflare Worker runtime)",
+      loadedAtRuntime: true,
+      at: new Date().toISOString(),
+    };
+  });
