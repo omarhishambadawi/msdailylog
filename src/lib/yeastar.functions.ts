@@ -82,7 +82,7 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
   .inputValidator((input) => inputSchema.parse(input))
   .handler(async ({ data, context }) => {
     const t0 = Date.now();
-    const { fetchCdr, isYeastarConfigured, diagnoseYeastar, normalizeExt } =
+    const { fetchCdr, isYeastarConfigured, normalizeExt } =
       await import("@/lib/yeastar.server");
     const emptyStats = {
       total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0,
@@ -180,7 +180,7 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
       };
     } catch (err) {
       const anyErr = err as any;
-      const cdrDiag = anyErr?.diagnostic as Awaited<ReturnType<typeof diagnoseYeastar>> | undefined;
+      const cdrDiag = anyErr?.diagnostic as any;
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[Yeastar] CDR fetch failed:", msg);
       return {
@@ -198,11 +198,9 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
 export const getYeastarExtensionMapping = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { isYeastarConfigured, diagnoseYeastar, normalizeExt } =
+    const { isYeastarConfigured, normalizeExt } =
       await import("@/lib/yeastar.server");
     if (!isYeastarConfigured()) return { configured: false as const };
-    const diag = await diagnoseYeastar();
-    if (!diag.ok) return { configured: true as const, diagnostic: diag };
 
     const allowed = await getAllowedAgents(context.supabase, normalizeExt);
     const whitelistRows = allowed.agents.map((a) => ({
