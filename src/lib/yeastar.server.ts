@@ -599,6 +599,7 @@ async function requestNewToken(env: { base: string; id: string; secret: string }
 async function getAccessTokenInfo(): Promise<TokenResult> {
   const env = requireEnv();
   if (!env) throw new Error("Yeastar not configured");
+  lastAuthTrace = { refreshTokenCalled: false, leaseAcquired: false };
   ensureCredsFresh();
 
   // ---- Tier 1: in-isolate memory ----
