@@ -18,9 +18,9 @@ import { Route as AppOrdersIndexRouteImport } from './routes/_app.orders.index'
 import { Route as AppComplaintsIndexRouteImport } from './routes/_app.complaints.index'
 import { Route as AppOrdersNewRouteImport } from './routes/_app.orders.new'
 import { Route as AppOrdersIdRouteImport } from './routes/_app.orders.$id'
-import { Route as AppDiagnosticYeastarRouteImport } from './routes/_app.diagnostic.yeastar'
 import { Route as AppComplaintsNewRouteImport } from './routes/_app.complaints.new'
 import { Route as AppComplaintsIdRouteImport } from './routes/_app.complaints.$id'
+import { Route as AppAdminYeastarRouteImport } from './routes/_app.admin.yeastar'
 import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
 import { Route as AppAdminBranchesRouteImport } from './routes/_app.admin.branches'
 
@@ -68,11 +68,6 @@ const AppOrdersIdRoute = AppOrdersIdRouteImport.update({
   path: '/orders/$id',
   getParentRoute: () => AppRoute,
 } as any)
-const AppDiagnosticYeastarRoute = AppDiagnosticYeastarRouteImport.update({
-  id: '/diagnostic/yeastar',
-  path: '/diagnostic/yeastar',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppComplaintsNewRoute = AppComplaintsNewRouteImport.update({
   id: '/complaints/new',
   path: '/complaints/new',
@@ -81,6 +76,11 @@ const AppComplaintsNewRoute = AppComplaintsNewRouteImport.update({
 const AppComplaintsIdRoute = AppComplaintsIdRouteImport.update({
   id: '/complaints/$id',
   path: '/complaints/$id',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminYeastarRoute = AppAdminYeastarRouteImport.update({
+  id: '/admin/yeastar',
+  path: '/admin/yeastar',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
@@ -101,9 +101,9 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/admin/branches': typeof AppAdminBranchesRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/admin/yeastar': typeof AppAdminYeastarRoute
   '/complaints/$id': typeof AppComplaintsIdRoute
   '/complaints/new': typeof AppComplaintsNewRoute
-  '/diagnostic/yeastar': typeof AppDiagnosticYeastarRoute
   '/orders/$id': typeof AppOrdersIdRoute
   '/orders/new': typeof AppOrdersNewRoute
   '/complaints/': typeof AppComplaintsIndexRoute
@@ -116,9 +116,9 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/admin/branches': typeof AppAdminBranchesRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/admin/yeastar': typeof AppAdminYeastarRoute
   '/complaints/$id': typeof AppComplaintsIdRoute
   '/complaints/new': typeof AppComplaintsNewRoute
-  '/diagnostic/yeastar': typeof AppDiagnosticYeastarRoute
   '/orders/$id': typeof AppOrdersIdRoute
   '/orders/new': typeof AppOrdersNewRoute
   '/complaints': typeof AppComplaintsIndexRoute
@@ -133,9 +133,9 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/admin/branches': typeof AppAdminBranchesRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
+  '/_app/admin/yeastar': typeof AppAdminYeastarRoute
   '/_app/complaints/$id': typeof AppComplaintsIdRoute
   '/_app/complaints/new': typeof AppComplaintsNewRoute
-  '/_app/diagnostic/yeastar': typeof AppDiagnosticYeastarRoute
   '/_app/orders/$id': typeof AppOrdersIdRoute
   '/_app/orders/new': typeof AppOrdersNewRoute
   '/_app/complaints/': typeof AppComplaintsIndexRoute
@@ -150,9 +150,9 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/admin/branches'
     | '/admin/users'
+    | '/admin/yeastar'
     | '/complaints/$id'
     | '/complaints/new'
-    | '/diagnostic/yeastar'
     | '/orders/$id'
     | '/orders/new'
     | '/complaints/'
@@ -165,9 +165,9 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/admin/branches'
     | '/admin/users'
+    | '/admin/yeastar'
     | '/complaints/$id'
     | '/complaints/new'
-    | '/diagnostic/yeastar'
     | '/orders/$id'
     | '/orders/new'
     | '/complaints'
@@ -181,9 +181,9 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/_app/admin/branches'
     | '/_app/admin/users'
+    | '/_app/admin/yeastar'
     | '/_app/complaints/$id'
     | '/_app/complaints/new'
-    | '/_app/diagnostic/yeastar'
     | '/_app/orders/$id'
     | '/_app/orders/new'
     | '/_app/complaints/'
@@ -262,13 +262,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrdersIdRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/diagnostic/yeastar': {
-      id: '/_app/diagnostic/yeastar'
-      path: '/diagnostic/yeastar'
-      fullPath: '/diagnostic/yeastar'
-      preLoaderRoute: typeof AppDiagnosticYeastarRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/complaints/new': {
       id: '/_app/complaints/new'
       path: '/complaints/new'
@@ -281,6 +274,13 @@ declare module '@tanstack/react-router' {
       path: '/complaints/$id'
       fullPath: '/complaints/$id'
       preLoaderRoute: typeof AppComplaintsIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/yeastar': {
+      id: '/_app/admin/yeastar'
+      path: '/admin/yeastar'
+      fullPath: '/admin/yeastar'
+      preLoaderRoute: typeof AppAdminYeastarRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/admin/users': {
@@ -304,9 +304,9 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppAdminBranchesRoute: typeof AppAdminBranchesRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
+  AppAdminYeastarRoute: typeof AppAdminYeastarRoute
   AppComplaintsIdRoute: typeof AppComplaintsIdRoute
   AppComplaintsNewRoute: typeof AppComplaintsNewRoute
-  AppDiagnosticYeastarRoute: typeof AppDiagnosticYeastarRoute
   AppOrdersIdRoute: typeof AppOrdersIdRoute
   AppOrdersNewRoute: typeof AppOrdersNewRoute
   AppComplaintsIndexRoute: typeof AppComplaintsIndexRoute
@@ -317,9 +317,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppAdminBranchesRoute: AppAdminBranchesRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
+  AppAdminYeastarRoute: AppAdminYeastarRoute,
   AppComplaintsIdRoute: AppComplaintsIdRoute,
   AppComplaintsNewRoute: AppComplaintsNewRoute,
-  AppDiagnosticYeastarRoute: AppDiagnosticYeastarRoute,
   AppOrdersIdRoute: AppOrdersIdRoute,
   AppOrdersNewRoute: AppOrdersNewRoute,
   AppComplaintsIndexRoute: AppComplaintsIndexRoute,

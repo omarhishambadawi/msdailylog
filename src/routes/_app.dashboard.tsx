@@ -17,7 +17,7 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { hasPerm } from "@/lib/permissions";
 import { SaudiSalesMap } from "@/components/saudi-sales-map";
 import { CallCenterAnalytics } from "@/components/call-center-analytics";
-import { ExtensionMappingValidator } from "@/components/extension-mapping-validator";
+
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — MilaServ Daily Log" }] }),
@@ -469,9 +469,6 @@ function Dashboard() {
             team={(effectiveTeam === "all" ? "all" : effectiveTeam) as "customer_care" | "telesales" | "all"}
             agentId={effectiveAgent !== "all" ? effectiveAgent : undefined}
           />
-          <div className="mt-3">
-            <ExtensionMappingValidator />
-          </div>
         </div>
       </div>
 
