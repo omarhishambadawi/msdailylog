@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, AlertTriangle, Users, PhoneCall } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Users, PhoneCall, XCircle } from "lucide-react";
 import { getYeastarExtensionMapping } from "@/lib/yeastar.functions";
 
 export function ExtensionMappingValidator() {
@@ -52,13 +52,50 @@ export function ExtensionMappingValidator() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          <StatBox label="PBX extensions" value={d.counts.pbxExtensions} icon={PhoneCall} />
+        {d.groupConfig?.missing?.length > 0 && (
+          <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-xs">
+            <div className="flex items-center gap-2 font-medium text-red-600 dark:text-red-400">
+              <XCircle className="h-4 w-4" /> Missing Extension Group{d.groupConfig.missing.length > 1 ? "s" : ""}
+            </div>
+            <div className="mt-1">
+              Expected on the PBX: {d.groupConfig.expected.map((n) => <code key={n} className="mx-0.5 px-1 rounded bg-muted">{n}</code>)}
+            </div>
+            <div className="mt-1">Missing: {d.groupConfig.missing.map((n) => <code key={n} className="mx-0.5 px-1 rounded bg-red-500/10">{n}</code>)}</div>
+            <div className="mt-1 text-muted-foreground">Available groups on the PBX: {d.groupConfig.available.length ? d.groupConfig.available.map((n) => <code key={n} className="mx-0.5 px-1 rounded bg-muted">{n}</code>) : "(none returned)"}</div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          <StatBox label="Customer Care" value={d.counts.customerCareGroup} icon={PhoneCall} />
+          <StatBox label="Telesales" value={d.counts.telesalesGroup} icon={PhoneCall} />
+          <StatBox label="Group extensions" value={d.counts.pbxExtensions} icon={PhoneCall} />
           <StatBox label="Platform agents" value={d.counts.agents} icon={Users} />
           <StatBox label="Matched" value={d.counts.matched} tone="text-emerald-600 dark:text-emerald-400" icon={CheckCircle2} />
           <StatBox label="Unmatched agents" value={d.counts.unmatchedAgents} tone="text-amber-600 dark:text-amber-400" icon={AlertTriangle} />
           <StatBox label="Unmatched extensions" value={d.counts.unmatchedExtensions} tone="text-amber-600 dark:text-amber-400" icon={AlertTriangle} />
         </div>
+
+        {d.first20Extensions && d.first20Extensions.length > 0 && (
+          <Section title={`PBX Extension Groups — first ${d.first20Extensions.length} (debug view)`}>
+            <Table headers={["PBX #", "PBX name", "Team group", "Matched agent", "agent_code (raw → normalized)", "Match"]}>
+              {d.first20Extensions.map((e) => (
+                <tr key={`${e.team}-${e.pbxNumber}`} className="border-b last:border-0">
+                  <td className="px-3 py-1.5 font-mono text-xs">{e.pbxNumber}</td>
+                  <td className="px-3 py-1.5 text-xs">{e.pbxName ?? "—"}</td>
+                  <td className="px-3 py-1.5 text-xs">{e.team === "customer_care" ? "Customer Care" : "Telesales"}</td>
+                  <td className="px-3 py-1.5 text-xs">{e.matchedAgent ?? <span className="text-muted-foreground">—</span>}</td>
+                  <td className="px-3 py-1.5 font-mono text-[11px]">{e.agentCodeRaw ?? "—"} <span className="text-muted-foreground">→</span> {e.agentCodeNormalized ?? "—"}</td>
+                  <td className="px-3 py-1.5 text-xs">
+                    {e.matches
+                      ? <span className="text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3"/>Matched</span>
+                      : <span className="text-amber-600 dark:text-amber-400 inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3"/>Unmatched</span>}
+                  </td>
+                </tr>
+              ))}
+            </Table>
+          </Section>
+        )}
+
 
         <Section title={`Matched (${d.matched.length})`}>
           {d.matched.length === 0 ? (
