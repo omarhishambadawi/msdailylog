@@ -225,6 +225,7 @@ export const getYeastarExtensionMapping = createServerFn({ method: "GET" })
         missing: missingGroups,
         available: teamExt?.availableGroups.map((g) => g.name) ?? [],
       },
+      groupsDiag: teamExt?.diag ?? null,
       counts: {
         pbxExtensions: pbxExtensions.length,
         agents: agents.length,
