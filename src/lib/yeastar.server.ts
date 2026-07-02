@@ -573,6 +573,7 @@ export async function fetchCdr(
   const endpoint = `${env!.base}/openapi/v1.0/cdr/list`;
   const start = fmtDate(fromDate);
   const end = fmtDateEnd(toDate);
+  console.log(`[yeastar cdr] applying dashboard date range: from=${fromDate} to=${toDate} → start_time="${start}" end_time="${end}"`);
   const diagnostic: CdrDiagnostic = {
     endpoint,
     requestUrl: "",
