@@ -39,17 +39,30 @@ function Stat({ icon: Icon, label, value, tone }: { icon: any; label: string; va
 
 export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
   const fetchStats = useServerFn(getYeastarCallStats);
-  const { data, isLoading, isError, isFetching, refetch } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch, error } = useQuery({
     queryKey: ["yeastar-stats", from, to, team, agentId ?? "all"],
     queryFn: () => fetchStats({ data: { from, to, team, agentId } }),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: 0,
   });
 
   if (isLoading) {
-    return <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading call center analytics…</CardContent></Card>;
+    return <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading call center analytics for {from} → {to}…</CardContent></Card>;
   }
+  if (isError || !data) {
+    const msg = error instanceof Error ? error.message : "Unable to load call center analytics.";
+    return (
+      <Card>
+        <CardHeader><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
+        <CardContent className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
+          <span className="truncate">{msg}</span>
+          <button onClick={() => refetch()} className="text-xs font-medium text-primary hover:underline shrink-0">Retry</button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (isError || !data) {
     return (
       <Card>
