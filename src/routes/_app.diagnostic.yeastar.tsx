@@ -34,8 +34,10 @@ interface AuthRow {
 function YeastarDiagnosticPage() {
   const runProbe = useServerFn(yeastarPhase1Probe);
   const runAuth = useServerFn(yeastarAuthDiagnostic);
+  const forceExpire = useServerFn(yeastarForceExpire);
   const [probeResult, setProbeResult] = useState<any>(null);
   const [probeBusy, setProbeBusy] = useState(false);
+  const [expireMsg, setExpireMsg] = useState<string | null>(null);
   const [rows, setRows] = useState<AuthRow[]>([]);
   const [busy, setBusy] = useState<null | "one" | "ten">(null);
 
