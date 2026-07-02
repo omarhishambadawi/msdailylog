@@ -394,7 +394,6 @@ async function getAccessToken(): Promise<string> {
   }
   return cachedToken.token;
 }
-}
 
 
 export interface YeastarCdrRecord {
