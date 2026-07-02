@@ -19,7 +19,8 @@
 const TOKEN_PATH = "/openapi/v1.0/get_token";
 const REFRESH_PATH = "/openapi/v1.0/refresh_token";
 const REFRESH_SKEW_MS = 60_000; // refresh 60s before expiry
-const UA = "MilaServ-Yeastar/1.0";
+// Yeastar docs require User-Agent: OpenAPI — PBX rejects other UAs with errcode -1 / FAILURE.
+const UA = "OpenAPI";
 
 export interface YeastarEnv {
   baseUrl: string;
