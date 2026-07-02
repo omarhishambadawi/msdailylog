@@ -187,6 +187,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
     // Sort by sales desc so largest bubbles get first pick on labels
     raw.sort((a, b) => b.c.sales - a.c.sales);
 
+    // Padding from map edges so labels never clip
+    const PAD = 10;
     // label collision — occupied rects
     const placedLabels: { x: number; y: number; w: number; h: number }[] = [];
     const overlaps = (r: { x: number; y: number; w: number; h: number }) =>
@@ -196,29 +198,54 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
       const ratio = c.sales / maxSales;
       const r = 6 + Math.sqrt(ratio) * 26;
       const color = heatColor(ratio);
-      const labelW = Math.max(40, c.name.length * 7.2);
+      const labelW = Math.max(44, c.name.length * 7.6) + 6;
       const labelH = 16;
-      const gap = 6;
+      const gap = 8;
 
-      // candidate positions: right, left, top, bottom
-      const candidates: Array<{ x: number; y: number; anchor: "start" | "end" | "middle" }> = [
-        { x: cx + r + gap, y: cy + 4, anchor: "start" },
-        { x: cx - r - gap, y: cy + 4, anchor: "end" },
-        { x: cx, y: cy - r - gap, anchor: "middle" },
-        { x: cx, y: cy + r + labelH, anchor: "middle" },
+      // 8 candidate positions around the bubble, then longer offsets as fallback
+      const build = (dist: number) => [
+        { x: cx + r + dist, y: cy + 4, anchor: "start" as const },
+        { x: cx - r - dist, y: cy + 4, anchor: "end" as const },
+        { x: cx, y: cy - r - dist, anchor: "middle" as const },
+        { x: cx, y: cy + r + dist + labelH - 4, anchor: "middle" as const },
+        { x: cx + r + dist * 0.7, y: cy - r - dist * 0.4, anchor: "start" as const },
+        { x: cx - r - dist * 0.7, y: cy - r - dist * 0.4, anchor: "end" as const },
+        { x: cx + r + dist * 0.7, y: cy + r + dist * 0.4 + labelH - 4, anchor: "start" as const },
+        { x: cx - r - dist * 0.7, y: cy + r + dist * 0.4 + labelH - 4, anchor: "end" as const },
       ];
 
-      let chosen = candidates[0];
-      for (const cand of candidates) {
+      const rectFor = (cand: { x: number; y: number; anchor: "start" | "end" | "middle" }) => {
         const rectX = cand.anchor === "start" ? cand.x : cand.anchor === "end" ? cand.x - labelW : cand.x - labelW / 2;
-        const rect = { x: rectX, y: cand.y - labelH + 2, w: labelW, h: labelH };
-        if (rect.x < 4 || rect.x + rect.w > W - 4 || rect.y < 4 || rect.y + rect.h > H - 4) continue;
-        if (!overlaps(rect)) { chosen = cand; placedLabels.push(rect); break; }
+        return { x: rectX, y: cand.y - labelH + 2, w: labelW, h: labelH };
+      };
+
+      let chosen: { x: number; y: number; anchor: "start" | "end" | "middle" } | null = null;
+      for (const dist of [gap, gap + 8, gap + 18, gap + 30]) {
+        for (const cand of build(dist)) {
+          const rect = rectFor(cand);
+          if (rect.x < PAD || rect.x + rect.w > W - PAD || rect.y < PAD || rect.y + rect.h > H - PAD) continue;
+          if (!overlaps(rect)) { chosen = cand; placedLabels.push(rect); break; }
+        }
+        if (chosen) break;
+      }
+
+      if (!chosen) {
+        // Last resort: clamp inside bounds, allow overlap
+        for (const cand of build(gap)) {
+          const rect = rectFor(cand);
+          const clampedX = Math.min(Math.max(rect.x, PAD), W - PAD - rect.w);
+          const clampedY = Math.min(Math.max(rect.y, PAD), H - PAD - rect.h);
+          const dx = clampedX - rect.x;
+          const dy = clampedY - rect.y;
+          chosen = { x: cand.x + dx, y: cand.y + dy, anchor: cand.anchor };
+          placedLabels.push({ ...rect, x: clampedX, y: clampedY });
+          break;
+        }
       }
 
       return {
         ...c, lon, lat, cx, cy, r, ratio, color,
-        labelX: chosen.x, labelY: chosen.y, anchor: chosen.anchor,
+        labelX: chosen!.x, labelY: chosen!.y, anchor: chosen!.anchor,
       };
     });
 
