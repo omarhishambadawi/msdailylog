@@ -831,7 +831,7 @@ export async function fetchCdr(
   if (results.length === 0 && !allowedExtensions) {
     diagnostic.extensionsSample = (await fetchExtensionsSample(env.base, token)).slice(0, 25);
   }
-  console.log(`[yeastar cdr] window=${start}..${end} fetched=${timings.totalFetched} kept=${timings.keptAfterFilter} auth=${timings.authMs}ms req=${timings.requestMs}ms`);
+  console.log(`[yeastar cdr] window=${start}..${end} fetched=${timings.totalFetched} kept=${timings.keptAfterFilter} auth=${timings.authMs}ms req=${timings.requestMs}ms source=${auth.source} remaining=${diagnostic.remainingTokenLifetimeSec}s get_token_called=${auth.getTokenCalled}`);
   return { records: results, diagnostic, timings };
 }
 
