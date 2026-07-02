@@ -25,7 +25,9 @@ export const Route = createFileRoute("/_app/orders/")({
 });
 
 const toISO = (d: Date) => format(d, "yyyy-MM-dd");
-const PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_STORAGE_KEY = "orders.pageSize";
 const normalizeSearchTerm = (value: string) => value.replace(/[,%.*()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
 
 function OrdersList() {
