@@ -121,6 +121,21 @@ function YeastarDiagnosticPage() {
             <Button onClick={runTen} disabled={busy !== null}>Run 10 sequential</Button>
             <Button onClick={runTenParallel} disabled={busy !== null} variant="secondary">Run 10 parallel</Button>
             <Button onClick={() => setRows([])} disabled={busy !== null} variant="ghost">Clear</Button>
+            <Button
+              onClick={async () => {
+                const r: any = await forceExpire();
+                setExpireMsg(r?.note ?? JSON.stringify(r));
+              }}
+              disabled={busy !== null}
+              variant="destructive"
+            >
+              Test D: Force token expiry (60s)
+            </Button>
+          </div>
+          {expireMsg && <div className="text-xs text-muted-foreground">{expireMsg}</div>}
+          <div className="hidden">{/* keep JSX balanced below */}</div>
+          <div className="sr-only">end-controls</div>
+          <div className="hidden">
           </div>
           {rows.length > 0 && (
             <>
