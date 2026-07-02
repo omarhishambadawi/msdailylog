@@ -107,19 +107,27 @@ export const yeastarRawProbe = createServerFn({ method: "POST" })
       };
     }
 
-    const extUrl =
-      `${baseUrl}/openapi/v1.0/extension/list` +
-      `?access_token=${encodeURIComponent(accessToken)}` +
-      `&page=1&page_size=1&sort_by=id&order_by=asc`;
-    const cdrUrl =
-      `${baseUrl}/openapi/v1.0/cdr/list` +
-      `?access_token=${encodeURIComponent(accessToken)}` +
-      `&page=1&page_size=1`;
+    const tok = `access_token=${encodeURIComponent(accessToken)}`;
+    const extUrl = `${baseUrl}/openapi/v1.0/extension/list?${tok}&page=1&page_size=1&sort_by=id&order_by=asc`;
 
-    const [extRes, cdrRes] = await Promise.all([
+    // Isolate which parameter causes errcode -3 by trying combinations.
+    const cdrVariants: Record<string, string> = {
+      minimal: `${baseUrl}/openapi/v1.0/cdr/list?${tok}&page=1&page_size=1`,
+      with_time_string: `${baseUrl}/openapi/v1.0/cdr/list?${tok}&page=1&page_size=1&start_time=${encodeURIComponent("2026-07-01 00:00:00")}&end_time=${encodeURIComponent("2026-07-02 23:59:59")}`,
+      with_time_epoch: `${baseUrl}/openapi/v1.0/cdr/list?${tok}&page=1&page_size=1&start_time=${Math.floor(Date.now()/1000) - 86400}&end_time=${Math.floor(Date.now()/1000)}`,
+      with_time_ddmmyyyy: `${baseUrl}/openapi/v1.0/cdr/list?${tok}&page=1&page_size=1&start_time=${encodeURIComponent("01/07/2026 00:00:00")}&end_time=${encodeURIComponent("02/07/2026 23:59:59")}`,
+      with_number: `${baseUrl}/openapi/v1.0/cdr/list?${tok}&page=1&page_size=1&number=4006`,
+      with_sort_time: `${baseUrl}/openapi/v1.0/cdr/list?${tok}&page=1&page_size=1&sort_by=time&order_by=desc`,
+      with_sort_id: `${baseUrl}/openapi/v1.0/cdr/list?${tok}&page=1&page_size=1&sort_by=id&order_by=desc`,
+      full_prod: `${baseUrl}/openapi/v1.0/cdr/list?${tok}&start_time=${encodeURIComponent("2026-07-01 00:00:00")}&end_time=${encodeURIComponent("2026-07-02 23:59:59")}&number=4006&page=1&page_size=500&sort_by=time&order_by=desc`,
+    };
+    const [extRes, ...cdrEntries] = await Promise.all([
       rawGet(extUrl, accessToken),
-      rawGet(cdrUrl, accessToken),
+      ...Object.entries(cdrVariants).map(([, u]) => rawGet(u, accessToken)),
     ]);
+    const cdrResults: Record<string, RawCallResult> = {};
+    Object.keys(cdrVariants).forEach((k, i) => { cdrResults[k] = cdrEntries[i]; });
+    const cdrRes = cdrResults.minimal;
 
     // Truncate raw bodies to keep the payload manageable in the UI.
     const cap = (s: string) => (s.length > 4000 ? s.slice(0, 4000) + "…[truncated]" : s);
