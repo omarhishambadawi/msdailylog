@@ -52,6 +52,22 @@ export function ExtensionMappingValidator() {
           </div>
         )}
 
+        {d.groupsDiag && (
+          <div className="rounded-md border p-3 text-xs space-y-1 bg-muted/20">
+            <div className="font-medium">extension_group/list diagnostic</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
+              <div>HTTP: <b>{d.groupsDiag.httpStatus}</b></div>
+              <div>errcode: <b>{d.groupsDiag.errcode ?? "—"}</b></div>
+              <div>errmsg: <b>{d.groupsDiag.errmsg ?? "—"}</b></div>
+              <div>groups: <b>{d.groupsDiag.totalReturned}</b></div>
+            </div>
+            <div>source: <code className="px-1 rounded bg-muted">{d.groupsDiag.source}</code>{d.groupsDiag.fallbackNote ? ` — ${d.groupsDiag.fallbackNote}` : ""}</div>
+            {d.groupsDiag.firstGroups.length > 0 && (
+              <div>first {d.groupsDiag.firstGroups.length} groups: {d.groupsDiag.firstGroups.map((g) => <code key={g.name} className="mx-0.5 px-1 rounded bg-muted">{g.name} ({g.memberCount})</code>)}</div>
+            )}
+          </div>
+        )}
+
         {d.groupConfig?.missing?.length > 0 && (
           <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-xs">
             <div className="flex items-center gap-2 font-medium text-red-600 dark:text-red-400">
