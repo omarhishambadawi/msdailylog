@@ -281,57 +281,82 @@ function OrdersList() {
           totalOrders={summary.totalCount} completedOrders={summary.completedCount} />
       </div>
 
-      <Card className="overflow-hidden">
+      <Card>
         <CardContent className="p-0">
-          {/* Desktop / tablet table */}
+          {/* Desktop / tablet table — raw table so overflow-x-auto works correctly */}
           <div className="hidden md:block w-full overflow-x-auto">
-            <Table className="w-full min-w-[880px]">
-              <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
-                <TableRow className="hover:bg-transparent border-b">
-
-                  <TableHead className="w-10 text-center px-2">✓</TableHead>
-                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground py-3">Order</TableHead>
-                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-24">Date</TableHead>
-                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[18%]">Customer</TableHead>
-                  <TableHead className="hidden lg:table-cell text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-20">Type</TableHead>
-                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-24">Branch</TableHead>
-                  <TableHead className="text-right text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-28">Value</TableHead>
-                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[132px]">Status</TableHead>
-                  <TableHead className="w-12 px-0"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-10">Loading…</TableCell></TableRow>}
-                {!isLoading && pageRows.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-10">No orders found</TableCell></TableRow>}
-                {pageRows.map((o: any) => {
+            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1200 }}>
+              <colgroup>
+                <col style={{ width: 44 }} />
+                <col style={{ width: 150 }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: 220 }} />
+                <col style={{ width: 170 }} />
+                <col style={{ width: 130 }} />
+                <col style={{ width: 90 }} />
+                <col style={{ width: 120 }} />
+                <col style={{ width: 130 }} />
+                <col style={{ width: 140 }} />
+                <col style={{ width: 60 }} />
+              </colgroup>
+              <thead className="sticky top-0 z-10 bg-muted/90 backdrop-blur">
+                <tr className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
+                  <th className="text-center px-3 py-3 border-b">✓</th>
+                  <th className="text-left px-4 py-3 border-b">Order</th>
+                  <th className="text-left px-4 py-3 border-b">Date</th>
+                  <th className="text-left px-4 py-3 border-b">Customer</th>
+                  <th className="text-left px-4 py-3 border-b">Agent</th>
+                  <th className="text-left px-4 py-3 border-b">Invoice No.</th>
+                  <th className="text-left px-4 py-3 border-b">Type</th>
+                  <th className="text-left px-4 py-3 border-b">Branch</th>
+                  <th className="text-right px-4 py-3 border-b">Value</th>
+                  <th className="text-left px-4 py-3 border-b">Status</th>
+                  <th className="px-2 py-3 border-b"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading && <tr><td colSpan={11} className="text-center text-muted-foreground py-12 border-b">Loading…</td></tr>}
+                {!isLoading && pageRows.length === 0 && <tr><td colSpan={11} className="text-center text-muted-foreground py-12 border-b">No orders found</td></tr>}
+                {pageRows.map((o: any, idx: number) => {
                   const editable = canEditOrder(o);
                   const canVerifyRow = canVerifyOrder(o);
                   const verified = !!o.call_center_verified;
                   return (
-                    <TableRow key={o.id} className={cn("group border-b border-border/50 transition-colors", verified && "bg-green-50/40 dark:bg-green-500/[0.04]", "hover:bg-accent/50")}>
-                      <TableCell className="text-center px-2 align-middle" onClick={(e) => e.stopPropagation()}>
+                    <tr
+                      key={o.id}
+                      className={cn(
+                        "group transition-colors hover:bg-accent/60",
+                        verified ? "bg-green-50/50 dark:bg-green-500/[0.05]" : idx % 2 === 1 ? "bg-muted/30" : "bg-background",
+                      )}
+                    >
+                      <td className="text-center px-3 py-3.5 align-middle border-b border-border/60" onClick={(e) => e.stopPropagation()}>
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
-                      </TableCell>
-                      <TableCell className="py-3.5 align-middle overflow-hidden">
+                      </td>
+                      <td className="px-4 py-3.5 align-middle border-b border-border/60">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-mono font-semibold text-sm shrink-0">{formatOrderNo(o.team, o.display_no)}</span>
+                          <span className="font-mono font-semibold text-sm">{formatOrderNo(o.team, o.display_no)}</span>
                           <TeamBadge team={o.team} />
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0 truncate">
-                            {o.delivery_type && <span className="truncate">{o.delivery_type}</span>}
-                            {o.agent_name && <><span className="text-border">·</span><span className="truncate">{o.agent_name}</span></>}
-                            {o.invoice_no && <><span className="text-border">·</span><span className="truncate font-mono">Inv {o.invoice_no}</span></>}
-                          </div>
                         </div>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground align-middle">{o.order_date}</TableCell>
-                      <TableCell className="text-sm align-middle truncate overflow-hidden">{o.customer_name || <span className="text-muted-foreground">—</span>}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-sm align-middle truncate">{o.order_type}</TableCell>
-                      <TableCell className="font-mono text-xs align-middle truncate">
-                        <div className="truncate">{o.branch_no ?? "—"}</div>
-                        {o.city && <div className="text-[10px] text-muted-foreground truncate">{o.city}</div>}
-                      </TableCell>
-                      <TableCell className="text-right whitespace-nowrap text-sm font-mono font-medium align-middle">{fmtSAR(o.invoice_value)}</TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()} className="px-2 align-middle">
+                      </td>
+                      <td className="px-4 py-3.5 align-middle text-sm text-muted-foreground whitespace-nowrap border-b border-border/60">{o.order_date}</td>
+                      <td className="px-4 py-3.5 align-middle text-sm border-b border-border/60">
+                        <div className="truncate font-medium text-foreground">{o.customer_name || <span className="text-muted-foreground font-normal">—</span>}</div>
+                        {o.customer_phone && <div className="truncate text-xs text-muted-foreground font-mono">{o.customer_phone}</div>}
+                      </td>
+                      <td className="px-4 py-3.5 align-middle text-sm border-b border-border/60">
+                        <div className="truncate">{o.agent_name || <span className="text-muted-foreground">—</span>}</div>
+                        {o.agent_code && <div className="truncate text-[11px] text-muted-foreground font-mono">{o.agent_code}</div>}
+                      </td>
+                      <td className="px-4 py-3.5 align-middle text-sm font-mono border-b border-border/60">
+                        <div className="truncate">{o.invoice_no || <span className="text-muted-foreground font-sans">—</span>}</div>
+                      </td>
+                      <td className="px-4 py-3.5 align-middle text-sm border-b border-border/60">{o.order_type}</td>
+                      <td className="px-4 py-3.5 align-middle text-sm border-b border-border/60">
+                        <div className="font-mono truncate">{o.branch_no ?? "—"}</div>
+                        {o.city && <div className="text-[11px] text-muted-foreground truncate">{o.city}</div>}
+                      </td>
+                      <td className="px-4 py-3.5 align-middle text-right text-sm font-mono font-semibold tabular-nums whitespace-nowrap border-b border-border/60">{fmtSAR(o.invoice_value)}</td>
+                      <td onClick={(e) => e.stopPropagation()} className="px-4 py-3.5 align-middle border-b border-border/60">
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
                             <SelectTrigger className={cn("h-8 w-full border px-2.5 text-xs font-medium rounded-md", STATUS_STYLES[o.status] ?? "")}><SelectValue /></SelectTrigger>
@@ -342,17 +367,17 @@ function OrdersList() {
                         ) : (
                           <StatusBadge s={o.status} />
                         )}
-                      </TableCell>
-                      <TableCell className="px-0 text-center align-middle">
+                      </td>
+                      <td className="px-2 py-3.5 text-center align-middle border-b border-border/60">
                         <Button variant="ghost" size="icon" className="h-8 w-8 opacity-60 group-hover:opacity-100" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label={editable ? "Edit order" : "View order"}>
                           {editable ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                   );
                 })}
-              </TableBody>
-            </Table>
+              </tbody>
+            </table>
           </div>
 
           {/* Mobile card list */}
@@ -364,7 +389,7 @@ function OrdersList() {
               const canVerifyRow = canVerifyOrder(o);
               const verified = !!o.call_center_verified;
               return (
-                <div key={o.id} className={cn("p-3.5 transition-colors active:bg-accent/40", verified && "bg-green-50/40 dark:bg-green-500/[0.04]")}>
+                <div key={o.id} className={cn("p-4 transition-colors active:bg-accent/40", verified && "bg-green-50/50 dark:bg-green-500/[0.05]")}>
                   <div className="flex items-start gap-3">
                     <div onClick={(e) => e.stopPropagation()} className="pt-1">
                       <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
@@ -375,18 +400,17 @@ function OrdersList() {
                         <TeamBadge team={o.team} />
                         <span className="text-xs text-muted-foreground ml-auto">{o.order_date}</span>
                       </div>
-                      <div className="mt-1.5 text-sm truncate">{o.customer_name || <span className="text-muted-foreground">No customer</span>}</div>
-                      <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
-                        <span className="font-mono">{o.branch_no ?? "—"}</span>
-                        {o.city && <><span className="text-border">·</span><span>{o.city}</span></>}
-                        <span className="text-border">·</span><span>{o.order_type}</span>
-                        {o.delivery_type && <><span className="text-border">·</span><span>{o.delivery_type}</span></>}
-                        {o.agent_name && <><span className="text-border">·</span><span className="truncate">{o.agent_name}</span></>}
-                      </div>
-                      {o.invoice_no && <div className="mt-0.5 text-xs text-muted-foreground font-mono">Inv {o.invoice_no}</div>}
+                      <div className="mt-2 text-sm font-medium truncate">{o.customer_name || <span className="text-muted-foreground font-normal">No customer</span>}</div>
+                      {o.customer_phone && <div className="text-xs text-muted-foreground font-mono truncate">{o.customer_phone}</div>}
+                      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                        <div className="min-w-0"><dt className="text-muted-foreground">Agent</dt><dd className="truncate">{o.agent_name || "—"}</dd></div>
+                        <div className="min-w-0"><dt className="text-muted-foreground">Invoice</dt><dd className="truncate font-mono">{o.invoice_no || "—"}</dd></div>
+                        <div className="min-w-0"><dt className="text-muted-foreground">Type</dt><dd className="truncate">{o.order_type}</dd></div>
+                        <div className="min-w-0"><dt className="text-muted-foreground">Branch</dt><dd className="truncate font-mono">{o.branch_no ?? "—"}{o.city ? ` · ${o.city}` : ""}</dd></div>
+                      </dl>
                     </div>
                     <div className="flex flex-col items-end gap-2 shrink-0">
-                      <div className="text-sm font-mono font-semibold whitespace-nowrap">{fmtSAR(o.invoice_value)}</div>
+                      <div className="text-sm font-mono font-semibold whitespace-nowrap tabular-nums">{fmtSAR(o.invoice_value)}</div>
                       <div onClick={(e) => e.stopPropagation()}>
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
@@ -405,6 +429,7 @@ function OrdersList() {
               );
             })}
           </div>
+
 
 
 
