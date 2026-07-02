@@ -568,7 +568,8 @@ export function getTeamExtensions(): TeamExtensionResult {
 export async function fetchCdr(
   fromDate: string,
   toDate: string,
-): Promise<{ records: YeastarCdrRecord[]; diagnostic: CdrDiagnostic }> {
+  allowedExtensions?: Set<string>,
+): Promise<{ records: YeastarCdrRecord[]; diagnostic: CdrDiagnostic; timings: { authMs: number; requestMs: number; filterMs: number; totalFetched: number; keptAfterFilter: number } }> {
   const env = requireEnv();
   const endpoint = `${env!.base}/openapi/v1.0/cdr/list`;
   const start = fmtDate(fromDate);
