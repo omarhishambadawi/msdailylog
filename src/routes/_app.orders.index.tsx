@@ -53,6 +53,16 @@ function OrdersList() {
   const [status, setStatus] = useState<string>("all");
   const [mineOnly, setMineOnly] = useState<boolean>(false);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSizeState] = useState<number>(() => {
+    if (typeof window === "undefined") return DEFAULT_PAGE_SIZE;
+    const v = Number(window.sessionStorage.getItem(PAGE_SIZE_STORAGE_KEY));
+    return PAGE_SIZE_OPTIONS.includes(v as any) ? v : DEFAULT_PAGE_SIZE;
+  });
+  const setPageSize = (n: number) => {
+    setPageSizeState(n);
+    setPage(0);
+    if (typeof window !== "undefined") window.sessionStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(n));
+  };
 
   const searching = q.trim().length > 0;
   const term = normalizeSearchTerm(q);
