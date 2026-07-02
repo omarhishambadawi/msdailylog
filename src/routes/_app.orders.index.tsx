@@ -285,81 +285,84 @@ function OrdersList() {
         <CardContent className="p-0">
           {/* Desktop / tablet table — raw table so overflow-x-auto works correctly */}
           <div className="hidden md:block w-full overflow-x-auto">
-            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1200 }}>
+            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1240 }}>
               <colgroup>
-                <col style={{ width: 44 }} />
-                <col style={{ width: 150 }} />
-                <col style={{ width: 110 }} />
+                <col style={{ width: 48 }} />
+                <col style={{ width: 180 }} />
+                <col style={{ width: 104 }} />
                 <col style={{ width: 220 }} />
                 <col style={{ width: 170 }} />
                 <col style={{ width: 130 }} />
-                <col style={{ width: 90 }} />
+                <col style={{ width: 88 }} />
                 <col style={{ width: 120 }} />
                 <col style={{ width: 130 }} />
                 <col style={{ width: 140 }} />
-                <col style={{ width: 60 }} />
+                <col style={{ width: 56 }} />
               </colgroup>
-              <thead className="sticky top-0 z-10 bg-muted/90 backdrop-blur">
-                <tr className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
-                  <th className="text-center px-3 py-3 border-b">✓</th>
-                  <th className="text-left px-4 py-3 border-b">Order</th>
-                  <th className="text-left px-4 py-3 border-b">Date</th>
-                  <th className="text-left px-4 py-3 border-b">Customer</th>
-                  <th className="text-left px-4 py-3 border-b">Agent</th>
-                  <th className="text-left px-4 py-3 border-b">Invoice No.</th>
-                  <th className="text-left px-4 py-3 border-b">Type</th>
-                  <th className="text-left px-4 py-3 border-b">Branch</th>
-                  <th className="text-right px-4 py-3 border-b">Value</th>
-                  <th className="text-left px-4 py-3 border-b">Status</th>
-                  <th className="px-2 py-3 border-b"></th>
+              <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
+                <tr className="text-[10.5px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                  <th className="text-center px-3 py-3.5 border-b border-border/70"></th>
+                  <th className="text-left px-4 py-3.5 border-b border-border/70">Order</th>
+                  <th className="text-left px-3 py-3.5 border-b border-border/70">Date</th>
+                  <th className="text-left px-4 py-3.5 border-b border-border/70">Customer</th>
+                  <th className="text-left px-4 py-3.5 border-b border-border/70">Agent</th>
+                  <th className="text-left px-4 py-3.5 border-b border-border/70">Invoice No.</th>
+                  <th className="text-left px-3 py-3.5 border-b border-border/70">Type</th>
+                  <th className="text-left px-4 py-3.5 border-b border-border/70">Branch</th>
+                  <th className="text-right px-4 py-3.5 border-b border-border/70">Value</th>
+                  <th className="text-left px-4 py-3.5 border-b border-border/70">Status</th>
+                  <th className="px-2 py-3.5 border-b border-border/70"></th>
                 </tr>
               </thead>
               <tbody>
-                {isLoading && <tr><td colSpan={11} className="text-center text-muted-foreground py-12 border-b">Loading…</td></tr>}
-                {!isLoading && pageRows.length === 0 && <tr><td colSpan={11} className="text-center text-muted-foreground py-12 border-b">No orders found</td></tr>}
+                {isLoading && <tr><td colSpan={11} className="text-center text-muted-foreground py-14 border-b border-border/50">Loading…</td></tr>}
+                {!isLoading && pageRows.length === 0 && <tr><td colSpan={11} className="text-center text-muted-foreground py-14 border-b border-border/50">No orders found</td></tr>}
                 {pageRows.map((o: any, idx: number) => {
                   const editable = canEditOrder(o);
                   const canVerifyRow = canVerifyOrder(o);
                   const verified = !!o.call_center_verified;
+                  const zebra = idx % 2 === 1;
+                  const rowBg = verified
+                    ? "bg-primary/[0.06] dark:bg-primary/[0.12]"
+                    : zebra ? "bg-muted/25" : "bg-background";
+                  const cellCls = "align-middle border-b border-border/40 py-4";
                   return (
                     <tr
                       key={o.id}
-                      className={cn(
-                        "group transition-colors hover:bg-accent/60",
-                        verified ? "bg-green-50/50 dark:bg-green-500/[0.05]" : idx % 2 === 1 ? "bg-muted/30" : "bg-background",
-                      )}
+                      className={cn("group transition-colors hover:bg-accent/50", rowBg)}
                     >
-                      <td className="text-center px-3 py-3.5 align-middle border-b border-border/60" onClick={(e) => e.stopPropagation()}>
+                      <td className={cn("text-center px-3 relative", cellCls)} onClick={(e) => e.stopPropagation()}>
+                        {verified && <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />}
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </td>
-                      <td className="px-4 py-3.5 align-middle border-b border-border/60">
+                      <td className={cn("px-4", cellCls)}>
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-mono font-semibold text-sm">{formatOrderNo(o.team, o.display_no)}</span>
+                          <span className="font-mono font-semibold text-[13px] tracking-tight whitespace-nowrap text-foreground">{formatOrderNo(o.team, o.display_no)}</span>
                           <TeamBadge team={o.team} />
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 align-middle text-sm text-muted-foreground whitespace-nowrap border-b border-border/60">{o.order_date}</td>
-                      <td className="px-4 py-3.5 align-middle text-sm border-b border-border/60">
-                        <div className="truncate font-medium text-foreground">{o.customer_name || <span className="text-muted-foreground font-normal">—</span>}</div>
-                        {o.customer_phone && <div className="truncate text-xs text-muted-foreground font-mono">{o.customer_phone}</div>}
+                      <td className={cn("px-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{o.order_date}</td>
+                      <td className={cn("px-4 text-sm", cellCls)}>
+                        <div className="truncate font-semibold text-foreground leading-tight">{o.customer_name || <span className="text-muted-foreground font-normal">—</span>}</div>
+                        {o.customer_phone && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.customer_phone}</div>}
                       </td>
-                      <td className="px-4 py-3.5 align-middle text-sm border-b border-border/60">
-                        <div className="truncate">{o.agent_name || <span className="text-muted-foreground">—</span>}</div>
-                        {o.agent_code && <div className="truncate text-[11px] text-muted-foreground font-mono">{o.agent_code}</div>}
+                      <td className={cn("px-4 text-sm", cellCls)}>
+                        <div className="truncate text-foreground leading-tight">{o.agent_name || <span className="text-muted-foreground">—</span>}</div>
+                        {o.agent_code && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.agent_code}</div>}
                       </td>
-                      <td className="px-4 py-3.5 align-middle text-sm font-mono border-b border-border/60">
+                      <td className={cn("px-4 text-[13px] font-mono text-foreground/90", cellCls)}>
                         <div className="truncate">{o.invoice_no || <span className="text-muted-foreground font-sans">—</span>}</div>
                       </td>
-                      <td className="px-4 py-3.5 align-middle text-sm border-b border-border/60">{o.order_type}</td>
-                      <td className="px-4 py-3.5 align-middle text-sm border-b border-border/60">
-                        <div className="font-mono truncate">{o.branch_no ?? "—"}</div>
-                        {o.city && <div className="text-[11px] text-muted-foreground truncate">{o.city}</div>}
+                      <td className={cn("px-3 text-xs text-muted-foreground whitespace-nowrap", cellCls)}>{o.order_type}</td>
+                      <td className={cn("px-4 text-sm", cellCls)}>
+                        <div className="font-mono font-medium truncate leading-tight">{o.branch_no ?? "—"}</div>
+                        {o.city && <div className="mt-0.5 text-[11px] text-muted-foreground truncate">{o.city}</div>}
                       </td>
-                      <td className="px-4 py-3.5 align-middle text-right text-sm font-mono font-semibold tabular-nums whitespace-nowrap border-b border-border/60">{fmtSAR(o.invoice_value)}</td>
-                      <td onClick={(e) => e.stopPropagation()} className="px-4 py-3.5 align-middle border-b border-border/60">
+                      <td className={cn("px-4 text-right text-sm font-mono font-semibold tabular-nums whitespace-nowrap text-foreground", cellCls)}>{fmtSAR(o.invoice_value)}</td>
+                      <td onClick={(e) => e.stopPropagation()} className={cn("px-4", cellCls)}>
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
-                            <SelectTrigger className={cn("h-8 w-full border px-2.5 text-xs font-medium rounded-md", STATUS_STYLES[o.status] ?? "")}><SelectValue /></SelectTrigger>
+                            <SelectTrigger className={cn("h-8 w-full border px-2.5 text-xs font-semibold rounded-md", STATUS_STYLES[o.status] ?? "")}><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
@@ -368,8 +371,8 @@ function OrdersList() {
                           <StatusBadge s={o.status} />
                         )}
                       </td>
-                      <td className="px-2 py-3.5 text-center align-middle border-b border-border/60">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-60 group-hover:opacity-100" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label={editable ? "Edit order" : "View order"}>
+                      <td className={cn("px-2 text-center", cellCls)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-50 group-hover:opacity-100 transition-opacity" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label={editable ? "Edit order" : "View order"}>
                           {editable ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
                       </td>
@@ -389,14 +392,14 @@ function OrdersList() {
               const canVerifyRow = canVerifyOrder(o);
               const verified = !!o.call_center_verified;
               return (
-                <div key={o.id} className={cn("p-4 transition-colors active:bg-accent/40", verified && "bg-green-50/50 dark:bg-green-500/[0.05]")}>
+                <div key={o.id} className={cn("relative p-4 transition-colors active:bg-accent/40", verified && "bg-primary/[0.06] dark:bg-primary/[0.12] border-l-[3px] border-l-primary pl-[13px]")}>
                   <div className="flex items-start gap-3">
                     <div onClick={(e) => e.stopPropagation()} className="pt-1">
                       <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                     </div>
                     <div className="min-w-0 flex-1" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })}>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono font-semibold text-sm">{formatOrderNo(o.team, o.display_no)}</span>
+                        <span className="font-mono font-semibold text-sm whitespace-nowrap">{formatOrderNo(o.team, o.display_no)}</span>
                         <TeamBadge team={o.team} />
                         <span className="text-xs text-muted-foreground ml-auto">{o.order_date}</span>
                       </div>
