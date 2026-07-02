@@ -187,6 +187,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
     // Sort by sales desc so largest bubbles get first pick on labels
     raw.sort((a, b) => b.c.sales - a.c.sales);
 
+    // Padding from map edges so labels never clip
+    const PAD = 10;
     // label collision — occupied rects
     const placedLabels: { x: number; y: number; w: number; h: number }[] = [];
     const overlaps = (r: { x: number; y: number; w: number; h: number }) =>
@@ -196,29 +198,54 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
       const ratio = c.sales / maxSales;
       const r = 6 + Math.sqrt(ratio) * 26;
       const color = heatColor(ratio);
-      const labelW = Math.max(40, c.name.length * 7.2);
+      const labelW = Math.max(44, c.name.length * 7.6) + 6;
       const labelH = 16;
-      const gap = 6;
+      const gap = 8;
 
-      // candidate positions: right, left, top, bottom
-      const candidates: Array<{ x: number; y: number; anchor: "start" | "end" | "middle" }> = [
-        { x: cx + r + gap, y: cy + 4, anchor: "start" },
-        { x: cx - r - gap, y: cy + 4, anchor: "end" },
-        { x: cx, y: cy - r - gap, anchor: "middle" },
-        { x: cx, y: cy + r + labelH, anchor: "middle" },
+      // 8 candidate positions around the bubble, then longer offsets as fallback
+      const build = (dist: number) => [
+        { x: cx + r + dist, y: cy + 4, anchor: "start" as const },
+        { x: cx - r - dist, y: cy + 4, anchor: "end" as const },
+        { x: cx, y: cy - r - dist, anchor: "middle" as const },
+        { x: cx, y: cy + r + dist + labelH - 4, anchor: "middle" as const },
+        { x: cx + r + dist * 0.7, y: cy - r - dist * 0.4, anchor: "start" as const },
+        { x: cx - r - dist * 0.7, y: cy - r - dist * 0.4, anchor: "end" as const },
+        { x: cx + r + dist * 0.7, y: cy + r + dist * 0.4 + labelH - 4, anchor: "start" as const },
+        { x: cx - r - dist * 0.7, y: cy + r + dist * 0.4 + labelH - 4, anchor: "end" as const },
       ];
 
-      let chosen = candidates[0];
-      for (const cand of candidates) {
+      const rectFor = (cand: { x: number; y: number; anchor: "start" | "end" | "middle" }) => {
         const rectX = cand.anchor === "start" ? cand.x : cand.anchor === "end" ? cand.x - labelW : cand.x - labelW / 2;
-        const rect = { x: rectX, y: cand.y - labelH + 2, w: labelW, h: labelH };
-        if (rect.x < 4 || rect.x + rect.w > W - 4 || rect.y < 4 || rect.y + rect.h > H - 4) continue;
-        if (!overlaps(rect)) { chosen = cand; placedLabels.push(rect); break; }
+        return { x: rectX, y: cand.y - labelH + 2, w: labelW, h: labelH };
+      };
+
+      let chosen: { x: number; y: number; anchor: "start" | "end" | "middle" } | null = null;
+      for (const dist of [gap, gap + 8, gap + 18, gap + 30]) {
+        for (const cand of build(dist)) {
+          const rect = rectFor(cand);
+          if (rect.x < PAD || rect.x + rect.w > W - PAD || rect.y < PAD || rect.y + rect.h > H - PAD) continue;
+          if (!overlaps(rect)) { chosen = cand; placedLabels.push(rect); break; }
+        }
+        if (chosen) break;
+      }
+
+      if (!chosen) {
+        // Last resort: clamp inside bounds, allow overlap
+        for (const cand of build(gap)) {
+          const rect = rectFor(cand);
+          const clampedX = Math.min(Math.max(rect.x, PAD), W - PAD - rect.w);
+          const clampedY = Math.min(Math.max(rect.y, PAD), H - PAD - rect.h);
+          const dx = clampedX - rect.x;
+          const dy = clampedY - rect.y;
+          chosen = { x: cand.x + dx, y: cand.y + dy, anchor: cand.anchor };
+          placedLabels.push({ ...rect, x: clampedX, y: clampedY });
+          break;
+        }
       }
 
       return {
         ...c, lon, lat, cx, cy, r, ratio, color,
-        labelX: chosen.x, labelY: chosen.y, anchor: chosen.anchor,
+        labelX: chosen!.x, labelY: chosen!.y, anchor: chosen!.anchor,
       };
     });
 
@@ -335,11 +362,11 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                   <text
                     x={p.labelX} y={p.labelY}
                     textAnchor={p.anchor}
-                    fontSize={11}
+                    fontSize={11.5}
                     fontWeight={active ? 700 : 600}
-                    fill="hsl(215 25% 22%)"
-                    stroke="white" strokeWidth={3} strokeOpacity={0.95} paintOrder="stroke"
-                    style={{ letterSpacing: 0.1 }}
+                    fill="hsl(215 28% 18%)"
+                    stroke="white" strokeWidth={3.5} strokeOpacity={0.98} paintOrder="stroke"
+                    style={{ letterSpacing: 0.15, fontFeatureSettings: '"kern"', textRendering: "geometricPrecision" }}
                   >
                     {p.name}
                   </text>
@@ -359,13 +386,23 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
             )}
           </svg>
 
-          {hover && (
+          {hover && (() => {
+            const labelAbove = hover.labelY < hover.cy;
+            const leftPct = (hover.cx / W) * 100;
+            const topPct = (hover.cy / H) * 100;
+            const flipBelow = labelAbove || hover.cy < H * 0.35;
+            const nearLeft = leftPct < 22;
+            const nearRight = leftPct > 78;
+            const xShift = nearLeft ? "0%" : nearRight ? "-100%" : "-50%";
+            const yShift = flipBelow ? `calc(${hover.r + 16}px)` : `calc(-100% - ${hover.r + 14}px)`;
+            return (
             <div
               className="pointer-events-none absolute z-10 min-w-[210px] rounded-lg border bg-popover/95 backdrop-blur px-3.5 py-2.5 text-xs text-popover-foreground shadow-lg ring-1 ring-black/5"
               style={{
-                left: `${(hover.cx / W) * 100}%`,
-                top: `${(hover.cy / H) * 100}%`,
-                transform: "translate(-50%, calc(-100% - 14px))",
+                left: `${leftPct}%`,
+                top: `${topPct}%`,
+                transform: `translate(${xShift}, ${yShift})`,
+                maxWidth: "min(260px, 92vw)",
               }}
             >
               <div className="mb-1.5 flex items-center gap-2">
@@ -383,7 +420,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                 } />
               </div>
             </div>
-          )}
+            );
+          })()}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
