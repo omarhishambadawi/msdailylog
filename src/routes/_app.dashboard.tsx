@@ -191,11 +191,30 @@ function Dashboard() {
         name, ...v, rate: v.total > 0 ? (v.resolved / v.total) * 100 : 0,
       })).sort((a, b) => b.total - a.total);
 
+      const buildStats = (rows: any[]) => {
+        const completed = completedRows(rows);
+        const pending = rows.filter((o: any) => o.status === "Pending").length;
+        const cancelled = rows.filter((o: any) => o.status === "Cancelled").length;
+        return {
+          totalSales: sum(rows),
+          completedSales: sum(completed),
+          totalOrders: rows.length,
+          completedOrders: completed.length,
+          pending,
+          cancelled,
+          completionRate: rows.length > 0 ? (completed.length / rows.length) * 100 : 0,
+        };
+      };
+      const cashStats = buildStats(cash(rangeOrders));
+      const wasStats = buildStats(was(rangeOrders));
+      const totalStats = buildStats(rangeOrders);
+
       return {
         monthAll, monthCompleted, monthCompletedCount,
         monthTotalCount: rangeOrders.length,
-        monthCashSales: sum(cash(rangeOrders)),
-        monthWasSales: sum(was(rangeOrders)),
+        monthCashSales: cashStats.totalSales,
+        monthWasSales: wasStats.totalSales,
+        cashStats, wasStats, totalStats,
         completionRate,
         totalVerified, totalNonVerified, totalVerifiedValue,
         verifRate: rangeOrders.length > 0 ? (totalVerified / rangeOrders.length) * 100 : 0,
