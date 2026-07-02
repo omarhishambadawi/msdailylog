@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { yeastarPhase1Probe, yeastarAuthDiagnostic } from "@/lib/yeastar-diagnostic.functions";
+import { yeastarPhase1Probe, yeastarAuthDiagnostic, yeastarForceExpire } from "@/lib/yeastar-diagnostic.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
