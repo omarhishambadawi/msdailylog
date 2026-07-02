@@ -475,7 +475,7 @@ function OrdersList() {
 
 function CopyableOrderNo({ value, alwaysShowIcon = false }: { value: string; alwaysShowIcon?: boolean }) {
   const [copied, setCopied] = useState(false);
-  const onCopy = async (e: React.MouseEvent) => {
+  const onCopy = async (e: ReactMouseEvent) => {
     e.stopPropagation();
     try {
       await navigator.clipboard.writeText(value);
