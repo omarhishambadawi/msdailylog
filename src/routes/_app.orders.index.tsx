@@ -342,25 +342,25 @@ function OrdersList() {
                         </div>
                       </td>
 
-                      <td className={cn("px-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{o.order_date}</td>
-                      <td className={cn("px-4 text-sm", cellCls)}>
+                      <td className={cn("px-2 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{o.order_date}</td>
+                      <td className={cn("px-3 text-sm", cellCls)}>
                         <div className="truncate font-semibold text-foreground leading-tight">{o.customer_name || <span className="text-muted-foreground font-normal">—</span>}</div>
                         {o.customer_phone && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.customer_phone}</div>}
                       </td>
-                      <td className={cn("px-4 text-sm", cellCls)}>
+                      <td className={cn("px-3 text-sm", cellCls)}>
                         <div className="truncate text-foreground leading-tight">{o.agent_name || <span className="text-muted-foreground">—</span>}</div>
                         {o.agent_code && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.agent_code}</div>}
                       </td>
-                      <td className={cn("px-4 text-[13px] font-mono text-foreground/90", cellCls)}>
+                      <td className={cn("px-3 text-[13px] font-mono text-foreground/90", cellCls)}>
                         <div className="truncate">{o.invoice_no || <span className="text-muted-foreground font-sans">—</span>}</div>
                       </td>
-                      <td className={cn("px-3 text-xs text-muted-foreground whitespace-nowrap", cellCls)}>{o.order_type}</td>
-                      <td className={cn("px-4 text-sm", cellCls)}>
+                      <td className={cn("px-2 text-xs text-muted-foreground whitespace-nowrap", cellCls)}>{o.order_type}</td>
+                      <td className={cn("px-3 text-sm", cellCls)}>
                         <div className="font-mono font-medium truncate leading-tight">{o.branch_no ?? "—"}</div>
                         {o.city && <div className="mt-0.5 text-[11px] text-muted-foreground truncate">{o.city}</div>}
                       </td>
-                      <td className={cn("px-4 text-right text-sm font-mono font-semibold tabular-nums whitespace-nowrap text-foreground", cellCls)}>{fmtSAR(o.invoice_value)}</td>
-                      <td onClick={(e) => e.stopPropagation()} className={cn("px-4", cellCls)}>
+                      <td className={cn("px-3 text-right text-sm font-mono font-semibold tabular-nums whitespace-nowrap text-foreground", cellCls)}>{fmtSAR(o.invoice_value)}</td>
+                      <td onClick={(e) => e.stopPropagation()} className={cn("px-3", cellCls)}>
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
                             <SelectTrigger className={cn("h-8 w-full border px-2.5 text-xs font-semibold rounded-md", STATUS_STYLES[o.status] ?? "")}><SelectValue /></SelectTrigger>
@@ -372,11 +372,12 @@ function OrdersList() {
                           <StatusBadge s={o.status} />
                         )}
                       </td>
-                      <td className={cn("px-2 text-center", cellCls)}>
+                      <td className={cn("px-1 text-center", cellCls)}>
                         <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 group-hover:opacity-100 transition-opacity" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label={editable ? "Edit order" : "View order"}>
                           {editable ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
                       </td>
+
                     </tr>
                   );
                 })}
