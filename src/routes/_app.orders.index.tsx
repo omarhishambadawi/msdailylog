@@ -302,7 +302,8 @@ function OrdersList() {
               <thead className="sticky top-0 z-20 bg-muted/95 backdrop-blur">
                 <tr className="text-[10.5px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
                   <th className="text-center px-3 py-3.5 border-b border-border/70 sticky left-0 z-30 bg-muted"></th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70 sticky left-[48px] z-30 bg-muted shadow-[1px_0_0_0_hsl(var(--border)/0.6)]">Order</th>
+                  <th className="text-left px-4 py-3.5 border-b border-border/70 sticky left-[48px] z-30 bg-muted shadow-[1px_0_0_0_var(--border)]">Order</th>
+
                   <th className="text-left px-3 py-3.5 border-b border-border/70">Date</th>
                   <th className="text-left px-4 py-3.5 border-b border-border/70">Customer</th>
                   <th className="text-left px-4 py-3.5 border-b border-border/70">Agent</th>
