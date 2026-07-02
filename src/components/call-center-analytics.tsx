@@ -41,8 +41,15 @@ export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
   const fetchStats = useServerFn(getYeastarCallStats);
   const { data, isLoading, isError, isFetching, refetch, error } = useQuery({
     queryKey: ["yeastar-stats", from, to, team, agentId ?? "all"],
-    queryFn: () => fetchStats({ data: { from, to, team, agentId } }),
-    staleTime: 60_000,
+    queryFn: () => {
+      console.log(`[CallCenterAnalytics] dashboard filter → from=${from} to=${to} team=${team} agentId=${agentId ?? "all"}`);
+      return fetchStats({ data: { from, to, team, agentId } });
+    },
+    // Refetch immediately whenever the dashboard date range (or any filter)
+    // changes — no stale cache between date selections.
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
     retry: 0,
   });
