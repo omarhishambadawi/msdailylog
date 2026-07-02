@@ -31,6 +31,8 @@ interface TokenResult {
 let cachedToken: TokenState | null = null;
 let cachedCredFingerprint: string | null = null;
 let inflightAuth: Promise<TokenResult> | null = null;
+let authBlockedUntil = 0;
+let lastAuthFailure: YeastarDiagnostic | null = null;
 
 function credFingerprint(): string {
   // Short, non-reversible fingerprint of the current credentials so that
@@ -47,6 +49,8 @@ function ensureCredsFresh(): void {
   if (cachedCredFingerprint !== fp) {
     if (cachedToken) console.log("[Yeastar] credentials changed — clearing cached token");
     cachedToken = null;
+    authBlockedUntil = 0;
+    lastAuthFailure = null;
     cachedCredFingerprint = fp;
   }
 }
@@ -76,6 +80,41 @@ function logTokenSource(source: TokenSource, getTokenCalled: boolean): void {
   console.log(
     `[yeastar auth] token source=${source}; remaining=${Math.floor(remainingAccessMs() / 1000)}s; get_token_called=${getTokenCalled}; cache=${tokenStatus()}`,
   );
+}
+
+function parseExpiryMs(json: any, absoluteKeys: string[], ttlKeys: string[], fallbackTtlSec?: number): number | undefined {
+  for (const key of absoluteKeys) {
+    const raw = json?.[key];
+    if (raw == null || raw === "") continue;
+    if (typeof raw === "string" && /[-:T]/.test(raw)) {
+      const parsed = Date.parse(raw);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n > 10_000_000_000 ? n : n * 1000;
+  }
+  for (const key of ttlKeys) {
+    const n = Number(json?.[key]);
+    if (Number.isFinite(n) && n > 0) return Date.now() + n * 1000;
+  }
+  return fallbackTtlSec ? Date.now() + fallbackTtlSec * 1000 : undefined;
+}
+
+function cacheAuthFailure(diag: YeastarDiagnostic): void {
+  lastAuthFailure = diag;
+  if (diag.category === "max_limitation" || diag.errcode === 60002) {
+    authBlockedUntil = Date.now() + 30 * 60_000;
+    console.error("[yeastar auth] errcode 60002 received; blocking further /get_token attempts for 30 minutes");
+  }
+}
+
+function blockedAuthDiagnostic(): YeastarDiagnostic | null {
+  if (!lastAuthFailure || Date.now() >= authBlockedUntil) return null;
+  const retryInSec = Math.ceil((authBlockedUntil - Date.now()) / 1000);
+  return {
+    ...lastAuthFailure,
+    message: `${lastAuthFailure.message} Authentication is paused for ${retryInSec}s to avoid a retry loop.`,
+  };
 }
 
 const FETCH_TIMEOUT_MS = 12_000;
@@ -299,15 +338,18 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
     console.warn(`[yeastar auth] refresh failed HTTP ${res.status} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"}; no /get_token fallback while refresh token is unexpired`);
     return diag;
   }
-  const ttlSec = Number(json.access_token_expire_time ?? json.expire_time ?? 1800);
-  const refreshTtlSec = Number(json.refresh_token_expire_time ?? 0);
+  const expiresAt = parseExpiryMs(json, ["expires_at", "access_token_expires_at"], ["access_token_expire_time", "expire_time"], 1800)!;
+  const refreshExpiresAt = parseExpiryMs(json, ["refresh_expires_at", "refresh_token_expires_at"], ["refresh_token_expire_time"]);
   cachedToken = {
     accessToken: json.access_token,
     refreshToken: json.refresh_token ?? cachedToken.refreshToken,
-    expiresAt: Date.now() + ttlSec * 1000,
-    refreshExpiresAt: refreshTtlSec > 0 ? Date.now() + refreshTtlSec * 1000 : cachedToken.refreshExpiresAt,
+    expiresAt,
+    refreshExpiresAt: refreshExpiresAt ?? cachedToken.refreshExpiresAt,
   };
+  lastAuthFailure = null;
+  authBlockedUntil = 0;
   logTokenSource("Refreshed Token", false);
+  const ttlSec = Math.floor(remainingAccessMs() / 1000);
   return {
     ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
     httpStatus: 200, errcode: 0,
@@ -321,6 +363,8 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
  */
 async function requestNewToken(env: { base: string; id: string; secret: string }): Promise<YeastarDiagnostic> {
   const endpoint = `${env.base}/openapi/v1.0/get_token`;
+  const blocked = blockedAuthDiagnostic();
+  if (blocked) return blocked;
   console.log(`[yeastar auth] POST /get_token (NEW PBX SESSION; cache=${tokenStatus()})`);
   let res: Response;
   try {
@@ -349,22 +393,27 @@ async function requestNewToken(env: { base: string; id: string; secret: string }
       httpStatus, responseBody: bodyText, message: `PBX returned HTTP ${httpStatus}.` };
   }
   if (json && json.errcode === 0 && json.access_token) {
-    const ttlSec = Number(json.access_token_expire_time ?? json.expire_time ?? 1800);
-    const refreshTtlSec = Number(json.refresh_token_expire_time ?? 0);
+    const expiresAt = parseExpiryMs(json, ["expires_at", "access_token_expires_at"], ["access_token_expire_time", "expire_time"], 1800)!;
+    const refreshExpiresAt = parseExpiryMs(json, ["refresh_expires_at", "refresh_token_expires_at"], ["refresh_token_expire_time"]);
     cachedToken = {
       accessToken: json.access_token,
       refreshToken: json.refresh_token,
-      expiresAt: Date.now() + ttlSec * 1000,
-      refreshExpiresAt: refreshTtlSec > 0 ? Date.now() + refreshTtlSec * 1000 : undefined,
+      expiresAt,
+      refreshExpiresAt,
     };
+    lastAuthFailure = null;
+    authBlockedUntil = 0;
     logTokenSource("New Authentication", true);
+    const ttlSec = Math.floor(remainingAccessMs() / 1000);
     return {
       ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
       httpStatus, errcode: 0,
       message: `Authentication successful. Token valid for ${ttlSec}s.`,
     };
   }
-  return mapAuthErrcode(env, endpoint, httpStatus, bodyText, json);
+  const diag = mapAuthErrcode(env, endpoint, httpStatus, bodyText, json);
+  cacheAuthFailure(diag);
+  return diag;
 }
 
 async function getAccessTokenInfo(): Promise<TokenResult> {
@@ -431,6 +480,13 @@ async function getAccessTokenInfo(): Promise<TokenResult> {
 
     if (hadRefreshToken) {
       console.log("[yeastar auth] refresh token expired/unusable; /get_token is now allowed");
+    }
+
+    const blocked = blockedAuthDiagnostic();
+    if (blocked) {
+      const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(blocked)}`);
+      err.diagnostic = blocked;
+      throw err;
     }
 
     const authDiag = await requestNewToken(env);
