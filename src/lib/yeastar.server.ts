@@ -368,6 +368,7 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
       message: "Yeastar is not configured. Missing YEASTAR_BASE_URL, YEASTAR_CLIENT_ID, or YEASTAR_CLIENT_SECRET.",
     };
   }
+  ensureCredsFresh();
   const authEndpoint = `${env.base}/openapi/v1.0/get_token`;
   console.log(`[yeastar diag] cache=${tokenStatus()}`);
 
