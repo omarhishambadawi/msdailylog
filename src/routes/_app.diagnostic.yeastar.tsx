@@ -4,6 +4,7 @@ import { useState } from "react";
 import { yeastarPhase1Probe, yeastarAuthDiagnostic, yeastarForceExpire } from "@/lib/yeastar-diagnostic.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/diagnostic/yeastar")({
   head: () => ({
