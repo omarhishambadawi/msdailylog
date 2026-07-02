@@ -364,6 +364,7 @@ export type Database = {
         Returns: boolean
       }
       is_active: { Args: { _user_id: string }; Returns: boolean }
+      is_administrator: { Args: { _user_id: string }; Returns: boolean }
       notify_users: {
         Args: {
           _body: string
