@@ -60,7 +60,7 @@ function AppLayout() {
     ...(canComplaints ? [{ to: "/complaints", label: "Complaints", icon: MessageSquareWarning }] : []),
     ...(canUsers ? [{ to: "/admin/users", label: "Users", icon: Users }] : []),
     ...(canAdminBranches ? [{ to: "/admin/branches", label: "Branches", icon: MapPin }] : []),
-    ...(role === "admin" ? [{ to: "/admin/yeastar", label: "Yeastar", icon: PhoneCall }] : []),
+    ...(isAdministrator(role) ? [{ to: "/admin/yeastar", label: "Yeastar", icon: PhoneCall }] : []),
   ] as const;
 
   const sidebarWidth = collapsed ? "w-16" : "w-60";
