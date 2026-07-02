@@ -134,8 +134,11 @@ function OrdersList() {
   });
 
   const rows = data ?? [];
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages - 1);
+  const pageRows = rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  const rangeStart = rows.length === 0 ? 0 : currentPage * pageSize + 1;
+  const rangeEnd = Math.min(rows.length, (currentPage + 1) * pageSize);
 
   const summary = useMemo(() => {
     const num = (v: any) => Number(v ?? 0);
