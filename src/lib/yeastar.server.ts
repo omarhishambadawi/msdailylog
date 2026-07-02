@@ -646,7 +646,7 @@ async function getAccessTokenInfo(): Promise<TokenResult> {
     let leaseRow: PersistentTokenRow | null = null;
     for (let attempt = 0; attempt < 6; attempt++) {
       leaseRow = await tryClaimAuthLease();
-      if (leaseRow) break;
+      if (leaseRow) { lastAuthTrace.leaseAcquired = true; break; }
       console.log(`[yeastar lease] another Worker holds the auth lease; waiting (attempt ${attempt + 1}/6)`);
       await sleep(500 + Math.floor(Math.random() * 500));
       // While waiting, another isolate may have written a fresh token.
