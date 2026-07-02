@@ -1,4 +1,5 @@
 import type { AppRole } from "@/lib/auth";
+import { isAdministrator } from "@/lib/auth";
 
 export type PermissionGroup = "Orders" | "Complaints" | "Dashboard" | "Invoice Verification" | "Administration";
 
