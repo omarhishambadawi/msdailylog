@@ -22,7 +22,7 @@ async function assertAdmin(supabase: any, userId: string) {
 
 export const adminCreateUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string; password: string; fullName: string; agentCode?: string; role: "admin" | "customer_care" | "telesales" | "auditor" }) =>
+  .inputValidator((d: { email: string; password: string; fullName: string; agentCode?: string; role: "owner" | "admin" | "customer_care" | "telesales" | "auditor" }) =>
     z
       .object({
         email: z.string().email(),
