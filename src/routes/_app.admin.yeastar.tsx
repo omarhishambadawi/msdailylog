@@ -138,6 +138,25 @@ function YeastarDiagnosticPage() {
       <ExtensionMappingValidator />
 
       <Card>
+        <CardHeader><CardTitle>Configuration Diagnostic</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Verifies that YEASTAR_BASE_URL, YEASTAR_CLIENT_ID, and YEASTAR_CLIENT_SECRET are
+            readable from <code>process.env</code> inside a server handler at request time.
+            Values are never returned — only booleans.
+          </p>
+          <Button size="sm" onClick={checkConfig} disabled={configBusy}>
+            {configBusy ? "Checking…" : "Check configuration"}
+          </Button>
+          {configResult && (
+            <pre className="text-xs bg-muted p-3 rounded overflow-auto">
+              {JSON.stringify(configResult, null, 2)}
+            </pre>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader><CardTitle>Authentication Cache Diagnostic</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
