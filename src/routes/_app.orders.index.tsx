@@ -338,7 +338,7 @@ function OrdersList() {
                         {verified && <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />}
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </td>
-                      <td className={cn("px-4 sticky left-[48px] z-10 group-hover:bg-accent/50 shadow-[1px_0_0_0_hsl(var(--border)/0.4)]", stickyBg, cellCls)}>
+                      <td className={cn("px-4 sticky left-[48px] z-10 group-hover:bg-accent shadow-[1px_0_0_0_var(--border)]", stickyBg, cellCls)}>
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="font-mono font-semibold text-[13px] tracking-tight whitespace-nowrap text-foreground">{formatOrderNo(o.team, o.display_no)}</span>
                           <TeamBadge team={o.team} />
