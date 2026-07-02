@@ -336,7 +336,7 @@ function OrdersList() {
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </td>
                       <td className={cn("px-4", cellCls)}>
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex flex-col items-start gap-1 min-w-0">
                           <span className="font-mono font-semibold text-[13px] tracking-tight whitespace-nowrap text-foreground">{formatOrderNo(o.team, o.display_no)}</span>
                           <TeamBadge team={o.team} />
                         </div>
