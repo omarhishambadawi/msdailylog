@@ -20,8 +20,6 @@ import { Route as AppOrdersNewRouteImport } from './routes/_app.orders.new'
 import { Route as AppOrdersIdRouteImport } from './routes/_app.orders.$id'
 import { Route as AppComplaintsNewRouteImport } from './routes/_app.complaints.new'
 import { Route as AppComplaintsIdRouteImport } from './routes/_app.complaints.$id'
-import { Route as AppAdminYeastarRawRouteImport } from './routes/_app.admin.yeastar-raw'
-import { Route as AppAdminYeastarRouteImport } from './routes/_app.admin.yeastar'
 import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
 import { Route as AppAdminBranchesRouteImport } from './routes/_app.admin.branches'
 
@@ -79,16 +77,6 @@ const AppComplaintsIdRoute = AppComplaintsIdRouteImport.update({
   path: '/complaints/$id',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAdminYeastarRawRoute = AppAdminYeastarRawRouteImport.update({
-  id: '/admin/yeastar-raw',
-  path: '/admin/yeastar-raw',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppAdminYeastarRoute = AppAdminYeastarRouteImport.update({
-  id: '/admin/yeastar',
-  path: '/admin/yeastar',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -107,8 +95,6 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/admin/branches': typeof AppAdminBranchesRoute
   '/admin/users': typeof AppAdminUsersRoute
-  '/admin/yeastar': typeof AppAdminYeastarRoute
-  '/admin/yeastar-raw': typeof AppAdminYeastarRawRoute
   '/complaints/$id': typeof AppComplaintsIdRoute
   '/complaints/new': typeof AppComplaintsNewRoute
   '/orders/$id': typeof AppOrdersIdRoute
@@ -123,8 +109,6 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/admin/branches': typeof AppAdminBranchesRoute
   '/admin/users': typeof AppAdminUsersRoute
-  '/admin/yeastar': typeof AppAdminYeastarRoute
-  '/admin/yeastar-raw': typeof AppAdminYeastarRawRoute
   '/complaints/$id': typeof AppComplaintsIdRoute
   '/complaints/new': typeof AppComplaintsNewRoute
   '/orders/$id': typeof AppOrdersIdRoute
@@ -141,8 +125,6 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/admin/branches': typeof AppAdminBranchesRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
-  '/_app/admin/yeastar': typeof AppAdminYeastarRoute
-  '/_app/admin/yeastar-raw': typeof AppAdminYeastarRawRoute
   '/_app/complaints/$id': typeof AppComplaintsIdRoute
   '/_app/complaints/new': typeof AppComplaintsNewRoute
   '/_app/orders/$id': typeof AppOrdersIdRoute
@@ -159,8 +141,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/admin/branches'
     | '/admin/users'
-    | '/admin/yeastar'
-    | '/admin/yeastar-raw'
     | '/complaints/$id'
     | '/complaints/new'
     | '/orders/$id'
@@ -175,8 +155,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/admin/branches'
     | '/admin/users'
-    | '/admin/yeastar'
-    | '/admin/yeastar-raw'
     | '/complaints/$id'
     | '/complaints/new'
     | '/orders/$id'
@@ -192,8 +170,6 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/_app/admin/branches'
     | '/_app/admin/users'
-    | '/_app/admin/yeastar'
-    | '/_app/admin/yeastar-raw'
     | '/_app/complaints/$id'
     | '/_app/complaints/new'
     | '/_app/orders/$id'
@@ -288,20 +264,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppComplaintsIdRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/admin/yeastar-raw': {
-      id: '/_app/admin/yeastar-raw'
-      path: '/admin/yeastar-raw'
-      fullPath: '/admin/yeastar-raw'
-      preLoaderRoute: typeof AppAdminYeastarRawRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/admin/yeastar': {
-      id: '/_app/admin/yeastar'
-      path: '/admin/yeastar'
-      fullPath: '/admin/yeastar'
-      preLoaderRoute: typeof AppAdminYeastarRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/admin/users': {
       id: '/_app/admin/users'
       path: '/admin/users'
@@ -323,8 +285,6 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppAdminBranchesRoute: typeof AppAdminBranchesRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
-  AppAdminYeastarRoute: typeof AppAdminYeastarRoute
-  AppAdminYeastarRawRoute: typeof AppAdminYeastarRawRoute
   AppComplaintsIdRoute: typeof AppComplaintsIdRoute
   AppComplaintsNewRoute: typeof AppComplaintsNewRoute
   AppOrdersIdRoute: typeof AppOrdersIdRoute
@@ -337,8 +297,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppAdminBranchesRoute: AppAdminBranchesRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
-  AppAdminYeastarRoute: AppAdminYeastarRoute,
-  AppAdminYeastarRawRoute: AppAdminYeastarRawRoute,
   AppComplaintsIdRoute: AppComplaintsIdRoute,
   AppComplaintsNewRoute: AppComplaintsNewRoute,
   AppOrdersIdRoute: AppOrdersIdRoute,

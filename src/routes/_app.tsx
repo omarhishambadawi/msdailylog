@@ -4,7 +4,7 @@ import { useAuth, isAdministrator } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut,
-  ShieldAlert, MessageSquareWarning, Menu, X, PhoneCall,
+  ShieldAlert, MessageSquareWarning, Menu, X,
 } from "lucide-react";
 import logo from "@/assets/milaserv-logo.png.asset.json";
 import { cn } from "@/lib/utils";
@@ -60,7 +60,7 @@ function AppLayout() {
     ...(canComplaints ? [{ to: "/complaints", label: "Complaints", icon: MessageSquareWarning }] : []),
     ...(canUsers ? [{ to: "/admin/users", label: "Users", icon: Users }] : []),
     ...(canAdminBranches ? [{ to: "/admin/branches", label: "Branches", icon: MapPin }] : []),
-    ...(isAdministrator(role) ? [{ to: "/admin/yeastar", label: "Yeastar", icon: PhoneCall }] : []),
+    
   ] as const;
 
   const sidebarWidth = collapsed ? "w-16" : "w-60";
