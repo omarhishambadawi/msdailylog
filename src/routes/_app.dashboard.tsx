@@ -16,6 +16,7 @@ import * as XLSX from "xlsx";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { hasPerm } from "@/lib/permissions";
 import { SaudiSalesMap } from "@/components/saudi-sales-map";
+import { CallCenterSection } from "@/components/call-center-section";
 
 
 
@@ -472,6 +473,20 @@ function Dashboard() {
           <SaudiSalesMap cities={(data?.byCity ?? []).map((c: any) => ({ name: c.name, sales: c.sales, count: c.count, total: c.total ?? c.sales, completed: c.completed ?? 0 }))} />
         </div>
       </div>
+
+      {/* Call Center Performance — Yeastar Call Reports */}
+      <div>
+        <SectionTitle title="Call center performance" />
+        <div className="mt-3">
+          <CallCenterSection
+            from={from}
+            to={to}
+            team={(effectiveTeam as "all" | "customer_care" | "telesales")}
+            agentId={effectiveAgent}
+          />
+        </div>
+      </div>
+
 
 
 
