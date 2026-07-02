@@ -407,21 +407,30 @@ function OrdersList() {
 
 
 
-          {rows.length > PAGE_SIZE && (
-            <div className="flex items-center justify-between p-3 border-t text-sm">
-              <div className="text-muted-foreground">
-                Page {page + 1} of {totalPages} · showing {pageRows.length} of {rows.length}
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
-                  <ChevronLeft className="h-4 w-4 mr-1" />Prev
-                </Button>
-                <Button size="sm" variant="outline" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}>
-                  Next<ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
+          <div className="sticky bottom-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 flex flex-wrap items-center justify-between gap-3 p-3 border-t text-sm">
+            <div className="text-muted-foreground">
+              {rows.length === 0
+                ? "No orders"
+                : <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{rows.length}</span> orders</>}
             </div>
-          )}
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-xs text-muted-foreground hidden sm:inline">Rows per page</span>
+              <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="h-8 w-[72px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZE_OPTIONS.map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground px-2 whitespace-nowrap">Page {currentPage + 1} of {totalPages}</span>
+              <Button size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+                <ChevronLeft className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Prev</span>
+              </Button>
+              <Button size="sm" variant="outline" disabled={currentPage + 1 >= totalPages} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}>
+                <span className="hidden sm:inline">Next</span><ChevronRight className="h-4 w-4 sm:ml-1" />
+              </Button>
+            </div>
+          </div>
+
         </CardContent>
       </Card>
     </div>
