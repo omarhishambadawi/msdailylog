@@ -191,11 +191,30 @@ function Dashboard() {
         name, ...v, rate: v.total > 0 ? (v.resolved / v.total) * 100 : 0,
       })).sort((a, b) => b.total - a.total);
 
+      const buildStats = (rows: any[]) => {
+        const completed = completedRows(rows);
+        const pending = rows.filter((o: any) => o.status === "Pending").length;
+        const cancelled = rows.filter((o: any) => o.status === "Cancelled").length;
+        return {
+          totalSales: sum(rows),
+          completedSales: sum(completed),
+          totalOrders: rows.length,
+          completedOrders: completed.length,
+          pending,
+          cancelled,
+          completionRate: rows.length > 0 ? (completed.length / rows.length) * 100 : 0,
+        };
+      };
+      const cashStats = buildStats(cash(rangeOrders));
+      const wasStats = buildStats(was(rangeOrders));
+      const totalStats = buildStats(rangeOrders);
+
       return {
         monthAll, monthCompleted, monthCompletedCount,
         monthTotalCount: rangeOrders.length,
-        monthCashSales: sum(cash(rangeOrders)),
-        monthWasSales: sum(was(rangeOrders)),
+        monthCashSales: cashStats.totalSales,
+        monthWasSales: wasStats.totalSales,
+        cashStats, wasStats, totalStats,
         completionRate,
         totalVerified, totalNonVerified, totalVerifiedValue,
         verifRate: rangeOrders.length > 0 ? (totalVerified / rangeOrders.length) * 100 : 0,
@@ -309,14 +328,9 @@ function Dashboard() {
       <div>
         <SectionTitle title="Performance for selected period" />
         <div className="grid gap-3 sm:grid-cols-3">
-          <DashKpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10"
-            data={data} sales={data?.monthCashSales ?? 0}
-            filter={(r: any) => r.order_type === "Cash"} />
-          <DashKpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10"
-            data={data} sales={data?.monthWasSales ?? 0}
-            filter={(r: any) => r.order_type === "Wasfaty"} />
-          <DashKpiCard label="Total" tone="from-primary/10 to-transparent" highlight
-            data={data} sales={data?.monthAll ?? 0} filter={() => true} />
+          <DashKpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10" stats={data?.cashStats} />
+          <DashKpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10" stats={data?.wasStats} />
+          <DashKpiCard label="Total" tone="from-primary/10 to-transparent" highlight stats={data?.totalStats} />
         </div>
       </div>
 
@@ -616,53 +630,50 @@ function SectionTitle({ title }: { title: string }) {
   );
 }
 
-function DashKpiCard({ label, tone, highlight, data, sales, filter }: {
-  label: string; tone: string; highlight?: boolean;
-  data: any; sales: number; filter: (r: any) => boolean;
+type DashKpiStats = {
+  totalSales: number; completedSales: number;
+  totalOrders: number; completedOrders: number;
+  pending: number; cancelled: number; completionRate: number;
+};
+function DashKpiCard({ label, tone, highlight, stats }: {
+  label: string; tone: string; highlight?: boolean; stats?: DashKpiStats;
 }) {
-  // We compute counts from summary data available in scope
-  const total = data?._raw ? data._raw.filter(filter).length : (label === "Total" ? (data?.monthTotalCount ?? 0) : 0);
-  const completed = label === "Total" ? (data?.monthCompletedCount ?? 0) : 0;
-  const pending = label === "Total" ? (data?.pending ?? 0) : 0;
-  const cancelled = label === "Total" ? (data?.cancelled ?? 0) : 0;
-  const completionRate = total > 0 ? (completed / total) * 100 : 0;
+  const s: DashKpiStats = stats ?? {
+    totalSales: 0, completedSales: 0, totalOrders: 0, completedOrders: 0,
+    pending: 0, cancelled: 0, completionRate: 0,
+  };
   return (
     <div className={cn("relative rounded-xl border bg-gradient-to-br p-4 shadow-sm", tone, highlight && "border-primary/40 shadow-md")}>
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
       <div className="mt-3 space-y-1.5">
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-xs text-muted-foreground">Total sales</span>
-          <span className="text-base font-semibold tabular-nums truncate">{fmtSAR(sales)}</span>
+          <span className="text-base font-semibold tabular-nums truncate">{fmtSAR(s.totalSales)}</span>
         </div>
-        {label === "Total" && (
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-xs text-muted-foreground">Completed sales</span>
-            <span className="text-base font-semibold tabular-nums truncate text-green-600 dark:text-green-400">{fmtSAR(data?.monthCompleted ?? 0)}</span>
-          </div>
-        )}
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-muted-foreground">Completed sales</span>
+          <span className="text-base font-semibold tabular-nums truncate text-green-600 dark:text-green-400">{fmtSAR(s.completedSales)}</span>
+        </div>
       </div>
-      {label === "Total" && (
-        <>
-          <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-2">
-            <div className="text-left">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total orders</div>
-              <div className="text-2xl font-bold tabular-nums leading-tight">{total}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Completed</div>
-              <div className="text-2xl font-bold tabular-nums leading-tight text-green-600 dark:text-green-400">{completed}</div>
-            </div>
-          </div>
-          <div className="mt-2 pt-2 border-t border-border/40 grid grid-cols-3 gap-1 text-[11px]">
-            <div><span className="text-muted-foreground">Rate </span><span className="font-semibold">{completionRate.toFixed(1)}%</span></div>
-            <div><span className="text-muted-foreground">Pending </span><span className="font-semibold text-amber-600 dark:text-amber-400">{pending}</span></div>
-            <div><span className="text-muted-foreground">Cancelled </span><span className="font-semibold text-red-600 dark:text-red-400">{cancelled}</span></div>
-          </div>
-        </>
-      )}
+      <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-2">
+        <div className="text-left">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total orders</div>
+          <div className="text-2xl font-bold tabular-nums leading-tight">{s.totalOrders}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Completed</div>
+          <div className="text-2xl font-bold tabular-nums leading-tight text-green-600 dark:text-green-400">{s.completedOrders}</div>
+        </div>
+      </div>
+      <div className="mt-2 pt-2 border-t border-border/40 grid grid-cols-3 gap-1 text-[11px]">
+        <div><span className="text-muted-foreground">Rate </span><span className="font-semibold">{s.completionRate.toFixed(1)}%</span></div>
+        <div><span className="text-muted-foreground">Pending </span><span className="font-semibold text-amber-600 dark:text-amber-400">{s.pending}</span></div>
+        <div><span className="text-muted-foreground">Cancelled </span><span className="font-semibold text-red-600 dark:text-red-400">{s.cancelled}</span></div>
+      </div>
     </div>
   );
 }
+
 
 function KpiBlock({ label, tone, highlight, children }: { label: string; tone: string; highlight?: boolean; children: React.ReactNode }) {
   return (
