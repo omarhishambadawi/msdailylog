@@ -153,7 +153,7 @@ function AppLayout() {
           <div className="text-sm font-medium text-muted-foreground truncate flex-1">MilaServ · Daily Log</div>
           <NotificationBell />
         </div>
-        <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
+        <div className="p-3 sm:p-4 lg:p-6 xl:px-8 w-full">
           <Outlet />
         </div>
       </main>
