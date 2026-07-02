@@ -312,7 +312,7 @@ function OrdersList() {
                   <th className="text-left px-4 py-3.5 border-b border-border/70">Branch</th>
                   <th className="text-right px-4 py-3.5 border-b border-border/70">Value</th>
                   <th className="text-left px-4 py-3.5 border-b border-border/70">Status</th>
-                  <th className="px-2 py-3.5 border-b border-border/70 sticky right-0 z-30 bg-muted shadow-[-1px_0_0_0_hsl(var(--border)/0.6)]"></th>
+                  <th className="px-2 py-3.5 border-b border-border/70 sticky right-0 z-30 bg-muted shadow-[-1px_0_0_0_var(--border)]"></th>
                 </tr>
               </thead>
               <tbody>
