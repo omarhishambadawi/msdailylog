@@ -362,11 +362,11 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                   <text
                     x={p.labelX} y={p.labelY}
                     textAnchor={p.anchor}
-                    fontSize={11}
+                    fontSize={11.5}
                     fontWeight={active ? 700 : 600}
-                    fill="hsl(215 25% 22%)"
-                    stroke="white" strokeWidth={3} strokeOpacity={0.95} paintOrder="stroke"
-                    style={{ letterSpacing: 0.1 }}
+                    fill="hsl(215 28% 18%)"
+                    stroke="white" strokeWidth={3.5} strokeOpacity={0.98} paintOrder="stroke"
+                    style={{ letterSpacing: 0.15, fontFeatureSettings: '"kern"', textRendering: "geometricPrecision" }}
                   >
                     {p.name}
                   </text>
