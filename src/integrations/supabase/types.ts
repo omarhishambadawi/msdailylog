@@ -305,6 +305,42 @@ export type Database = {
         }
         Relationships: []
       }
+      yeastar_token_cache: {
+        Row: {
+          access_token: string
+          auth_blocked_until: string | null
+          cred_fingerprint: string
+          expires_at: string
+          id: string
+          last_error: string | null
+          refresh_expires_at: string | null
+          refresh_token: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          auth_blocked_until?: string | null
+          cred_fingerprint: string
+          expires_at: string
+          id?: string
+          last_error?: string | null
+          refresh_expires_at?: string | null
+          refresh_token?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          auth_blocked_until?: string | null
+          cred_fingerprint?: string
+          expires_at?: string
+          id?: string
+          last_error?: string | null
+          refresh_expires_at?: string | null
+          refresh_token?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
