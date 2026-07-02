@@ -712,7 +712,7 @@ export async function fetchTeamExtensions(): Promise<TeamExtensionResult> {
     // Merge into availableGroups so validator UI still shows something useful.
     for (const [name, exts] of byName.entries()) {
       if (!availableGroups.find((g) => normalizeExt(g.name) === normalizeExt(name))) {
-        availableGroups.push({ name, memberCount: exts.length });
+        availableGroups.push({ id: undefined, name, memberCount: exts.length });
       }
     }
 
