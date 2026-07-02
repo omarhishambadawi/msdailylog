@@ -393,6 +393,11 @@ async function requestNewToken(env: { base: string; id: string; secret: string }
       message: "Endpoint not found (HTTP 404). Verify the Base URL." };
   }
   if (!res.ok) {
+    if (json?.errcode != null) {
+      const diag = mapAuthErrcode(env, endpoint, httpStatus, bodyText, json);
+      cacheAuthFailure(diag);
+      return diag;
+    }
     return { ok: false, category: "http_error", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
       httpStatus, responseBody: bodyText, message: `PBX returned HTTP ${httpStatus}.` };
   }
