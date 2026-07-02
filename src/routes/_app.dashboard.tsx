@@ -328,14 +328,9 @@ function Dashboard() {
       <div>
         <SectionTitle title="Performance for selected period" />
         <div className="grid gap-3 sm:grid-cols-3">
-          <DashKpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10"
-            data={data} sales={data?.monthCashSales ?? 0}
-            filter={(r: any) => r.order_type === "Cash"} />
-          <DashKpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10"
-            data={data} sales={data?.monthWasSales ?? 0}
-            filter={(r: any) => r.order_type === "Wasfaty"} />
-          <DashKpiCard label="Total" tone="from-primary/10 to-transparent" highlight
-            data={data} sales={data?.monthAll ?? 0} filter={() => true} />
+          <DashKpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10" stats={data?.cashStats} />
+          <DashKpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10" stats={data?.wasStats} />
+          <DashKpiCard label="Total" tone="from-primary/10 to-transparent" highlight stats={data?.totalStats} />
         </div>
       </div>
 
