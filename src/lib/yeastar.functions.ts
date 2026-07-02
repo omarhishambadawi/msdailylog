@@ -63,12 +63,15 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
     }
 
     try {
+      console.log(`[Yeastar] dashboard filter → from=${data.from} to=${data.to} team=${data.team} agentId=${data.agentId ?? "all"} extensionFilter=${extensionFilter ?? "none"}`);
       const { records, diagnostic: cdrDiag } = await fetchCdr(data.from, data.to);
       const agg = aggregateCdr(records, directory, {
         team: data.team === "all" ? undefined : data.team,
         extension: extensionFilter,
       });
+      console.log(`[Yeastar] window=${data.from}..${data.to} url=${cdrDiag.requestUrl} pbxReturned=${records.length} usedAfterFilter=${agg.total} mappedAgents=${directory.length}`);
       return { ...agg, diagnostic: diag, cdrDiagnostic: cdrDiag, agentDirectory: directory };
+
     } catch (err) {
       const anyErr = err as any;
       const cdrDiag = anyErr?.diagnostic as Awaited<ReturnType<typeof diagnoseYeastar>> | undefined;
