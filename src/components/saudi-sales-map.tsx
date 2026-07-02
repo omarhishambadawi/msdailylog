@@ -1,15 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fmtSAR } from "@/lib/branches";
 
 /**
- * Lightweight Saudi Arabia sales heat map — inline SVG, no external deps.
- * Matches city names in English or Arabic; bubbles sized by completed sales.
+ * Saudi Arabia sales heat map — enterprise-grade inline SVG.
+ * No external deps. Brand palette, smooth animations, collision-aware labels.
  */
 
 // Approximate lat/lon for major Saudi cities. Keys stored in normalized form.
 const CITY_COORDS: Record<string, [number, number]> = {
-  // English
   riyadh: [46.6753, 24.7136],
   jeddah: [39.1925, 21.4858],
   mecca: [39.8579, 21.3891],
@@ -45,7 +44,6 @@ const CITY_COORDS: Record<string, [number, number]> = {
   hafar: [45.9636, 28.4337],
   baha: [41.4677, 20.0129],
   rafha: [43.4939, 29.6202],
-  // Arabic
   "الرياض": [46.6753, 24.7136],
   "جدة": [39.1925, 21.4858],
   "مكة": [39.8579, 21.3891],
@@ -80,24 +78,27 @@ const CITY_COORDS: Record<string, [number, number]> = {
   "رفحاء": [43.4939, 29.6202],
 };
 
-// Simplified Saudi Arabia outline (rough polygon in lon,lat)
+// More detailed Saudi Arabia outline (lon, lat pairs)
 const KSA_OUTLINE: Array<[number, number]> = [
-  [34.6, 28.1], [36.0, 29.3], [37.5, 29.9], [38.6, 30.5], [39.2, 32.15],
-  [42.0, 31.1], [45.0, 29.2], [46.4, 29.1], [47.6, 29.9], [48.5, 29.0],
-  [50.0, 28.5], [50.2, 27.5], [50.5, 26.6], [50.8, 25.0], [51.6, 24.6],
-  [52.6, 22.9], [55.2, 22.7], [55.7, 20.0], [52.0, 19.0], [49.5, 18.8],
-  [47.5, 17.2], [46.6, 17.3], [45.2, 17.4], [43.4, 16.7], [43.2, 16.4],
-  [42.8, 16.4], [42.6, 17.5], [42.3, 18.2], [41.7, 18.6], [41.2, 19.4],
-  [40.6, 19.9], [39.6, 20.5], [39.1, 21.4], [38.9, 22.5], [38.3, 23.8],
-  [37.4, 24.6], [36.7, 25.6], [36.0, 26.5], [35.2, 27.4], [34.6, 28.1],
+  [34.95, 29.35], [36.02, 29.19], [36.48, 29.50], [36.75, 29.87], [37.49, 29.99],
+  [37.98, 30.50], [36.96, 31.49], [38.00, 31.99], [39.15, 32.14], [40.37, 31.93],
+  [42.08, 31.08], [42.85, 30.49], [44.72, 29.19], [46.36, 29.06], [46.55, 29.10],
+  [47.46, 29.98], [48.02, 29.54], [48.42, 28.54], [48.83, 28.06], [49.30, 27.46],
+  [49.98, 27.03], [50.24, 26.35], [50.56, 26.05], [50.20, 25.61], [50.56, 25.00],
+  [51.28, 24.62], [51.60, 24.14], [52.56, 22.94], [55.20, 22.70], [55.67, 22.00],
+  [55.20, 20.55], [52.00, 19.00], [49.50, 19.20], [48.19, 18.16], [47.58, 17.45],
+  [46.72, 17.30], [45.42, 17.33], [43.79, 16.36], [43.19, 16.66], [42.78, 16.38],
+  [42.65, 16.77], [42.35, 17.68], [42.11, 18.36], [41.68, 18.68], [41.22, 19.42],
+  [40.65, 19.86], [39.62, 20.50], [39.10, 21.29], [38.99, 22.06], [38.46, 23.72],
+  [37.16, 24.88], [36.68, 25.61], [35.90, 26.53], [35.15, 27.44], [34.63, 28.06],
+  [34.95, 29.35],
 ];
 
-// Projection bounds — add small padding so bubbles near edges aren't clipped
+// Projection bounds
 const LON_MIN = 33.5, LON_MAX = 56.5;
 const LAT_MIN = 15.5, LAT_MAX = 32.8;
-// Keep viewBox aspect ratio equal to lon:lat span so the country isn't squished
-const W = 800;
-const H = Math.round((W * (LAT_MAX - LAT_MIN)) / (LON_MAX - LON_MIN)); // ≈ 602
+const W = 900;
+const H = Math.round((W * (LAT_MAX - LAT_MIN)) / (LON_MAX - LON_MIN));
 
 function project(lon: number, lat: number): [number, number] {
   const x = ((lon - LON_MIN) / (LON_MAX - LON_MIN)) * W;
@@ -125,26 +126,32 @@ function lookupCoords(name: string): [number, number] | undefined {
 
 export interface CitySales {
   name: string;
-  sales: number;      // completed sales value
-  count: number;      // orders count
-  total?: number;     // total sales value (all statuses)
-  completed?: number; // completed orders count
+  sales: number;
+  count: number;
+  total?: number;
+  completed?: number;
 }
 
+type Placed = CitySales & {
+  lon: number; lat: number;
+  cx: number; cy: number;
+  r: number;
+  ratio: number;
+  color: string;
+  labelX: number;
+  labelY: number;
+  anchor: "start" | "end" | "middle";
+};
+
 export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
-  const [hover, setHover] = useState<null | { x: number; y: number; d: CitySales }>(null);
+  const [hoverName, setHoverName] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
-  const points = useMemo(() => {
-    return cities
-      .map((c) => {
-        const coords = lookupCoords(c.name);
-        if (!coords) return null;
-        return { ...c, lon: coords[0], lat: coords[1] };
-      })
-      .filter((p): p is CitySales & { lon: number; lat: number } => !!p);
-  }, [cities]);
-
-  const maxSales = Math.max(1, ...points.map((p) => p.sales));
+  useEffect(() => {
+    const t = window.setTimeout(() => setMounted(true), 30);
+    return () => window.clearTimeout(t);
+  }, []);
 
   const outlinePath = useMemo(
     () =>
@@ -158,80 +165,257 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
   );
 
   const heatColor = (ratio: number) => {
-    if (ratio < 0.33) return "hsl(160 84% 39%)";
-    if (ratio < 0.66) return "hsl(38 92% 50%)";
-    return "hsl(0 84% 60%)";
+    // Brand: turquoise → amber → red
+    if (ratio < 0.34) return "hsl(184 66% 44%)"; // turquoise
+    if (ratio < 0.67) return "hsl(38 92% 50%)";  // amber
+    return "hsl(0 78% 58%)";                     // red
   };
 
+  const placed: Placed[] = useMemo(() => {
+    const raw = cities
+      .map((c) => {
+        const coords = lookupCoords(c.name);
+        if (!coords) return null;
+        const [lon, lat] = coords;
+        const [cx, cy] = project(lon, lat);
+        return { c, lon, lat, cx, cy };
+      })
+      .filter((v): v is NonNullable<typeof v> => !!v);
+
+    const maxSales = Math.max(1, ...raw.map((p) => p.c.sales));
+
+    // Sort by sales desc so largest bubbles get first pick on labels
+    raw.sort((a, b) => b.c.sales - a.c.sales);
+
+    // label collision — occupied rects
+    const placedLabels: { x: number; y: number; w: number; h: number }[] = [];
+    const overlaps = (r: { x: number; y: number; w: number; h: number }) =>
+      placedLabels.some((p) => !(r.x + r.w < p.x || p.x + p.w < r.x || r.y + r.h < p.y || p.y + p.h < r.y));
+
+    const out: Placed[] = raw.map(({ c, lon, lat, cx, cy }) => {
+      const ratio = c.sales / maxSales;
+      const r = 6 + Math.sqrt(ratio) * 26;
+      const color = heatColor(ratio);
+      const labelW = Math.max(40, c.name.length * 7.2);
+      const labelH = 16;
+      const gap = 6;
+
+      // candidate positions: right, left, top, bottom
+      const candidates: Array<{ x: number; y: number; anchor: "start" | "end" | "middle" }> = [
+        { x: cx + r + gap, y: cy + 4, anchor: "start" },
+        { x: cx - r - gap, y: cy + 4, anchor: "end" },
+        { x: cx, y: cy - r - gap, anchor: "middle" },
+        { x: cx, y: cy + r + labelH, anchor: "middle" },
+      ];
+
+      let chosen = candidates[0];
+      for (const cand of candidates) {
+        const rectX = cand.anchor === "start" ? cand.x : cand.anchor === "end" ? cand.x - labelW : cand.x - labelW / 2;
+        const rect = { x: rectX, y: cand.y - labelH + 2, w: labelW, h: labelH };
+        if (rect.x < 4 || rect.x + rect.w > W - 4 || rect.y < 4 || rect.y + rect.h > H - 4) continue;
+        if (!overlaps(rect)) { chosen = cand; placedLabels.push(rect); break; }
+      }
+
+      return {
+        ...c, lon, lat, cx, cy, r, ratio, color,
+        labelX: chosen.x, labelY: chosen.y, anchor: chosen.anchor,
+      };
+    });
+
+    return out;
+  }, [cities]);
+
+  const hover = placed.find((p) => p.name === hoverName) ?? null;
   const unmapped = cities.filter((c) => !lookupCoords(c.name));
 
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Sales by city — Saudi Arabia</CardTitle>
+        <CardTitle className="text-base flex items-center justify-between">
+          <span>Sales by city — Saudi Arabia</span>
+          <span className="text-[11px] font-normal text-muted-foreground">
+            {placed.length} {placed.length === 1 ? "city" : "cities"}
+          </span>
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="relative w-full overflow-hidden rounded-md border bg-gradient-to-b from-sky-50/60 to-transparent dark:from-sky-500/5">
+        <div className="relative w-full overflow-hidden rounded-xl border bg-gradient-to-br from-[oklch(0.98_0.015_195)] via-background to-background dark:from-[oklch(0.22_0.03_200)]">
           <svg
+            ref={svgRef}
             viewBox={`0 0 ${W} ${H}`}
-            className="w-full h-auto"
-            style={{ maxHeight: "min(60vh, 440px)" }}
+            className="block w-full h-auto"
+            style={{ maxHeight: "min(64vh, 520px)" }}
             preserveAspectRatio="xMidYMid meet"
             role="img"
             aria-label="Saudi Arabia sales heat map"
           >
+            <defs>
+              <linearGradient id="ksa-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="hsl(184 40% 92%)" stopOpacity="0.9" />
+                <stop offset="100%" stopColor="hsl(200 30% 88%)" stopOpacity="0.6" />
+              </linearGradient>
+              <filter id="ksa-shadow" x="-10%" y="-10%" width="120%" height="120%">
+                <feGaussianBlur in="SourceAlpha" stdDeviation="2.5" />
+                <feOffset dx="0" dy="2" result="offset" />
+                <feComponentTransfer><feFuncA type="linear" slope="0.15" /></feComponentTransfer>
+                <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <filter id="bubble-shadow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+                <feOffset dx="0" dy="1.5" result="offset" />
+                <feComponentTransfer><feFuncA type="linear" slope="0.35" /></feComponentTransfer>
+                <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="hsl(200 30% 90%)" strokeWidth="0.5" opacity="0.4" />
+              </pattern>
+            </defs>
+
+            <rect width={W} height={H} fill="url(#grid)" />
+
             <path
               d={outlinePath}
-              className="fill-muted stroke-border"
-              fillOpacity={0.6}
-              strokeWidth={1.25}
+              fill="url(#ksa-fill)"
+              stroke="hsl(184 30% 55%)"
+              strokeWidth={1.5}
+              strokeLinejoin="round"
+              filter="url(#ksa-shadow)"
             />
-            {points.map((p) => {
-              const [cx, cy] = project(p.lon, p.lat);
-              const ratio = p.sales / maxSales;
-              const r = 5 + Math.sqrt(ratio) * 22;
-              const color = heatColor(ratio);
+
+            {/* Label leader lines */}
+            {placed.map((p) => {
+              const active = hoverName === p.name;
+              const tx = p.anchor === "start" ? p.labelX - 2 : p.anchor === "end" ? p.labelX + 2 : p.labelX;
+              const ty = p.anchor === "middle" && p.labelY < p.cy ? p.labelY + 3 : p.labelY - 4;
               return (
-                <g
-                  key={p.name}
-                  onMouseEnter={() => setHover({ x: cx, y: cy, d: p })}
-                  onMouseLeave={() => setHover(null)}
-                  className="cursor-pointer transition-opacity hover:opacity-90"
+                <line key={`ln-${p.name}`}
+                  x1={p.cx} y1={p.cy} x2={tx} y2={ty}
+                  stroke="hsl(200 15% 60%)" strokeWidth={0.6} opacity={active ? 0.9 : 0.35}
+                />
+              );
+            })}
+
+            {/* Bubbles */}
+            {placed.map((p, i) => {
+              const active = hoverName === p.name;
+              return (
+                <g key={p.name}
+                  onMouseEnter={() => setHoverName(p.name)}
+                  onMouseLeave={() => setHoverName((n) => (n === p.name ? null : n))}
+                  style={{
+                    cursor: "pointer",
+                    transformOrigin: `${p.cx}px ${p.cy}px`,
+                    transform: mounted ? "scale(1)" : "scale(0)",
+                    opacity: mounted ? 1 : 0,
+                    transition: `transform 480ms cubic-bezier(.34,1.4,.5,1) ${i * 40}ms, opacity 320ms ease ${i * 40}ms`,
+                  }}
                 >
-                  <circle cx={cx} cy={cy} r={r} fill={color} fillOpacity={0.28} stroke={color} strokeWidth={1.5} />
-                  <circle cx={cx} cy={cy} r={2.5} fill={color} />
+                  <circle cx={p.cx} cy={p.cy} r={p.r} fill={p.color} fillOpacity={active ? 0.28 : 0.18} />
+                  <circle cx={p.cx} cy={p.cy} r={p.r} fill="none"
+                    stroke={p.color} strokeWidth={active ? 2.25 : 1.5} strokeOpacity={0.9}
+                    style={{ transition: "stroke-width 180ms ease" }}
+                  />
+                  <circle cx={p.cx} cy={p.cy} r={active ? 4.2 : 3.2} fill={p.color}
+                    filter="url(#bubble-shadow)"
+                    style={{ transition: "r 180ms ease" }}
+                  />
                 </g>
               );
             })}
+
+            {/* Labels — drawn after bubbles so they sit above */}
+            {placed.map((p) => {
+              const active = hoverName === p.name;
+              return (
+                <g key={`lbl-${p.name}`} style={{
+                  opacity: mounted ? 1 : 0,
+                  transition: "opacity 300ms ease 250ms",
+                  pointerEvents: "none",
+                }}>
+                  <text
+                    x={p.labelX} y={p.labelY}
+                    textAnchor={p.anchor}
+                    fontSize={11}
+                    fontWeight={active ? 700 : 600}
+                    fill="hsl(215 25% 22%)"
+                    stroke="white" strokeWidth={3} strokeOpacity={0.95} paintOrder="stroke"
+                    style={{ letterSpacing: 0.1 }}
+                  >
+                    {p.name}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Raise hovered group visually by re-rendering last */}
+            {hover && (
+              <g style={{ pointerEvents: "none" }}>
+                <circle cx={hover.cx} cy={hover.cy} r={hover.r + 3} fill="none"
+                  stroke={hover.color} strokeWidth={1} strokeOpacity={0.5}>
+                  <animate attributeName="r" from={hover.r} to={hover.r + 10} dur="1.2s" repeatCount="indefinite" />
+                  <animate attributeName="stroke-opacity" from="0.55" to="0" dur="1.2s" repeatCount="indefinite" />
+                </circle>
+              </g>
+            )}
           </svg>
+
           {hover && (
             <div
-              className="pointer-events-none absolute z-10 min-w-[180px] rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md"
+              className="pointer-events-none absolute z-10 min-w-[210px] rounded-lg border bg-popover/95 backdrop-blur px-3.5 py-2.5 text-xs text-popover-foreground shadow-lg ring-1 ring-black/5"
               style={{
-                left: `${(hover.x / W) * 100}%`,
-                top: `${(hover.y / H) * 100}%`,
-                transform: "translate(-50%, calc(-100% - 10px))",
+                left: `${(hover.cx / W) * 100}%`,
+                top: `${(hover.cy / H) * 100}%`,
+                transform: "translate(-50%, calc(-100% - 14px))",
               }}
             >
-              <div className="mb-1 font-semibold">{hover.d.name}</div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Total sales</span><span className="tabular-nums">{fmtSAR(hover.d.total ?? hover.d.sales)}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Completed</span><span className="tabular-nums">{fmtSAR(hover.d.sales)}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Orders</span><span className="tabular-nums">{hover.d.count}</span></div>
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full" style={{ background: hover.color }} />
+                <span className="font-semibold text-sm">{hover.name}</span>
+              </div>
+              <div className="space-y-1">
+                <Row label="Total sales" value={fmtSAR(hover.total ?? hover.sales)} />
+                <Row label="Completed sales" value={fmtSAR(hover.sales)} strong />
+                <Row label="Total orders" value={String(hover.count)} />
+                <Row label="Completion rate" value={
+                  hover.count > 0
+                    ? `${Math.round(((hover.completed ?? 0) / hover.count) * 100)}%`
+                    : "—"
+                } />
+              </div>
             </div>
           )}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "hsl(160 84% 39%)" }} /> Low</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "hsl(38 92% 50%)" }} /> Medium</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "hsl(0 84% 60%)" }} /> High</span>
-          <span className="ml-auto">Bubble size ∝ completed sales</span>
+
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          <LegendDot color="hsl(184 66% 44%)" label="Low" />
+          <LegendDot color="hsl(38 92% 50%)" label="Medium" />
+          <LegendDot color="hsl(0 78% 58%)" label="High" />
+          <span className="ml-auto text-[11px]">Bubble size ∝ completed sales</span>
         </div>
         {unmapped.length > 0 && (
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Not plotted (unknown coordinates): {unmapped.map((u) => u.name).join(", ")}
+            Not plotted: {unmapped.map((u) => u.name).join(", ")}
           </p>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex justify-between gap-6">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`tabular-nums ${strong ? "font-semibold text-foreground" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="h-2.5 w-2.5 rounded-full ring-2 ring-background" style={{ background: color, boxShadow: `0 0 0 1px ${color}` }} />
+      {label}
+    </span>
   );
 }
