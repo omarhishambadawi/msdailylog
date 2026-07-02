@@ -19,7 +19,7 @@ export interface CdrRecord {
   talk_duration?: number;
   call_duration?: number;
   call_type?: string;
-  [k: string]: unknown;
+  [k: string]: any;
 }
 
 export interface CdrPageResponse {
