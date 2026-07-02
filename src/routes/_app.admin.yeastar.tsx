@@ -50,11 +50,18 @@ function YeastarDiagnosticPage() {
   const runProbe = useServerFn(yeastarPhase1Probe);
   const runAuth = useServerFn(yeastarAuthDiagnostic);
   const forceExpire = useServerFn(yeastarForceExpire);
+  const runConfig = useServerFn(yeastarConfigDiagnostic);
   const [probeResult, setProbeResult] = useState<any>(null);
   const [probeBusy, setProbeBusy] = useState(false);
   const [expireMsg, setExpireMsg] = useState<string | null>(null);
   const [rows, setRows] = useState<AuthRow[]>([]);
   const [busy, setBusy] = useState<null | "one" | "ten">(null);
+  const [configResult, setConfigResult] = useState<any>(null);
+  const [configBusy, setConfigBusy] = useState(false);
+  const checkConfig = async () => {
+    setConfigBusy(true);
+    try { setConfigResult(await runConfig()); } finally { setConfigBusy(false); }
+  };
 
   const doOne = async (n: number) => {
     const r: any = await runAuth();
