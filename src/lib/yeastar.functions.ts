@@ -94,11 +94,12 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
     };
     if (!isYeastarConfigured()) return { configured: false as const, ...emptyStats };
 
-    const diag = await diagnoseYeastar();
-    if (!diag.ok) {
-      console.error("[Yeastar] diagnostic failed:", diag.category, diag.message);
-      return { configured: true as const, diagnostic: diag, ...emptyStats };
-    }
+    // NOTE: no pre-flight diagnoseYeastar() call. It was previously requesting
+    // a fresh access token on every dashboard render, which hit the PBX's
+    // concurrent-session cap (errcode 60002 MAX LIMITATION EXCEEDED) when a
+    // few tabs loaded at once. fetchCdr → getAccessToken already reuses the
+    // in-process cached token (or refreshes it) and surfaces errors naturally.
+    const diag = { ok: true as const };
 
     // Step 2 — build allowedExtensions Set from active platform users.
     const tUsers = Date.now();
