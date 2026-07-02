@@ -54,16 +54,24 @@ let authBlockedUntil = 0;
 let lastAuthFailure: YeastarDiagnostic | null = null;
 let consecutiveAuthFailures = 0;
 
-// Unique identifier per Worker isolate — used as the lease holder id.
-const WORKER_ID = (typeof crypto !== "undefined" && "randomUUID" in crypto
-  ? crypto.randomUUID()
-  : `w-${Math.random().toString(36).slice(2)}-${Date.now()}`);
+// Unique identifier per Worker isolate — lazy-initialized on first use.
+// Cloudflare Workers disallow crypto.randomUUID() / Math.random() at module
+// scope ("Disallowed operation called within global scope"), so we defer
+// generation until the first request handler runs.
+let WORKER_ID: string | null = null;
+function getOrInitWorkerId(): string {
+  if (WORKER_ID) return WORKER_ID;
+  WORKER_ID = (typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `w-${Math.random().toString(36).slice(2)}-${Date.now()}`);
+  return WORKER_ID;
+}
 
 // Per-call trace flags, reset at the entry of getAccessTokenInfo and read by
 // the diagnostic route after the call completes.
 interface AuthTrace { refreshTokenCalled: boolean; leaseAcquired: boolean; }
 let lastAuthTrace: AuthTrace = { refreshTokenCalled: false, leaseAcquired: false };
-export function getWorkerId(): string { return WORKER_ID; }
+export function getWorkerId(): string { return getOrInitWorkerId(); }
 export function getLastAuthTrace(): AuthTrace { return { ...lastAuthTrace }; }
 export function getCachedCredFingerprint(): string { return credFingerprint(); }
 export function getAuthBlockedUntilIso(): string | null {
