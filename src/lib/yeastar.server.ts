@@ -59,6 +59,32 @@ const WORKER_ID = (typeof crypto !== "undefined" && "randomUUID" in crypto
   ? crypto.randomUUID()
   : `w-${Math.random().toString(36).slice(2)}-${Date.now()}`);
 
+// Per-call trace flags, reset at the entry of getAccessTokenInfo and read by
+// the diagnostic route after the call completes.
+interface AuthTrace { refreshTokenCalled: boolean; leaseAcquired: boolean; }
+let lastAuthTrace: AuthTrace = { refreshTokenCalled: false, leaseAcquired: false };
+export function getWorkerId(): string { return WORKER_ID; }
+export function getLastAuthTrace(): AuthTrace { return { ...lastAuthTrace }; }
+export function getCachedCredFingerprint(): string { return credFingerprint(); }
+export function getAuthBlockedUntilIso(): string | null {
+  return authBlockedUntil > Date.now() ? new Date(authBlockedUntil).toISOString() : null;
+}
+export async function readPersistentTokenSnapshot() {
+  const row = await loadPersistentToken();
+  if (!row) return null;
+  const expiresAtMs = Date.parse(row.expires_at);
+  return {
+    hasAccessToken: !!row.access_token,
+    hasRefreshToken: !!row.refresh_token,
+    expiresAt: row.expires_at,
+    refreshExpiresAt: row.refresh_expires_at,
+    credFingerprint: row.cred_fingerprint,
+    authBlockedUntil: row.auth_blocked_until,
+    ageSec: Math.max(0, Math.floor((Date.now() - (expiresAtMs - 30 * 60_000)) / 1000)),
+    expiresInSec: Math.floor((expiresAtMs - Date.now()) / 1000),
+  };
+}
+
 function credFingerprint(): string {
   // Short, non-reversible fingerprint of the current credentials so that
   // rotating YEASTAR_CLIENT_SECRET automatically invalidates any cached token
@@ -458,6 +484,7 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
   if (!cachedToken?.refreshToken) return null;
   if (!isRefreshTokenValid()) return null;
   const endpoint = `${env.base}/openapi/v1.0/refresh_token`;
+  lastAuthTrace.refreshTokenCalled = true;
   console.log(`[yeastar auth] POST /refresh_token (no new PBX session; cache=${tokenStatus()})`);
   let res: Response;
   try {
@@ -572,6 +599,7 @@ async function requestNewToken(env: { base: string; id: string; secret: string }
 async function getAccessTokenInfo(): Promise<TokenResult> {
   const env = requireEnv();
   if (!env) throw new Error("Yeastar not configured");
+  lastAuthTrace = { refreshTokenCalled: false, leaseAcquired: false };
   ensureCredsFresh();
 
   // ---- Tier 1: in-isolate memory ----
@@ -618,7 +646,7 @@ async function getAccessTokenInfo(): Promise<TokenResult> {
     let leaseRow: PersistentTokenRow | null = null;
     for (let attempt = 0; attempt < 6; attempt++) {
       leaseRow = await tryClaimAuthLease();
-      if (leaseRow) break;
+      if (leaseRow) { lastAuthTrace.leaseAcquired = true; break; }
       console.log(`[yeastar lease] another Worker holds the auth lease; waiting (attempt ${attempt + 1}/6)`);
       await sleep(500 + Math.floor(Math.random() * 500));
       // While waiting, another isolate may have written a fresh token.
@@ -699,6 +727,35 @@ async function getAccessTokenInfo(): Promise<TokenResult> {
   } finally {
     inflightAuth = null;
   }
+}
+
+/**
+ * Phase 1.5 diagnostic: run one authentication pass and expose full trace.
+ */
+export async function collectAuthDiagnostic() {
+  const startedAt = Date.now();
+  let auth: TokenResult | null = null;
+  let error: string | null = null;
+  try {
+    auth = await getAccessTokenInfo();
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+  const trace = getLastAuthTrace();
+  const snap = await readPersistentTokenSnapshot();
+  return {
+    workerId: WORKER_ID,
+    authSource: auth?.source ?? "Blocked",
+    getTokenCalled: auth?.getTokenCalled ?? false,
+    refreshTokenCalled: trace.refreshTokenCalled,
+    leaseAcquired: trace.leaseAcquired,
+    tokenRemainingSec: auth ? Math.floor(auth.remainingMs / 1000) : 0,
+    credFingerprint: credFingerprint(),
+    authBlockedUntil: getAuthBlockedUntilIso(),
+    persistent: snap,
+    elapsedMs: Date.now() - startedAt,
+    error,
+  };
 }
 
 
