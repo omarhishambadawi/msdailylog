@@ -583,18 +583,19 @@ export async function fetchCdr(
     recordsReturned: 0,
     rawResponsePreview: "",
   };
-  if (!env) return { records: [], diagnostic };
+  const timings = { authMs: 0, requestMs: 0, filterMs: 0, totalFetched: 0, keptAfterFilter: 0 };
+  if (!env) return { records: [], diagnostic, timings };
+  const tAuth = Date.now();
   const token = await getAccessToken();
+  timings.authMs = Date.now() - tAuth;
   diagnostic.pbxTimezone = await fetchPbxTimezone(env.base, token);
   const results: YeastarCdrRecord[] = [];
   const pageSize = 500;
   let page = 1;
+  const tReq = Date.now();
   while (page <= 20) {
     const currentPage = page;
     const rows = await withRetry(`cdr page ${currentPage}`, async () => {
-      // Build query string manually so spaces are encoded as %20 (not '+').
-      // Some Yeastar firmware rejects '+' inside start_time / end_time and
-      // silently returns the full unfiltered CDR set.
       const qs =
         `access_token=${encodeURIComponent(token)}` +
         `&start_time=${encodeURIComponent(start)}` +
@@ -628,53 +629,56 @@ export async function fetchCdr(
         if (json.errcode === 70087) throw new Error("IP_FORBIDDEN: PBX rejected the server IP.");
         throw new Error(`Yeastar CDR error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
       }
-      // Yeastar firmware inconsistency: some builds return `cdr_list`, others
-      // return `data`. Accept both, plus a couple of legacy fallbacks.
       const rawList =
         json.cdr_list ?? json.data ?? json.cdr ?? json.list ?? json.result ?? [];
       const list: any[] = Array.isArray(rawList) ? rawList : [];
       if (currentPage === 1) {
         console.log(
-          `[yeastar cdr] parse: Array.isArray(data)=${Array.isArray(json.data)} ` +
-          `data.length=${Array.isArray(json.data) ? json.data.length : "n/a"} ` +
-          `typeof data=${typeof json.data} ` +
-          `cdr_list.length=${Array.isArray(json.cdr_list) ? json.cdr_list.length : "n/a"} ` +
-          `chosen_field=${json.cdr_list ? "cdr_list" : json.data ? "data" : "other"} ` +
-          `records_in_page=${list.length} total_number=${json.total_number}`,
+          `[yeastar cdr] parse: records_in_page=${list.length} total_number=${json.total_number} allowlist_size=${allowedExtensions?.size ?? "none"}`,
         );
-        if (list.length > 0) {
-          console.log(`[yeastar cdr] first record: ${JSON.stringify(list[0]).slice(0, 500)}`);
-        }
       }
-      // Normalize field names across firmware variants so the aggregator
-      // works regardless of the wire format.
-      return list.map((r: any) => ({
-        call_id: String(r.call_id ?? r.uid ?? r.id ?? ""),
-        time_start: r.time_start ?? r.time ?? r.start_time ?? "",
-        call_from: r.call_from ?? r.src_number ?? r.from ?? "",
-        call_to: r.call_to ?? r.dst_number ?? r.to ?? "",
-        src_name: r.src_name,
-        dst_name: r.dst_name,
-        src_number: r.src_number ?? r.call_from,
-        dst_number: r.dst_number ?? r.call_to,
-        extension: r.extension ?? r.extension_number ?? r.src_extension ?? r.dst_extension,
-        extension_number: r.extension_number ?? r.extension,
-        call_type: r.call_type ?? r.type ?? r.communication_type,
-        status: r.status ?? r.call_status ?? r.disposition,
-        duration: Number(r.duration ?? 0),
-        talk_duration: Number(r.talk_duration ?? r.billsec ?? 0),
-      })) as YeastarCdrRecord[];
+      // Inline filter: only keep records whose extension is in the whitelist.
+      // Records outside the whitelist are discarded immediately — never held
+      // in memory — so downstream aggregation is bounded by real agents only.
+      const tFilter = Date.now();
+      const kept: YeastarCdrRecord[] = [];
+      for (const r of list) {
+        timings.totalFetched += 1;
+        const extRaw = r.extension ?? r.extension_number ?? r.src_extension ?? r.dst_extension ?? r.src_number ?? r.dst_number ?? "";
+        const ext = normalizeExt(extRaw);
+        if (allowedExtensions && (!ext || !allowedExtensions.has(ext))) continue;
+        kept.push({
+          call_id: String(r.call_id ?? r.uid ?? r.id ?? ""),
+          time_start: r.time_start ?? r.time ?? r.start_time ?? "",
+          call_from: r.call_from ?? r.src_number ?? r.from ?? "",
+          call_to: r.call_to ?? r.dst_number ?? r.to ?? "",
+          src_name: r.src_name,
+          dst_name: r.dst_name,
+          src_number: r.src_number ?? r.call_from,
+          dst_number: r.dst_number ?? r.call_to,
+          extension: ext || undefined,
+          extension_number: r.extension_number ?? r.extension,
+          call_type: r.call_type ?? r.type ?? r.communication_type,
+          status: r.status ?? r.call_status ?? r.disposition,
+          duration: Number(r.duration ?? 0),
+          talk_duration: Number(r.talk_duration ?? r.billsec ?? 0),
+        });
+      }
+      timings.filterMs += Date.now() - tFilter;
+      return { kept, pageLen: list.length };
     });
-    results.push(...rows);
-    if (rows.length < pageSize) break;
+    results.push(...rows.kept);
+    if (rows.pageLen < pageSize) break;
     page += 1;
   }
+  timings.requestMs = Date.now() - tReq - timings.filterMs;
+  timings.keptAfterFilter = results.length;
   diagnostic.recordsReturned = results.length;
-  if (results.length === 0) {
+  if (results.length === 0 && !allowedExtensions) {
     diagnostic.extensionsSample = (await fetchExtensionsSample(env.base, token)).slice(0, 25);
   }
-  console.log(`[yeastar cdr] window=${start}..${end} tz=${diagnostic.pbxTimezone ?? "?"} records=${results.length} total_number=${diagnostic.totalNumber}`);
-  return { records: results, diagnostic };
+  console.log(`[yeastar cdr] window=${start}..${end} fetched=${timings.totalFetched} kept=${timings.keptAfterFilter} auth=${timings.authMs}ms req=${timings.requestMs}ms filter=${timings.filterMs}ms`);
+  return { records: results, diagnostic, timings };
 }
 
 // -------- Aggregation helpers (pure, testable, no I/O) --------
