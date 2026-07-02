@@ -553,6 +553,8 @@ async function requestNewToken(env: { base: string; id: string; secret: string }
     };
     lastAuthFailure = null;
     authBlockedUntil = 0;
+    consecutiveAuthFailures = 0;
+    await persistToken(cachedToken, credFingerprint());
     logTokenSource("New Authentication", true);
     const ttlSec = Math.floor(remainingAccessMs() / 1000);
     return {
@@ -561,6 +563,7 @@ async function requestNewToken(env: { base: string; id: string; secret: string }
       message: `Authentication successful. Token valid for ${ttlSec}s.`,
     };
   }
+
   const diag = mapAuthErrcode(env, endpoint, httpStatus, bodyText, json);
   cacheAuthFailure(diag);
   return diag;
