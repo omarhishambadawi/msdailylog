@@ -523,6 +523,17 @@ export interface TeamExtensionResult {
   missingGroups: string[];
   all: Array<GroupExtension & { team: TeamKey }>;
   availableGroups: Array<{ id?: string; name: string; memberCount: number }>;
+  diag: {
+    endpoint: string;
+    httpStatus: number;
+    errcode: number | null;
+    errmsg: string | null;
+    totalReturned: number;
+    firstGroups: Array<{ id?: string | number; name: string; memberCount: number }>;
+    rawResponsePreview: string;
+    source: "extension_group" | "extension_fallback";
+    fallbackNote?: string;
+  };
 }
 
 async function fetchGroupMembers(base: string, token: string, group: any): Promise<GroupExtension[]> {
@@ -534,10 +545,11 @@ async function fetchGroupMembers(base: string, token: string, group: any): Promi
       const detUrl = `${base}/openapi/v1.0/extension_group/get?access_token=${encodeURIComponent(token)}&id=${encodeURIComponent(group.id)}`;
       const detRes = await timedFetch(detUrl, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
       const detJson: any = await detRes.json().catch(() => null);
-      const g2 = detJson?.extension_group ?? detJson?.data ?? detJson;
+      const g2 = detJson?.extension_group ?? detJson?.data?.extension_group ?? detJson?.data ?? detJson;
       members =
         g2?.member_list ?? g2?.members ?? g2?.extension_list ??
         g2?.member_extension_list ?? g2?.extension_members ?? [];
+      console.log(`[yeastar groups] extension_group/get id=${group.id} HTTP ${detRes.status} members=${members?.length ?? 0}`);
     } catch (e) {
       console.warn(`[yeastar groups] extension_group/get failed for id=${group.id}:`, e instanceof Error ? e.message : e);
     }
@@ -556,24 +568,99 @@ async function fetchGroupMembers(base: string, token: string, group: any): Promi
   return exts;
 }
 
+/** Fallback: derive group membership by reading each extension's own
+ *  group fields (Yeastar returns `extension_group_id_list`,
+ *  `extension_group_name_list`, `group_name_list`, or plain `extension_group`
+ *  on some firmware). Used when /extension_group/list returns nothing. */
+async function fetchGroupsFromExtensions(
+  base: string, token: string,
+): Promise<{ byName: Map<string, GroupExtension[]>; totalExtensions: number; sampleRaw: string }> {
+  const byName = new Map<string, GroupExtension[]>();
+  let totalExtensions = 0;
+  let sampleRaw = "";
+  const pageSize = 100;
+  for (let page = 1; page <= 20; page++) {
+    const url = `${base}/openapi/v1.0/extension/list?access_token=${encodeURIComponent(token)}&page=${page}&page_size=${pageSize}&sort_by=number&order_by=asc`;
+    const res = await timedFetch(url, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
+    const body = await res.text().catch(() => "");
+    let j: any = null; try { j = body ? JSON.parse(body) : null; } catch { /* non-JSON */ }
+    const list: any[] = j?.extension_list ?? j?.data?.extension_list ?? j?.data ?? [];
+    if (page === 1) sampleRaw = body.slice(0, 800);
+    for (const e of list) {
+      totalExtensions++;
+      const num = normalizeExt(e.number ?? e.extension ?? e.extension_number);
+      if (!num) continue;
+      const ext: GroupExtension = { number: num, name: e.name ?? e.caller_id_name, status: e.status };
+      // Collect group names from every known field variant.
+      const names = new Set<string>();
+      const push = (v: any) => {
+        if (v == null) return;
+        if (Array.isArray(v)) v.forEach(push);
+        else if (typeof v === "string") { const t = v.trim(); if (t) names.add(t); }
+        else if (typeof v === "object") { push(v.name); push(v.group_name); push(v.extension_group_name); }
+      };
+      push(e.extension_group);
+      push(e.extension_group_list);
+      push(e.extension_group_name);
+      push(e.extension_group_name_list);
+      push(e.group_name);
+      push(e.group_name_list);
+      push(e.group);
+      push(e.groups);
+      for (const n of names) {
+        const key = n;
+        if (!byName.has(key)) byName.set(key, []);
+        byName.get(key)!.push(ext);
+      }
+    }
+    if (list.length < pageSize) break;
+  }
+  return { byName, totalExtensions, sampleRaw };
+}
+
 export async function fetchTeamExtensions(): Promise<TeamExtensionResult> {
   const env = requireEnv();
   if (!env) throw new Error("Yeastar not configured");
   const token = await getAccessToken();
 
   const listUrl = `${env.base}/openapi/v1.0/extension_group/list?access_token=${encodeURIComponent(token)}&page=1&page_size=200`;
+  console.log(`[yeastar groups] GET ${listUrl.replace(/access_token=[^&]+/, "access_token=***")}`);
   const listRes = await timedFetch(listUrl, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
   const listBody = await listRes.text().catch(() => "");
   let listJson: any = null;
   try { listJson = listBody ? JSON.parse(listBody) : null; } catch { /* non-JSON */ }
+
+  // Try every known response shape across firmware versions.
   const rawGroups: any[] =
-    listJson?.extension_group_list ?? listJson?.data ?? listJson?.list ?? listJson?.groups ?? [];
-  console.log(`[yeastar groups] extension_group/list HTTP ${listRes.status} count=${rawGroups.length} names=[${rawGroups.map((g: any) => g?.name).join(", ")}]`);
+    listJson?.extension_group_list ??
+    listJson?.data?.extension_group_list ??
+    listJson?.data?.list ??
+    listJson?.data?.groups ??
+    (Array.isArray(listJson?.data) ? listJson.data : null) ??
+    listJson?.list ??
+    listJson?.groups ??
+    (Array.isArray(listJson) ? listJson : []) ??
+    [];
+
+  const errcode = typeof listJson?.errcode === "number" ? listJson.errcode : null;
+  const errmsg = listJson?.errmsg ?? null;
+  console.log(`[yeastar groups] extension_group/list HTTP ${listRes.status} errcode=${errcode} errmsg=${errmsg ?? ""} count=${rawGroups.length} names=[${rawGroups.map((g: any) => g?.name).join(", ")}]`);
+  console.log(`[yeastar groups] raw response preview: ${listBody.slice(0, 500)}`);
 
   const availableGroups = rawGroups.map((g: any) => ({
     id: g?.id, name: String(g?.name ?? ""),
     memberCount: (g?.member_list ?? g?.members ?? g?.extension_list ?? g?.member_extension_list ?? []).length,
   }));
+
+  const diag: TeamExtensionResult["diag"] = {
+    endpoint: `${env.base}/openapi/v1.0/extension_group/list`,
+    httpStatus: listRes.status,
+    errcode, errmsg,
+    totalReturned: rawGroups.length,
+    firstGroups: availableGroups.slice(0, 10),
+    rawResponsePreview: listBody.slice(0, 800),
+    source: "extension_group",
+  };
 
   const findGroup = (name: string) =>
     rawGroups.find((g: any) => normalizeExt(g?.name) === normalizeExt(name));
@@ -586,21 +673,72 @@ export async function fetchTeamExtensions(): Promise<TeamExtensionResult> {
     missingGroups: [],
     all: [],
     availableGroups,
+    diag,
   };
 
-  for (const key of ["customer_care", "telesales"] as const) {
-    const wanted = EXTENSION_GROUP_NAMES[key];
-    const grp = findGroup(wanted);
-    if (!grp) {
-      result.missingGroups.push(wanted);
-      console.warn(`[yeastar groups] MISSING group "${wanted}"`);
-      continue;
+  // Primary path: use extension_group/list results.
+  const needFallback = rawGroups.length === 0 || (!findGroup(EXTENSION_GROUP_NAMES.customer_care) && !findGroup(EXTENSION_GROUP_NAMES.telesales));
+
+  if (!needFallback) {
+    for (const key of ["customer_care", "telesales"] as const) {
+      const wanted = EXTENSION_GROUP_NAMES[key];
+      const grp = findGroup(wanted);
+      if (!grp) {
+        result.missingGroups.push(wanted);
+        console.warn(`[yeastar groups] MISSING group "${wanted}" (present: ${availableGroups.map((g) => g.name).join(", ") || "none"})`);
+        continue;
+      }
+      result.groups[key].found = true;
+      const exts = await fetchGroupMembers(env.base, token, grp);
+      result.groups[key].extensions = exts;
+      for (const e of exts) result.all.push({ ...e, team: key });
+      console.log(`[yeastar groups] "${wanted}" resolved ${exts.length} members: [${exts.map((e) => e.number).join(", ")}]`);
     }
-    result.groups[key].found = true;
-    const exts = await fetchGroupMembers(env.base, token, grp);
-    result.groups[key].extensions = exts;
-    for (const e of exts) result.all.push({ ...e, team: key });
-    console.log(`[yeastar groups] "${wanted}" resolved ${exts.length} members: [${exts.map((e) => e.number).join(", ")}]`);
+    return result;
+  }
+
+  // Fallback: extension_group/list unusable — derive membership from extensions.
+  console.warn(`[yeastar groups] falling back to /extension/list (extension_group/list returned ${rawGroups.length} groups)`);
+  try {
+    const { byName, totalExtensions, sampleRaw } = await fetchGroupsFromExtensions(env.base, token);
+    const availableNames = Array.from(byName.keys());
+    console.log(`[yeastar groups] fallback found ${byName.size} distinct group names across ${totalExtensions} extensions: [${availableNames.join(", ")}]`);
+    diag.source = "extension_fallback";
+    diag.fallbackNote = `extension_group/list returned ${rawGroups.length} groups; derived membership from ${totalExtensions} extensions`;
+    diag.firstGroups = availableNames.slice(0, 10).map((n) => ({ name: n, memberCount: byName.get(n)!.length }));
+    diag.totalReturned = byName.size;
+    if (!diag.rawResponsePreview) diag.rawResponsePreview = sampleRaw;
+
+    // Merge into availableGroups so validator UI still shows something useful.
+    for (const [name, exts] of byName.entries()) {
+      if (!availableGroups.find((g) => normalizeExt(g.name) === normalizeExt(name))) {
+        availableGroups.push({ name, memberCount: exts.length });
+      }
+    }
+
+    const findByName = (wanted: string) => {
+      for (const [name, exts] of byName.entries()) {
+        if (normalizeExt(name) === normalizeExt(wanted)) return exts;
+      }
+      return null;
+    };
+    for (const key of ["customer_care", "telesales"] as const) {
+      const wanted = EXTENSION_GROUP_NAMES[key];
+      const exts = findByName(wanted);
+      if (!exts) {
+        result.missingGroups.push(wanted);
+        console.warn(`[yeastar groups] fallback: MISSING "${wanted}" (present: ${availableNames.join(", ") || "none"})`);
+        continue;
+      }
+      result.groups[key].found = true;
+      result.groups[key].extensions = exts;
+      for (const e of exts) result.all.push({ ...e, team: key });
+      console.log(`[yeastar groups] fallback: "${wanted}" resolved ${exts.length} members: [${exts.map((e) => e.number).join(", ")}]`);
+    }
+  } catch (e) {
+    console.error("[yeastar groups] fallback failed:", e instanceof Error ? e.message : e);
+    // Only now do we surface both as missing (both API paths failed).
+    result.missingGroups = [EXTENSION_GROUP_NAMES.customer_care, EXTENSION_GROUP_NAMES.telesales];
   }
   return result;
 }
