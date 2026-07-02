@@ -1037,70 +1037,114 @@ export async function fetchCdr(
     talk_duration: Number(r.talk_duration ?? r.billsec ?? 0),
   });
 
-  // Fetch one extension's CDR pages. Uses Yeastar's server-side `number`
-  // filter so the PBX only returns records for this extension — dramatically
-  // smaller payload than a full unfiltered scan of tens of thousands of rows.
+  // Fetch a single CDR page for one extension. Retries only this page on
+  // transient failure — pagination progress in the caller is preserved.
+  const MAX_PAGES = 20;
+  const PAGE_SIZE = 500;
+  const PAGE_RETRIES = 2;
+
+  const fetchPage = async (ext: string, page: number): Promise<{ list: YeastarCdrRecord[]; totalNumber: number | null; rawCount: number; ms: number }> => {
+    const qs =
+      `access_token=${encodeURIComponent(token)}` +
+      `&start_time=${encodeURIComponent(start)}` +
+      `&end_time=${encodeURIComponent(end)}` +
+      `&number=${encodeURIComponent(ext)}` +
+      `&page=${page}` +
+      `&page_size=${PAGE_SIZE}` +
+      `&sort_by=time` +
+      `&order_by=desc`;
+    const fullUrl = `${endpoint}?${qs}`;
+    const masked = fullUrl.replace(encodeURIComponent(token), "***MASKED***");
+    if (page === 1 && !diagnostic.requestUrl) diagnostic.requestUrl = masked;
+
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt <= PAGE_RETRIES; attempt++) {
+      const t0 = Date.now();
+      try {
+        const res = await timedFetch(fullUrl, { headers: { "Accept": "application/json", "User-Agent": USER_AGENT } });
+        const bodyText = await res.text().catch(() => "");
+        if (page === 1 && !diagnostic.httpStatus) {
+          diagnostic.httpStatus = res.status;
+          diagnostic.rawResponsePreview = bodyText.slice(0, 1500);
+        }
+        if (!res.ok) throw new Error(`Yeastar CDR HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
+        const json = JSON.parse(bodyText);
+        if (page === 1) {
+          diagnostic.errcode ??= json?.errcode;
+          diagnostic.errmsg ??= json?.errmsg;
+        }
+        if (json.errcode !== 0) {
+          if (json.errcode === 70087) throw new Error("IP_FORBIDDEN: PBX rejected the server IP.");
+          throw new Error(`Yeastar CDR error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
+        }
+        const rawList = json.cdr_list ?? json.data ?? json.cdr ?? json.list ?? json.result ?? [];
+        const list: any[] = Array.isArray(rawList) ? rawList : [];
+        const parsed: YeastarCdrRecord[] = list.map((r) => {
+          const rec = parseRow(r);
+          rec.extension = ext;
+          return rec;
+        });
+        const ms = Date.now() - t0;
+        const totalNumber = typeof json.total_number === "number" ? json.total_number : null;
+        return { list: parsed, totalNumber, rawCount: list.length, ms };
+      } catch (err) {
+        lastErr = err;
+        const ms = Date.now() - t0;
+        console.warn(`[yeastar cdr] ext=${ext} page=${page} attempt=${attempt + 1} FAILED after ${ms}ms: ${(err as Error)?.message ?? err}`);
+        if (attempt < PAGE_RETRIES) {
+          await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+        }
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+  };
+
+  // Paginate one extension; stop at last page (short page OR total_number reached).
   const fetchForExtension = async (ext: string): Promise<YeastarCdrRecord[]> => {
     const out: YeastarCdrRecord[] = [];
-    const pageSize = 500;
-    for (let page = 1; page <= 20; page++) {
-      const qs =
-        `access_token=${encodeURIComponent(token)}` +
-        `&start_time=${encodeURIComponent(start)}` +
-        `&end_time=${encodeURIComponent(end)}` +
-        `&number=${encodeURIComponent(ext)}` +
-        `&page=${page}` +
-        `&page_size=${pageSize}` +
-        `&sort_by=time` +
-        `&order_by=desc`;
-      const fullUrl = `${endpoint}?${qs}`;
-      const masked = fullUrl.replace(encodeURIComponent(token), "***MASKED***");
-      if (page === 1 && !diagnostic.requestUrl) diagnostic.requestUrl = masked;
-      const res = await timedFetch(fullUrl, { headers: { "Accept": "application/json", "User-Agent": USER_AGENT } });
-      const bodyText = await res.text().catch(() => "");
-      if (page === 1 && !diagnostic.httpStatus) {
-        diagnostic.httpStatus = res.status;
-        diagnostic.rawResponsePreview = bodyText.slice(0, 1500);
-      }
-      if (!res.ok) throw new Error(`Yeastar CDR HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
-      let json: any = null;
-      try { json = JSON.parse(bodyText); } catch { throw new Error(`Yeastar CDR non-JSON response: ${bodyText.slice(0, 200)}`); }
-      if (page === 1) {
-        diagnostic.errcode ??= json?.errcode;
-        diagnostic.errmsg ??= json?.errmsg;
-      }
-      if (json.errcode !== 0) {
-        if (json.errcode === 70087) throw new Error("IP_FORBIDDEN: PBX rejected the server IP.");
-        throw new Error(`Yeastar CDR error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
-      }
-      const rawList = json.cdr_list ?? json.data ?? json.cdr ?? json.list ?? json.result ?? [];
-      const list: any[] = Array.isArray(rawList) ? rawList : [];
-      timings.totalFetched += list.length;
-      // Tag every record with the extension we queried so aggregation is
-      // trivial (records don't always carry a top-level `extension` field).
-      for (const r of list) {
-        const rec = parseRow(r);
-        rec.extension = ext;
-        out.push(rec);
-      }
-      console.log(`[yeastar cdr] ext=${ext} page=${page} records=${list.length}`);
-      if (list.length < pageSize) break;
+    const tExt = Date.now();
+    let totalNumber: number | null = null;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const { list, totalNumber: tn, rawCount, ms } = await fetchPage(ext, page);
+      if (tn !== null) totalNumber = tn;
+      out.push(...list);
+      timings.totalFetched += rawCount;
+      const elapsed = Date.now() - tExt;
+      console.log(`[yeastar cdr] ext=${ext} page=${page} records=${rawCount} page_ms=${ms} ext_elapsed_ms=${elapsed} total_number=${totalNumber ?? "n/a"}`);
+      if (rawCount < PAGE_SIZE) break;
+      if (totalNumber !== null && out.length >= totalNumber) break;
     }
+    console.log(`[yeastar cdr] ext=${ext} DONE records=${out.length} total_ms=${Date.now() - tExt}`);
     return out;
+  };
+
+  // Concurrency-limited queue — cap parallel PBX requests so we stay well
+  // within Cloudflare Worker CPU/subrequest limits.
+  const runWithConcurrency = async <T>(items: string[], limit: number, worker: (item: string) => Promise<T>): Promise<T[]> => {
+    const results: T[] = new Array(items.length);
+    let cursor = 0;
+    const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (true) {
+        const i = cursor++;
+        if (i >= items.length) return;
+        results[i] = await worker(items[i]);
+      }
+    });
+    await Promise.all(runners);
+    return results;
   };
 
   const tReq = Date.now();
   let results: YeastarCdrRecord[] = [];
   if (allowedExtensions && allowedExtensions.size > 0) {
-    // Parallel fan-out — one small request per whitelisted extension.
     const exts = [...allowedExtensions];
-    console.log(`[yeastar cdr] fan-out ${exts.length} extensions in parallel: [${exts.join(", ")}]`);
-    const chunks = await Promise.all(exts.map((e) => withRetry(`cdr ext ${e}`, () => fetchForExtension(e))));
+    const CONCURRENCY = 2;
+    console.log(`[yeastar cdr] concurrency=${CONCURRENCY} extensions=${exts.length} list=[${exts.join(", ")}]`);
+    const chunks = await runWithConcurrency(exts, CONCURRENCY, (e) => fetchForExtension(e));
     results = chunks.flat();
   } else {
-    // Fallback: unfiltered scan (only used when caller passed no whitelist).
     console.warn("[yeastar cdr] no allowedExtensions provided — falling back to unfiltered scan");
-    results = await withRetry("cdr unfiltered", () => fetchForExtension(""));
+    results = await fetchForExtension("");
   }
   timings.requestMs = Date.now() - tReq;
   timings.keptAfterFilter = results.length;
