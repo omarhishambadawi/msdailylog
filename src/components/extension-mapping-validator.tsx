@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, AlertTriangle, Users, PhoneCall } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Users, PhoneCall, XCircle } from "lucide-react";
 import { getYeastarExtensionMapping } from "@/lib/yeastar.functions";
 
 export function ExtensionMappingValidator() {
