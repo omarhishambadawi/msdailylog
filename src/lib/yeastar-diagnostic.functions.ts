@@ -59,3 +59,15 @@ export const yeastarAuthDiagnostic = createServerFn({ method: "POST" })
     const diag = await collectAuthDiagnostic();
     return { configured: true as const, ...diag, at: new Date().toISOString() };
   });
+
+/**
+ * TEST D helper: shrink the cached access token's remaining lifetime to force
+ * the next auth call into the refresh path (no new PBX session).
+ */
+export const yeastarForceExpire = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { forceExpireAccessToken } = await import("@/lib/yeastar.server");
+    return forceExpireAccessToken(60);
+  });
+

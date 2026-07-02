@@ -69,6 +69,33 @@ export function getCachedCredFingerprint(): string { return credFingerprint(); }
 export function getAuthBlockedUntilIso(): string | null {
   return authBlockedUntil > Date.now() ? new Date(authBlockedUntil).toISOString() : null;
 }
+/**
+ * TEST HELPER: shrink the in-memory access token's expiry so that the next
+ * getAccessTokenInfo() call falls into the refresh path (< REFRESH_SKEW_MS
+ * remaining) without invalidating the refresh token. Also updates the
+ * persistent row so other isolates see the same shortened expiry.
+ */
+export async function forceExpireAccessToken(remainingSec = 60): Promise<{ ok: boolean; note: string }> {
+  const newExpiresAt = Date.now() + remainingSec * 1000;
+  if (cachedToken) {
+    cachedToken = { ...cachedToken, expiresAt: newExpiresAt };
+  } else {
+    const row = await loadPersistentToken();
+    if (row && hydrateFromPersistent(row, credFingerprint())) {
+      cachedToken = { ...cachedToken!, expiresAt: newExpiresAt };
+    } else {
+      return { ok: false, note: "No cached or persistent token to expire." };
+    }
+  }
+  try {
+    await supabaseAdmin
+      .from("yeastar_token_cache")
+      .update({ expires_at: new Date(newExpiresAt).toISOString() })
+      .eq("id", "singleton");
+  } catch { /* best-effort */ }
+  return { ok: true, note: `Access token expiry shortened to ${remainingSec}s from now.` };
+}
+
 export async function readPersistentTokenSnapshot() {
   const row = await loadPersistentToken();
   if (!row) return null;

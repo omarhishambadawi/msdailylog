@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { yeastarPhase1Probe, yeastarAuthDiagnostic } from "@/lib/yeastar-diagnostic.functions";
+import { yeastarPhase1Probe, yeastarAuthDiagnostic, yeastarForceExpire } from "@/lib/yeastar-diagnostic.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -34,8 +34,10 @@ interface AuthRow {
 function YeastarDiagnosticPage() {
   const runProbe = useServerFn(yeastarPhase1Probe);
   const runAuth = useServerFn(yeastarAuthDiagnostic);
+  const forceExpire = useServerFn(yeastarForceExpire);
   const [probeResult, setProbeResult] = useState<any>(null);
   const [probeBusy, setProbeBusy] = useState(false);
+  const [expireMsg, setExpireMsg] = useState<string | null>(null);
   const [rows, setRows] = useState<AuthRow[]>([]);
   const [busy, setBusy] = useState<null | "one" | "ten">(null);
 
@@ -119,7 +121,18 @@ function YeastarDiagnosticPage() {
             <Button onClick={runTen} disabled={busy !== null}>Run 10 sequential</Button>
             <Button onClick={runTenParallel} disabled={busy !== null} variant="secondary">Run 10 parallel</Button>
             <Button onClick={() => setRows([])} disabled={busy !== null} variant="ghost">Clear</Button>
+            <Button
+              onClick={async () => {
+                const r: any = await forceExpire();
+                setExpireMsg(r?.note ?? JSON.stringify(r));
+              }}
+              disabled={busy !== null}
+              variant="destructive"
+            >
+              Test D: Force token expiry (60s)
+            </Button>
           </div>
+          {expireMsg && <div className="text-xs text-muted-foreground">{expireMsg}</div>}
           {rows.length > 0 && (
             <>
               <div className="text-sm">
