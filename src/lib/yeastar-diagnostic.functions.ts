@@ -1,12 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+async function assertAdmin(ctx: { supabase: any; userId: string }) {
+  const { data, error } = await ctx.supabase.rpc("has_role", {
+    _user_id: ctx.userId,
+    _role: "admin",
+  });
+  if (error || !data) throw new Error("Forbidden: admin only");
+}
+
 /**
- * Phase 1 diagnostic — isolated Yeastar smoke test (auth + CDR).
+ * Phase 1 diagnostic — isolated Yeastar smoke test (auth + CDR). Admin only.
  */
 export const yeastarPhase1Probe = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => {
+  .handler(async ({ context }) => {
+    await assertAdmin(context as any);
     const started = Date.now();
     const { fetchCdr, isYeastarConfigured } = await import("@/lib/yeastar.server");
     if (!isYeastarConfigured()) {
@@ -46,12 +55,12 @@ export const yeastarPhase1Probe = createServerFn({ method: "POST" })
   });
 
 /**
- * Phase 1.5 diagnostic — one authentication pass with full trace.
- * Does NOT fetch CDR. Safe to call repeatedly to verify cache reuse.
+ * Phase 1.5 diagnostic — one authentication pass with full trace. Admin only.
  */
 export const yeastarAuthDiagnostic = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => {
+  .handler(async ({ context }) => {
+    await assertAdmin(context as any);
     const { collectAuthDiagnostic, isYeastarConfigured } = await import("@/lib/yeastar.server");
     if (!isYeastarConfigured()) {
       return { configured: false as const, message: "Yeastar env vars not set." };
@@ -61,13 +70,12 @@ export const yeastarAuthDiagnostic = createServerFn({ method: "POST" })
   });
 
 /**
- * TEST D helper: shrink the cached access token's remaining lifetime to force
- * the next auth call into the refresh path (no new PBX session).
+ * TEST D helper: shrink cached access token expiry to force refresh path. Admin only.
  */
 export const yeastarForceExpire = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => {
+  .handler(async ({ context }) => {
+    await assertAdmin(context as any);
     const { forceExpireAccessToken } = await import("@/lib/yeastar.server");
     return forceExpireAccessToken(60);
   });
-

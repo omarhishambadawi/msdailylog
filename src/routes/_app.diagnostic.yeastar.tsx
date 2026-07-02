@@ -4,6 +4,7 @@ import { useState } from "react";
 import { yeastarPhase1Probe, yeastarAuthDiagnostic, yeastarForceExpire } from "@/lib/yeastar-diagnostic.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/diagnostic/yeastar")({
   head: () => ({
@@ -32,6 +33,19 @@ interface AuthRow {
 }
 
 function YeastarDiagnosticPage() {
+  const { role } = useAuth();
+  if (role !== "admin") {
+    return (
+      <div className="mx-auto max-w-2xl p-6">
+        <Card>
+          <CardHeader><CardTitle>Not authorized</CardTitle></CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            The Yeastar diagnostic page is restricted to administrators.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   const runProbe = useServerFn(yeastarPhase1Probe);
   const runAuth = useServerFn(yeastarAuthDiagnostic);
   const forceExpire = useServerFn(yeastarForceExpire);
