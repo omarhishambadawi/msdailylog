@@ -266,56 +266,59 @@ function OrdersList() {
           totalOrders={summary.totalCount} completedOrders={summary.completedCount} />
       </div>
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardContent className="p-0">
-          <div className="w-full overflow-hidden">
+          {/* Desktop / tablet table */}
+          <div className="hidden md:block w-full">
             <Table className="table-fixed w-full">
               <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="w-8 text-center px-1">✓</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold">Order</TableHead>
-                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-20">Date</TableHead>
-                  <TableHead className="hidden sm:table-cell text-xs uppercase tracking-wider font-semibold w-[22%] md:w-[18%]">Customer</TableHead>
-                  <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider font-semibold w-16">Type</TableHead>
-                  <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider font-semibold w-20">Branch</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-wider font-semibold w-[74px] sm:w-24">Value</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-semibold w-[92px] sm:w-[116px]">Status</TableHead>
-                  <TableHead className="w-8 sm:w-10 px-0"></TableHead>
+                <TableRow className="bg-muted/40 hover:bg-muted/40 border-b">
+                  <TableHead className="w-10 text-center px-2">✓</TableHead>
+                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground py-3">Order</TableHead>
+                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-24">Date</TableHead>
+                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[18%]">Customer</TableHead>
+                  <TableHead className="hidden lg:table-cell text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-20">Type</TableHead>
+                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-24">Branch</TableHead>
+                  <TableHead className="text-right text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-28">Value</TableHead>
+                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[132px]">Status</TableHead>
+                  <TableHead className="w-12 px-0"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
-                {!isLoading && pageRows.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No orders found</TableCell></TableRow>}
-                {pageRows.map((o: any, idx: number) => {
+                {isLoading && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-10">Loading…</TableCell></TableRow>}
+                {!isLoading && pageRows.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-10">No orders found</TableCell></TableRow>}
+                {pageRows.map((o: any) => {
                   const editable = canEditOrder(o);
                   const canVerifyRow = canVerifyOrder(o);
                   const verified = !!o.call_center_verified;
                   return (
-                    <TableRow key={o.id} className={cn("transition-colors", idx % 2 === 1 && "bg-muted/20", verified && "bg-green-50/60 dark:bg-green-500/5", "hover:bg-accent/40")}>
-                      <TableCell className="text-center px-1" onClick={(e) => e.stopPropagation()}>
+                    <TableRow key={o.id} className={cn("group border-b border-border/50 transition-colors", verified && "bg-green-50/40 dark:bg-green-500/[0.04]", "hover:bg-accent/50")}>
+                      <TableCell className="text-center px-2 align-middle" onClick={(e) => e.stopPropagation()}>
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </TableCell>
-                      <TableCell className="font-mono font-semibold overflow-hidden">
-                        <div className="truncate">{formatOrderNo(o.team, o.display_no)}</div>
-                        <div className="mt-1 flex min-w-0 flex-wrap gap-x-1 gap-y-0.5 text-[10px] font-sans font-normal text-muted-foreground">
+                      <TableCell className="py-3.5 align-middle overflow-hidden">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-mono font-semibold text-sm shrink-0">{formatOrderNo(o.team, o.display_no)}</span>
                           <TeamBadge team={o.team} />
-                          <span className="sm:hidden truncate max-w-full">{o.customer_name || "—"}</span>
-                          <span className="md:hidden">{o.order_date}</span>
-                          {o.branch_no && <span className="md:hidden">· {o.branch_no}{o.city ? ` — ${o.city}` : ""}</span>}
-                          {o.delivery_type && <span>· {o.delivery_type}</span>}
-                          {o.invoice_no && <span>· Inv {o.invoice_no}</span>}
-                          {o.agent_name && <span>· {o.agent_name}</span>}
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0 truncate">
+                            {o.delivery_type && <span className="truncate">{o.delivery_type}</span>}
+                            {o.agent_name && <><span className="text-border">·</span><span className="truncate">{o.agent_name}</span></>}
+                            {o.invoice_no && <><span className="text-border">·</span><span className="truncate font-mono">Inv {o.invoice_no}</span></>}
+                          </div>
                         </div>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell whitespace-nowrap text-xs">{o.order_date}</TableCell>
-                      <TableCell className="hidden sm:table-cell truncate overflow-hidden">{o.customer_name || "—"}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs truncate">{o.order_type}</TableCell>
-                      <TableCell className="hidden md:table-cell font-mono text-xs truncate">{o.branch_no ?? "—"}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap text-[11px] sm:text-xs font-mono">{fmtSAR(o.invoice_value)}</TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()} className="px-1 sm:px-2">
+                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground align-middle">{o.order_date}</TableCell>
+                      <TableCell className="text-sm align-middle truncate overflow-hidden">{o.customer_name || <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-sm align-middle truncate">{o.order_type}</TableCell>
+                      <TableCell className="font-mono text-xs align-middle truncate">
+                        <div className="truncate">{o.branch_no ?? "—"}</div>
+                        {o.city && <div className="text-[10px] text-muted-foreground truncate">{o.city}</div>}
+                      </TableCell>
+                      <TableCell className="text-right whitespace-nowrap text-sm font-mono font-medium align-middle">{fmtSAR(o.invoice_value)}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()} className="px-2 align-middle">
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
-                            <SelectTrigger className={`h-8 w-full border px-1.5 sm:px-2 text-[11px] sm:text-xs ${STATUS_STYLES[o.status] ?? ""}`}><SelectValue /></SelectTrigger>
+                            <SelectTrigger className={cn("h-8 w-full border px-2.5 text-xs font-medium rounded-md", STATUS_STYLES[o.status] ?? "")}><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
@@ -324,16 +327,10 @@ function OrdersList() {
                           <StatusBadge s={o.status} />
                         )}
                       </TableCell>
-                      <TableCell className="px-0 text-center">
-                        {editable ? (
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="Edit order">
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        ) : (
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label="View order">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        )}
+                      <TableCell className="px-0 text-center align-middle">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-60 group-hover:opacity-100" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label={editable ? "Edit order" : "View order"}>
+                          {editable ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -341,6 +338,58 @@ function OrdersList() {
               </TableBody>
             </Table>
           </div>
+
+          {/* Mobile card list */}
+          <div className="md:hidden divide-y">
+            {isLoading && <div className="text-center text-muted-foreground py-10 text-sm">Loading…</div>}
+            {!isLoading && pageRows.length === 0 && <div className="text-center text-muted-foreground py-10 text-sm">No orders found</div>}
+            {pageRows.map((o: any) => {
+              const editable = canEditOrder(o);
+              const canVerifyRow = canVerifyOrder(o);
+              const verified = !!o.call_center_verified;
+              return (
+                <div key={o.id} className={cn("p-3.5 transition-colors active:bg-accent/40", verified && "bg-green-50/40 dark:bg-green-500/[0.04]")}>
+                  <div className="flex items-start gap-3">
+                    <div onClick={(e) => e.stopPropagation()} className="pt-1">
+                      <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
+                    </div>
+                    <div className="min-w-0 flex-1" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-semibold text-sm">{formatOrderNo(o.team, o.display_no)}</span>
+                        <TeamBadge team={o.team} />
+                        <span className="text-xs text-muted-foreground ml-auto">{o.order_date}</span>
+                      </div>
+                      <div className="mt-1.5 text-sm truncate">{o.customer_name || <span className="text-muted-foreground">No customer</span>}</div>
+                      <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+                        <span className="font-mono">{o.branch_no ?? "—"}</span>
+                        {o.city && <><span className="text-border">·</span><span>{o.city}</span></>}
+                        <span className="text-border">·</span><span>{o.order_type}</span>
+                        {o.delivery_type && <><span className="text-border">·</span><span>{o.delivery_type}</span></>}
+                        {o.agent_name && <><span className="text-border">·</span><span className="truncate">{o.agent_name}</span></>}
+                      </div>
+                      {o.invoice_no && <div className="mt-0.5 text-xs text-muted-foreground font-mono">Inv {o.invoice_no}</div>}
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <div className="text-sm font-mono font-semibold whitespace-nowrap">{fmtSAR(o.invoice_value)}</div>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        {editable ? (
+                          <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
+                            <SelectTrigger className={cn("h-7 border px-2 text-[11px] font-medium rounded-md w-[112px]", STATUS_STYLES[o.status] ?? "")}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <StatusBadge s={o.status} />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
 
 
           {rows.length > PAGE_SIZE && (
@@ -367,15 +416,15 @@ function OrdersList() {
 function TeamBadge({ team }: { team: string }) {
   const isTs = team === "telesales";
   const cls = isTs
-    ? "bg-chart-3/15 text-chart-3 border-chart-3/30"
-    : "bg-primary/15 text-primary border-primary/30";
+    ? "bg-chart-3/10 text-chart-3 border-chart-3/25"
+    : "bg-primary/10 text-primary border-primary/25";
   const full = isTs ? "Telesales" : "Customer Care";
   const abbr = isTs ? "TS" : "CC";
   return (
     <span
       title={full}
       className={cn(
-        "inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] sm:text-xs font-medium",
+        "inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none shrink-0",
         cls,
       )}
     >
@@ -384,6 +433,7 @@ function TeamBadge({ team }: { team: string }) {
     </span>
   );
 }
+
 
 function StatusBadge({ s }: { s: string }) {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[s] ?? "bg-muted"}`}>{s}</span>;
