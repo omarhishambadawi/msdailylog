@@ -334,7 +334,7 @@ function OrdersList() {
                       key={o.id}
                       className={cn("group transition-colors hover:bg-accent/50", rowBg)}
                     >
-                      <td className={cn("text-center px-3 relative sticky left-0 z-10 group-hover:bg-accent/50", stickyBg, cellCls)} onClick={(e) => e.stopPropagation()}>
+                      <td className={cn("text-center px-3 relative sticky left-0 z-10 group-hover:bg-accent", stickyBg, cellCls)} onClick={(e) => e.stopPropagation()}>
                         {verified && <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />}
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </td>
