@@ -39,20 +39,23 @@ export async function resolveExtensionGroups(force = false): Promise<ResolvedGro
   const now = Date.now();
   if (!force && cache && now - cache.at < TTL_MS) return cache.data;
 
-  // Cloud Edition uses /extensiongroup/list; Appliance uses /extensiongroup/search.
-  // Try list first, fall back to search for on-prem PBXs.
-  let { httpStatus, json, body } = await yeastarFetch<any>(
+  // Cloud Edition uses /extension_group/list (underscore); Appliance uses /extensiongroup/search.
+  // Try Cloud first, then legacy Appliance path.
+  const candidates = [
+    "/openapi/v1.0/extension_group/list",
+    "/openapi/v1.0/extension_group/search",
     "/openapi/v1.0/extensiongroup/list",
-    { page: 1, page_size: 200, sort_by: "name", order_by: "asc" },
-  );
-  if (httpStatus === 200 && json?.errcode === 10001) {
-    ({ httpStatus, json, body } = await yeastarFetch<any>(
-      "/openapi/v1.0/extensiongroup/search",
-      { page: 1, page_size: 200, sort_by: "name", order_by: "asc" },
-    ));
+    "/openapi/v1.0/extensiongroup/search",
+  ];
+  let httpStatus = 0, json: any = null, body = "", lastPath = candidates[0];
+  for (const path of candidates) {
+    ({ httpStatus, json, body } = await yeastarFetch<any>(path, { page: 1, page_size: 200, sort_by: "name", order_by: "asc" }));
+    lastPath = path;
+    if (httpStatus === 200 && json?.errcode === 0) break;
+    if (json?.errcode !== 10001) break; // only fall through on "INTERFACE NOT EXISTED"
   }
   if (httpStatus !== 200 || !json || json.errcode !== 0) {
-    throw new Error(`extensiongroup/list failed: HTTP ${httpStatus} errcode=${json?.errcode ?? "n/a"} body=${body.slice(0, 200)}`);
+    throw new Error(`${lastPath} failed: HTTP ${httpStatus} errcode=${json?.errcode ?? "n/a"} body=${body.slice(0, 200)}`);
   }
   const list: ExtensionGroup[] = json.extension_group_list ?? json.data ?? json.list ?? [];
   const data: ResolvedGroups = {
