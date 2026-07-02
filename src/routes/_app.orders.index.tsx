@@ -336,7 +336,7 @@ function OrdersList() {
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </td>
                       <td className={cn("px-4", cellCls)}>
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex flex-col items-start gap-1 min-w-0">
                           <span className="font-mono font-semibold text-[13px] tracking-tight whitespace-nowrap text-foreground">{formatOrderNo(o.team, o.display_no)}</span>
                           <TeamBadge team={o.team} />
                         </div>
@@ -400,9 +400,11 @@ function OrdersList() {
                       <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                     </div>
                     <div className="min-w-0 flex-1" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })}>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono font-semibold text-sm whitespace-nowrap">{formatOrderNo(o.team, o.display_no)}</span>
-                        <TeamBadge team={o.team} />
+                      <div className="flex items-start gap-2 flex-wrap">
+                        <div className="flex flex-col items-start gap-1 min-w-0">
+                          <span className="font-mono font-semibold text-sm whitespace-nowrap">{formatOrderNo(o.team, o.display_no)}</span>
+                          <TeamBadge team={o.team} />
+                        </div>
                         <span className="text-xs text-muted-foreground ml-auto">{o.order_date}</span>
                       </div>
                       <div className="mt-2 text-sm font-medium truncate">{o.customer_name || <span className="text-muted-foreground font-normal">No customer</span>}</div>
