@@ -59,6 +59,32 @@ const WORKER_ID = (typeof crypto !== "undefined" && "randomUUID" in crypto
   ? crypto.randomUUID()
   : `w-${Math.random().toString(36).slice(2)}-${Date.now()}`);
 
+// Per-call trace flags, reset at the entry of getAccessTokenInfo and read by
+// the diagnostic route after the call completes.
+interface AuthTrace { refreshTokenCalled: boolean; leaseAcquired: boolean; }
+let lastAuthTrace: AuthTrace = { refreshTokenCalled: false, leaseAcquired: false };
+export function getWorkerId(): string { return WORKER_ID; }
+export function getLastAuthTrace(): AuthTrace { return { ...lastAuthTrace }; }
+export function getCachedCredFingerprint(): string { return credFingerprint(); }
+export function getAuthBlockedUntilIso(): string | null {
+  return authBlockedUntil > Date.now() ? new Date(authBlockedUntil).toISOString() : null;
+}
+export async function readPersistentTokenSnapshot() {
+  const row = await loadPersistentToken();
+  if (!row) return null;
+  const expiresAtMs = Date.parse(row.expires_at);
+  return {
+    hasAccessToken: !!row.access_token,
+    hasRefreshToken: !!row.refresh_token,
+    expiresAt: row.expires_at,
+    refreshExpiresAt: row.refresh_expires_at,
+    credFingerprint: row.cred_fingerprint,
+    authBlockedUntil: row.auth_blocked_until,
+    ageSec: Math.max(0, Math.floor((Date.now() - (expiresAtMs - 30 * 60_000)) / 1000)),
+    expiresInSec: Math.floor((expiresAtMs - Date.now()) / 1000),
+  };
+}
+
 function credFingerprint(): string {
   // Short, non-reversible fingerprint of the current credentials so that
   // rotating YEASTAR_CLIENT_SECRET automatically invalidates any cached token
