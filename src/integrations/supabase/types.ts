@@ -309,6 +309,8 @@ export type Database = {
         Row: {
           access_token: string
           auth_blocked_until: string | null
+          auth_lock_expires_at: string | null
+          auth_lock_holder: string | null
           cred_fingerprint: string
           expires_at: string
           id: string
@@ -320,6 +322,8 @@ export type Database = {
         Insert: {
           access_token: string
           auth_blocked_until?: string | null
+          auth_lock_expires_at?: string | null
+          auth_lock_holder?: string | null
           cred_fingerprint: string
           expires_at: string
           id?: string
@@ -331,6 +335,8 @@ export type Database = {
         Update: {
           access_token?: string
           auth_blocked_until?: string | null
+          auth_lock_expires_at?: string | null
+          auth_lock_holder?: string | null
           cred_fingerprint?: string
           expires_at?: string
           id?: string
@@ -369,6 +375,22 @@ export type Database = {
           _user_ids: string[]
         }
         Returns: undefined
+      }
+      yeastar_release_auth_lease: {
+        Args: { _holder: string }
+        Returns: undefined
+      }
+      yeastar_try_claim_auth_lease: {
+        Args: { _holder: string; _lease_sec?: number }
+        Returns: {
+          access_token: string
+          auth_blocked_until: string
+          cred_fingerprint: string
+          expires_at: string
+          lease_acquired: boolean
+          refresh_expires_at: string
+          refresh_token: string
+        }[]
       }
     }
     Enums: {
