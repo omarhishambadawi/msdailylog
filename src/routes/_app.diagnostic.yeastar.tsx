@@ -133,10 +133,6 @@ function YeastarDiagnosticPage() {
             </Button>
           </div>
           {expireMsg && <div className="text-xs text-muted-foreground">{expireMsg}</div>}
-          <div className="hidden">{/* keep JSX balanced below */}</div>
-          <div className="sr-only">end-controls</div>
-          <div className="hidden">
-          </div>
           {rows.length > 0 && (
             <>
               <div className="text-sm">
