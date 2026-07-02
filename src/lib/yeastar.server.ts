@@ -91,11 +91,11 @@ function tokenStatus(): string {
 }
 
 function isAccessTokenValid(): boolean {
-  return !!cachedToken?.accessToken && cachedToken.expiresAt - 30_000 > Date.now();
+  return !!cachedToken?.accessToken && cachedToken.expiresAt - REFRESH_SKEW_MS > Date.now();
 }
 
 function isRefreshTokenValid(): boolean {
-  return !!cachedToken?.refreshToken && (!cachedToken.refreshExpiresAt || cachedToken.refreshExpiresAt - 30_000 > Date.now());
+  return !!cachedToken?.refreshToken && (!cachedToken.refreshExpiresAt || cachedToken.refreshExpiresAt - REFRESH_SKEW_MS > Date.now());
 }
 
 function remainingAccessMs(): number {
@@ -132,10 +132,122 @@ function parseExpiryMs(json: any, absoluteKeys: string[], ttlKeys: string[], fal
 function cacheAuthFailure(diag: YeastarDiagnostic): void {
   lastAuthFailure = diag;
   if (diag.category === "max_limitation" || diag.errcode === 60002) {
-    authBlockedUntil = Date.now() + 30 * 60_000;
-    console.error("[yeastar auth] errcode 60002 received; blocking further /get_token attempts for 30 minutes");
+    consecutiveAuthFailures += 1;
+    const backoff = Math.min(MAX_AUTH_BLOCK_MS, MIN_AUTH_BLOCK_MS * Math.pow(2, consecutiveAuthFailures - 1));
+    authBlockedUntil = Date.now() + backoff;
+    console.error(`[yeastar auth] errcode 60002 (attempt ${consecutiveAuthFailures}); blocking /get_token for ${Math.round(backoff / 60_000)} min. Existing cached tokens (if any) will still be reused.`);
+    void persistBlock(new Date(authBlockedUntil), diag.message).catch(() => { /* best-effort */ });
   }
 }
+
+// -------- Persistent (Supabase) token cache --------
+//
+// Level-2 cache: survives Worker cold starts and is shared across all
+// Cloudflare isolates. Level-1 is `cachedToken` above.
+//
+// A short-lived lease column (auth_lock_holder / auth_lock_expires_at) is used
+// as a distributed lock so that only one Worker at a time performs /get_token
+// or /refresh_token, preventing thundering-herd auth on cold deploys.
+
+interface PersistentTokenRow {
+  access_token: string;
+  refresh_token: string | null;
+  expires_at: string;
+  refresh_expires_at: string | null;
+  cred_fingerprint: string;
+  auth_blocked_until: string | null;
+}
+
+async function loadPersistentToken(): Promise<PersistentTokenRow | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("yeastar_token_cache")
+      .select("access_token, refresh_token, expires_at, refresh_expires_at, cred_fingerprint, auth_blocked_until")
+      .eq("id", "singleton")
+      .maybeSingle();
+    if (error) { console.warn("[yeastar persist] load failed:", error.message); return null; }
+    return (data as PersistentTokenRow) ?? null;
+  } catch (err) {
+    console.warn("[yeastar persist] load exception:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+async function persistToken(state: TokenState, fingerprint: string): Promise<void> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("yeastar_token_cache")
+      .upsert({
+        id: "singleton",
+        access_token: state.accessToken,
+        refresh_token: state.refreshToken ?? null,
+        expires_at: new Date(state.expiresAt).toISOString(),
+        refresh_expires_at: state.refreshExpiresAt ? new Date(state.refreshExpiresAt).toISOString() : null,
+        cred_fingerprint: fingerprint,
+        auth_blocked_until: null,
+        last_error: null,
+      });
+    if (error) console.warn("[yeastar persist] write failed:", error.message);
+    else console.log("[yeastar persist] token written to Supabase (expires in " + Math.floor((state.expiresAt - Date.now()) / 1000) + "s)");
+  } catch (err) {
+    console.warn("[yeastar persist] write exception:", err instanceof Error ? err.message : err);
+  }
+}
+
+async function persistBlock(blockedUntil: Date, errorMessage: string): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("yeastar_token_cache")
+      .update({ auth_blocked_until: blockedUntil.toISOString(), last_error: errorMessage })
+      .eq("id", "singleton");
+  } catch { /* best-effort */ }
+}
+
+/**
+ * Try to acquire the distributed auth lease. Returns the persistent token
+ * snapshot when the lease is granted (so we can double-check whether another
+ * Worker already refreshed the token while we were waiting). Returns null if
+ * another Worker currently holds the lease.
+ */
+async function tryClaimAuthLease(): Promise<PersistentTokenRow | null> {
+  try {
+    const { data, error } = await supabaseAdmin.rpc("yeastar_try_claim_auth_lease", {
+      _holder: WORKER_ID,
+      _lease_sec: AUTH_LEASE_SEC,
+    });
+    if (error) { console.warn("[yeastar lease] claim failed:", error.message); return null; }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.lease_acquired) return null;
+    return row as PersistentTokenRow;
+  } catch (err) {
+    console.warn("[yeastar lease] claim exception:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+async function releaseAuthLease(): Promise<void> {
+  try {
+    await supabaseAdmin.rpc("yeastar_release_auth_lease", { _holder: WORKER_ID });
+  } catch { /* best-effort */ }
+}
+
+function hydrateFromPersistent(row: PersistentTokenRow, fingerprint: string): boolean {
+  if (row.cred_fingerprint !== fingerprint) return false;
+  if (!row.access_token) return false;
+  cachedToken = {
+    accessToken: row.access_token,
+    refreshToken: row.refresh_token ?? undefined,
+    expiresAt: Date.parse(row.expires_at),
+    refreshExpiresAt: row.refresh_expires_at ? Date.parse(row.refresh_expires_at) : undefined,
+  };
+  if (row.auth_blocked_until) {
+    const blockedUntilMs = Date.parse(row.auth_blocked_until);
+    if (blockedUntilMs > Date.now()) authBlockedUntil = blockedUntilMs;
+  }
+  return true;
+}
+
+
 
 function blockedAuthDiagnostic(): YeastarDiagnostic | null {
   if (!lastAuthFailure || Date.now() >= authBlockedUntil) return null;
