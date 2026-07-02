@@ -64,7 +64,7 @@ export const adminSetActive = createServerFn({ method: "POST" })
 
 export const adminSetRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; role: "admin" | "customer_care" | "telesales" | "auditor" }) =>
+  .inputValidator((d: { userId: string; role: "owner" | "admin" | "customer_care" | "telesales" | "auditor" }) =>
     z.object({ userId: z.string().uuid(), role: RoleEnum }).parse(d),
   )
   .handler(async ({ data, context }) => {
