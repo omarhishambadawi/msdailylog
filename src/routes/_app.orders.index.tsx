@@ -404,9 +404,10 @@ function OrdersList() {
                     <div className="min-w-0 flex-1" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })}>
                       <div className="flex items-start gap-2 flex-wrap">
                         <div className="flex flex-col items-start gap-1 min-w-0">
-                          <span className="font-mono font-semibold text-sm whitespace-nowrap">{formatOrderNo(o.team, o.display_no)}</span>
+                          <CopyableOrderNo value={formatOrderNo(o.team, o.display_no)} alwaysShowIcon />
                           <TeamBadge team={o.team} />
                         </div>
+
                         <span className="text-xs text-muted-foreground ml-auto">{o.order_date}</span>
                       </div>
                       <div className="mt-2 text-sm font-medium truncate">{o.customer_name || <span className="text-muted-foreground font-normal">No customer</span>}</div>
