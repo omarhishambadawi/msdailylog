@@ -14,9 +14,20 @@
 interface TokenState {
   token: string;
   expiresAt: number; // epoch ms
+  refreshToken?: string;
+  refreshExpiresAt?: number; // epoch ms
 }
 
+// Module-level cache; shared across requests in the same worker isolate.
 let cachedToken: TokenState | null = null;
+let inflightAuth: Promise<YeastarDiagnostic> | null = null;
+
+function tokenStatus(): string {
+  if (!cachedToken) return "none";
+  const remainingMs = cachedToken.expiresAt - Date.now();
+  const valid = remainingMs > 30_000;
+  return `${valid ? "valid" : "expired"} (remaining=${Math.max(0, Math.floor(remainingMs / 1000))}s, refresh=${cachedToken.refreshToken ? "yes" : "no"})`;
+}
 
 const FETCH_TIMEOUT_MS = 12_000;
 const MAX_RETRIES = 3;
