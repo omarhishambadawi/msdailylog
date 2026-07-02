@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
 
-export const Route = createFileRoute("/_app/diagnostic/yeastar")({
+export const Route = createFileRoute("/_app/admin/yeastar")({
   head: () => ({
     meta: [
       { title: "Yeastar Diagnostic — Phase 1 / 1.5" },
