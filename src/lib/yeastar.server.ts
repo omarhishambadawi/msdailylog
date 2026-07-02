@@ -753,20 +753,35 @@ export interface AgentDirectoryEntry {
 export function aggregateCdr(
   records: YeastarCdrRecord[],
   agents: AgentDirectoryEntry[],
-  filter?: { team?: "customer_care" | "telesales"; extension?: string },
+  filter?: {
+    team?: "customer_care" | "telesales";
+    extension?: string;
+    /** normalized list of extensions permitted to appear in the analytics */
+    allowedExtensions?: string[];
+    /** number -> team, used when the agent directory has no matching entry */
+    extensionTeamMap?: Record<string, "customer_care" | "telesales">;
+  },
 ): CallStatsSummary {
-  const dir = new Map(agents.map((a) => [String(a.extension), a]));
+  const dir = new Map(agents.map((a) => [normalizeExt(a.extension), a]));
+  const allowed = filter?.allowedExtensions
+    ? new Set(filter.allowedExtensions.map((e) => normalizeExt(e)))
+    : null;
+  const teamMap = new Map(
+    Object.entries(filter?.extensionTeamMap ?? {}).map(([k, v]) => [normalizeExt(k), v]),
+  );
 
   const byAgent = new Map<string, AgentCallStats>();
   let total = 0, answered = 0, missed = 0, inbound = 0, outbound = 0;
   let cc = 0, ts = 0;
 
   for (const r of records) {
-    const ext = String(r.extension ?? r.extension_number ?? r.src_number ?? r.dst_number ?? "").trim();
+    const ext = normalizeExt(r.extension ?? r.extension_number ?? r.src_number ?? r.dst_number ?? "");
     if (!ext) continue;
+    if (allowed && !allowed.has(ext)) continue;
     const meta = dir.get(ext);
-    if (filter?.team && meta?.team !== filter.team) continue;
-    if (filter?.extension && ext !== filter.extension) continue;
+    const team = meta?.team ?? teamMap.get(ext) ?? null;
+    if (filter?.team && team !== filter.team) continue;
+    if (filter?.extension && ext !== normalizeExt(filter.extension)) continue;
 
     total += 1;
     const isAnswered = r.status ? ANSWERED_STATUSES.has(r.status) : (r.talk_duration ?? 0) > 0;
@@ -775,8 +790,8 @@ export function aggregateCdr(
     if (isOutbound) outbound += 1;
     else inbound += 1;
 
-    if (meta?.team === "customer_care") cc += 1;
-    else if (meta?.team === "telesales") ts += 1;
+    if (team === "customer_care") cc += 1;
+    else if (team === "telesales") ts += 1;
 
     const row = byAgent.get(ext) ?? {
       extension: ext,
