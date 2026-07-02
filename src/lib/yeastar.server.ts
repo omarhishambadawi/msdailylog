@@ -11,6 +11,8 @@
  * on every dashboard load. Credentials are read from environment variables only.
  */
 
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+
 interface TokenState {
   accessToken: string;
   refreshToken?: string;
@@ -18,7 +20,11 @@ interface TokenState {
   refreshExpiresAt?: number; // epoch ms
 }
 
-type TokenSource = "Cached Access Token" | "Refreshed Token" | "New Authentication";
+type TokenSource =
+  | "Cached Access Token"
+  | "Persistent Cache"
+  | "Refreshed Token"
+  | "New Authentication";
 
 interface TokenResult {
   accessToken: string;
@@ -27,12 +33,31 @@ interface TokenResult {
   getTokenCalled: boolean;
 }
 
-// Module-level cache; shared across requests in the same worker isolate.
+// Refresh the access token when less than 5 minutes remain, rather than
+// waiting until the final seconds. Gives every request plenty of headroom.
+const REFRESH_SKEW_MS = 5 * 60_000;
+
+// Minimum backoff after an errcode 60002 auth failure. Doubles on repeat
+// failures up to `MAX_AUTH_BLOCK_MS`.
+const MIN_AUTH_BLOCK_MS = 5 * 60_000;
+const MAX_AUTH_BLOCK_MS = 30 * 60_000;
+
+// How long a single Worker may hold the distributed auth lease. It only needs
+// to cover one /get_token round-trip; expiry auto-releases it on crash.
+const AUTH_LEASE_SEC = 15;
+
+// Level-1 (in-isolate memory) cache. Level-2 is the yeastar_token_cache table.
 let cachedToken: TokenState | null = null;
 let cachedCredFingerprint: string | null = null;
 let inflightAuth: Promise<TokenResult> | null = null;
 let authBlockedUntil = 0;
 let lastAuthFailure: YeastarDiagnostic | null = null;
+let consecutiveAuthFailures = 0;
+
+// Unique identifier per Worker isolate — used as the lease holder id.
+const WORKER_ID = (typeof crypto !== "undefined" && "randomUUID" in crypto
+  ? crypto.randomUUID()
+  : `w-${Math.random().toString(36).slice(2)}-${Date.now()}`);
 
 function credFingerprint(): string {
   // Short, non-reversible fingerprint of the current credentials so that
@@ -43,6 +68,7 @@ function credFingerprint(): string {
   for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
   return String(h);
 }
+
 
 function ensureCredsFresh(): void {
   const fp = credFingerprint();
