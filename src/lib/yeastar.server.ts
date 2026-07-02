@@ -729,6 +729,35 @@ async function getAccessTokenInfo(): Promise<TokenResult> {
   }
 }
 
+/**
+ * Phase 1.5 diagnostic: run one authentication pass and expose full trace.
+ */
+export async function collectAuthDiagnostic() {
+  const startedAt = Date.now();
+  let auth: TokenResult | null = null;
+  let error: string | null = null;
+  try {
+    auth = await getAccessTokenInfo();
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+  const trace = getLastAuthTrace();
+  const snap = await readPersistentTokenSnapshot();
+  return {
+    workerId: WORKER_ID,
+    authSource: auth?.source ?? "Blocked",
+    getTokenCalled: auth?.getTokenCalled ?? false,
+    refreshTokenCalled: trace.refreshTokenCalled,
+    leaseAcquired: trace.leaseAcquired,
+    tokenRemainingSec: auth ? Math.floor(auth.remainingMs / 1000) : 0,
+    credFingerprint: credFingerprint(),
+    authBlockedUntil: getAuthBlockedUntilIso(),
+    persistent: snap,
+    elapsedMs: Date.now() - startedAt,
+    error,
+  };
+}
+
 
 /**
  * Diagnostic entry point used by the UI and the CDR fetcher.
