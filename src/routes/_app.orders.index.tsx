@@ -399,7 +399,7 @@ function OrdersList() {
                     </div>
                     <div className="min-w-0 flex-1" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })}>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono font-semibold text-sm">{formatOrderNo(o.team, o.display_no)}</span>
+                        <span className="font-mono font-semibold text-sm whitespace-nowrap">{formatOrderNo(o.team, o.display_no)}</span>
                         <TeamBadge team={o.team} />
                         <span className="text-xs text-muted-foreground ml-auto">{o.order_date}</span>
                       </div>
