@@ -12,16 +12,25 @@
  */
 
 interface TokenState {
-  token: string;
-  expiresAt: number; // epoch ms
+  accessToken: string;
   refreshToken?: string;
+  expiresAt: number; // epoch ms
   refreshExpiresAt?: number; // epoch ms
+}
+
+type TokenSource = "Cached Access Token" | "Refreshed Token" | "New Authentication";
+
+interface TokenResult {
+  accessToken: string;
+  source: TokenSource;
+  remainingMs: number;
+  getTokenCalled: boolean;
 }
 
 // Module-level cache; shared across requests in the same worker isolate.
 let cachedToken: TokenState | null = null;
 let cachedCredFingerprint: string | null = null;
-let inflightAuth: Promise<YeastarDiagnostic> | null = null;
+let inflightAuth: Promise<TokenResult> | null = null;
 
 function credFingerprint(): string {
   // Short, non-reversible fingerprint of the current credentials so that
@@ -47,7 +56,26 @@ function tokenStatus(): string {
   if (!cachedToken) return "none";
   const remainingMs = cachedToken.expiresAt - Date.now();
   const valid = remainingMs > 30_000;
-  return `${valid ? "valid" : "expired"} (remaining=${Math.max(0, Math.floor(remainingMs / 1000))}s, refresh=${cachedToken.refreshToken ? "yes" : "no"})`;
+  const refreshRemainingMs = cachedToken.refreshExpiresAt ? cachedToken.refreshExpiresAt - Date.now() : 0;
+  return `${valid ? "valid" : "expired"} (remaining=${Math.max(0, Math.floor(remainingMs / 1000))}s, refresh=${cachedToken.refreshToken ? `${Math.max(0, Math.floor(refreshRemainingMs / 1000))}s` : "none"})`;
+}
+
+function isAccessTokenValid(): boolean {
+  return !!cachedToken?.accessToken && cachedToken.expiresAt - 30_000 > Date.now();
+}
+
+function isRefreshTokenValid(): boolean {
+  return !!cachedToken?.refreshToken && (!cachedToken.refreshExpiresAt || cachedToken.refreshExpiresAt - 30_000 > Date.now());
+}
+
+function remainingAccessMs(): number {
+  return Math.max(0, (cachedToken?.expiresAt ?? 0) - Date.now());
+}
+
+function logTokenSource(source: TokenSource, getTokenCalled: boolean): void {
+  console.log(
+    `[yeastar auth] token source=${source}; remaining=${Math.floor(remainingAccessMs() / 1000)}s; get_token_called=${getTokenCalled}; cache=${tokenStatus()}`,
+  );
 }
 
 const FETCH_TIMEOUT_MS = 12_000;
@@ -175,7 +203,7 @@ function classifyNetworkError(err: unknown): { category: YeastarDiagnostic["cate
  * otherwise. The caller decides whether to re-auth.
  */
 async function probeWithCachedToken(env: { base: string }, endpoint: string): Promise<YeastarDiagnostic> {
-  const token = cachedToken!.token;
+  const token = cachedToken!.accessToken;
   const probeUrl = `${env.base}${PROBE_ENDPOINT}?access_token=${encodeURIComponent(token)}&page=1&page_size=1&sort_by=id&order_by=asc`;
   let probeStatus: number | undefined;
   let probeBody = "";
@@ -248,9 +276,9 @@ function mapAuthErrcode(env: { base: string }, endpoint: string, httpStatus: num
  */
 async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnostic | null> {
   if (!cachedToken?.refreshToken) return null;
-  if (cachedToken.refreshExpiresAt && cachedToken.refreshExpiresAt < Date.now()) return null;
+  if (!isRefreshTokenValid()) return null;
   const endpoint = `${env.base}/openapi/v1.0/refresh_token`;
-  console.log(`[yeastar auth] refreshing access token via ${endpoint}`);
+  console.log(`[yeastar auth] POST /refresh_token (no new PBX session; cache=${tokenStatus()})`);
   let res: Response;
   try {
     res = await timedFetch(endpoint, {
@@ -267,18 +295,19 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
   let json: any = null;
   try { json = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON */ }
   if (!res.ok || json?.errcode !== 0 || !json?.access_token) {
-    console.warn(`[yeastar auth] refresh failed HTTP ${res.status} errcode=${json?.errcode} errmsg=${json?.errmsg}`);
-    return null;
+    const diag = mapAuthErrcode(env, endpoint, res.status, bodyText, json);
+    console.warn(`[yeastar auth] refresh failed HTTP ${res.status} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"}; no /get_token fallback while refresh token is unexpired`);
+    return diag;
   }
   const ttlSec = Number(json.access_token_expire_time ?? json.expire_time ?? 1800);
   const refreshTtlSec = Number(json.refresh_token_expire_time ?? 0);
   cachedToken = {
-    token: json.access_token,
-    expiresAt: Date.now() + ttlSec * 1000,
+    accessToken: json.access_token,
     refreshToken: json.refresh_token ?? cachedToken.refreshToken,
+    expiresAt: Date.now() + ttlSec * 1000,
     refreshExpiresAt: refreshTtlSec > 0 ? Date.now() + refreshTtlSec * 1000 : cachedToken.refreshExpiresAt,
   };
-  console.log(`[yeastar auth] refresh succeeded; new token TTL ${ttlSec}s`);
+  logTokenSource("Refreshed Token", false);
   return {
     ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
     httpStatus: 200, errcode: 0,
@@ -287,62 +316,139 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
 }
 
 /**
- * Request a brand-new access token. Deduplicated: concurrent callers share
- * a single in-flight request so a dashboard load with N parallel widgets
- * cannot burn N sessions.
+ * Request a brand-new access token. This is only called by the shared
+ * authentication lock after both cached access and refresh tokens are unusable.
  */
 async function requestNewToken(env: { base: string; id: string; secret: string }): Promise<YeastarDiagnostic> {
+  const endpoint = `${env.base}/openapi/v1.0/get_token`;
+  console.log(`[yeastar auth] POST /get_token (NEW PBX SESSION; cache=${tokenStatus()})`);
+  let res: Response;
+  try {
+    res = await timedFetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": USER_AGENT },
+      body: JSON.stringify({ username: env.id, password: env.secret }),
+    });
+  } catch (err) {
+    const { category, message } = classifyNetworkError(err);
+    console.error("[yeastar auth] get_token transport failure:", category, message);
+    return { ok: false, category, baseUrl: env.base, endpoint, userAgent: USER_AGENT, message };
+  }
+  const bodyText = await res.text().catch(() => "");
+  const httpStatus = res.status;
+  let json: any = null;
+  try { json = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON */ }
+  console.log(`[yeastar auth] get_token HTTP ${httpStatus} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"}`);
+  if (httpStatus === 404) {
+    return { ok: false, category: "invalid_endpoint", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      httpStatus, responseBody: bodyText,
+      message: "Endpoint not found (HTTP 404). Verify the Base URL." };
+  }
+  if (!res.ok) {
+    return { ok: false, category: "http_error", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      httpStatus, responseBody: bodyText, message: `PBX returned HTTP ${httpStatus}.` };
+  }
+  if (json && json.errcode === 0 && json.access_token) {
+    const ttlSec = Number(json.access_token_expire_time ?? json.expire_time ?? 1800);
+    const refreshTtlSec = Number(json.refresh_token_expire_time ?? 0);
+    cachedToken = {
+      accessToken: json.access_token,
+      refreshToken: json.refresh_token,
+      expiresAt: Date.now() + ttlSec * 1000,
+      refreshExpiresAt: refreshTtlSec > 0 ? Date.now() + refreshTtlSec * 1000 : undefined,
+    };
+    logTokenSource("New Authentication", true);
+    return {
+      ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      httpStatus, errcode: 0,
+      message: `Authentication successful. Token valid for ${ttlSec}s.`,
+    };
+  }
+  return mapAuthErrcode(env, endpoint, httpStatus, bodyText, json);
+}
+
+async function getAccessTokenInfo(): Promise<TokenResult> {
+  const env = requireEnv();
+  if (!env) throw new Error("Yeastar not configured");
+  ensureCredsFresh();
+
+  if (isAccessTokenValid()) {
+    logTokenSource("Cached Access Token", false);
+    return {
+      accessToken: cachedToken!.accessToken,
+      source: "Cached Access Token",
+      remainingMs: remainingAccessMs(),
+      getTokenCalled: false,
+    };
+  }
+
   if (inflightAuth) {
-    console.log("[yeastar auth] joining in-flight get_token request");
+    console.log(`[yeastar auth] joining shared in-flight authentication request (cache=${tokenStatus()})`);
     return inflightAuth;
   }
-  const endpoint = `${env.base}/openapi/v1.0/get_token`;
-  inflightAuth = (async (): Promise<YeastarDiagnostic> => {
-    console.log(`[yeastar auth] POST ${endpoint} (cache=${tokenStatus()})`);
-    let res: Response;
-    try {
-      res = await timedFetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": USER_AGENT },
-        body: JSON.stringify({ username: env.id, password: env.secret }),
-      });
-    } catch (err) {
-      const { category, message } = classifyNetworkError(err);
-      console.error("[yeastar auth] transport failure:", category, message);
-      return { ok: false, category, baseUrl: env.base, endpoint, userAgent: USER_AGENT, message };
-    }
-    const bodyText = await res.text().catch(() => "");
-    const httpStatus = res.status;
-    console.log(`[yeastar auth] HTTP ${httpStatus} body=${bodyText.slice(0, 300)}`);
-    if (httpStatus === 404) {
-      return { ok: false, category: "invalid_endpoint", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-        httpStatus, responseBody: bodyText,
-        message: "Endpoint not found (HTTP 404). Verify the Base URL." };
-    }
-    let json: any = null;
-    try { json = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON */ }
-    if (!res.ok) {
-      return { ok: false, category: "http_error", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-        httpStatus, responseBody: bodyText, message: `PBX returned HTTP ${httpStatus}.` };
-    }
-    if (json && json.errcode === 0 && json.access_token) {
-      const ttlSec = Number(json.access_token_expire_time ?? json.expire_time ?? 1800);
-      const refreshTtlSec = Number(json.refresh_token_expire_time ?? 0);
-      cachedToken = {
-        token: json.access_token,
-        expiresAt: Date.now() + ttlSec * 1000,
-        refreshToken: json.refresh_token,
-        refreshExpiresAt: refreshTtlSec > 0 ? Date.now() + refreshTtlSec * 1000 : undefined,
-      };
-      console.log(`[yeastar auth] new session acquired; TTL access=${ttlSec}s refresh=${refreshTtlSec}s`);
+
+  inflightAuth = (async (): Promise<TokenResult> => {
+    ensureCredsFresh();
+
+    // Re-check inside the single-flight lock: another caller may have refreshed
+    // while this request was waiting to enter the critical section.
+    if (isAccessTokenValid()) {
+      logTokenSource("Cached Access Token", false);
       return {
-        ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-        httpStatus, errcode: 0,
-        message: `Authentication successful. Token valid for ${ttlSec}s.`,
+        accessToken: cachedToken!.accessToken,
+        source: "Cached Access Token",
+        remainingMs: remainingAccessMs(),
+        getTokenCalled: false,
       };
     }
-    return mapAuthErrcode(env, endpoint, httpStatus, bodyText, json);
+
+    const hadRefreshToken = !!cachedToken?.refreshToken;
+    if (isRefreshTokenValid()) {
+      const refreshed = await refreshAccessToken(env);
+      if (refreshed?.ok && cachedToken?.accessToken) {
+        return {
+          accessToken: cachedToken.accessToken,
+          source: "Refreshed Token",
+          remainingMs: remainingAccessMs(),
+          getTokenCalled: false,
+        };
+      }
+
+      // A still-unexpired refresh token failed. Do NOT fall back to get_token;
+      // that would create a new PBX session and can trigger errcode 60002 loops.
+      const diag = refreshed ?? {
+        ok: false as const,
+        category: "authentication" as const,
+        baseUrl: env.base,
+        endpoint: `${env.base}/openapi/v1.0/refresh_token`,
+        userAgent: USER_AGENT,
+        message: "Refresh token request failed; refusing to open a new PBX session while the refresh token is still valid.",
+      };
+      const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(diag)}`);
+      err.diagnostic = diag;
+      throw err;
+    }
+
+    if (hadRefreshToken) {
+      console.log("[yeastar auth] refresh token expired/unusable; /get_token is now allowed");
+    }
+
+    const authDiag = await requestNewToken(env);
+    if (!authDiag.ok || !cachedToken?.accessToken) {
+      // Especially for errcode 60002, stop immediately. The shared lock ensures
+      // all concurrent callers receive the same failure instead of retrying auth.
+      const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(authDiag)}`);
+      err.diagnostic = authDiag;
+      throw err;
+    }
+    return {
+      accessToken: cachedToken.accessToken,
+      source: "New Authentication",
+      remainingMs: remainingAccessMs(),
+      getTokenCalled: true,
+    };
   })();
+
   try {
     return await inflightAuth;
   } finally {
@@ -370,52 +476,32 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
   }
   ensureCredsFresh();
   const authEndpoint = `${env.base}/openapi/v1.0/get_token`;
-  console.log(`[yeastar diag] cache=${tokenStatus()}`);
+  console.log(`[yeastar diag] shared auth check start (cache=${tokenStatus()})`);
 
-  // 1. Reuse cached token.
-  if (cachedToken && cachedToken.expiresAt - 30_000 > Date.now()) {
-    console.log("[yeastar diag] reusing cached access token (no /get_token call)");
+  try {
+    const auth = await getAccessTokenInfo();
     const probed = await probeWithCachedToken(env, authEndpoint);
-    if (probed.ok) return probed;
-    // Cached token was rejected by the PBX (revoked, restarted, etc.).
-    console.warn("[yeastar diag] cached token rejected by probe; clearing cache");
-    cachedToken = null;
-  }
-
-  // 2. Try refresh_token if we have one.
-  if (cachedToken?.refreshToken) {
-    const refreshed = await refreshAccessToken(env);
-    if (refreshed?.ok) {
-      const probed = await probeWithCachedToken(env, authEndpoint);
-      if (probed.ok) return probed;
+    if (probed.ok) {
+      return {
+        ...probed,
+        message: `${probed.message} Auth source: ${auth.source}; remaining token lifetime ~${Math.floor(auth.remainingMs / 1000)}s; /get_token called: ${auth.getTokenCalled ? "yes" : "no"}.`,
+      };
     }
-    cachedToken = null;
+    // Diagnostics should never invalidate an otherwise time-valid token or
+    // authenticate again. A failed probe reports reachability/permission only.
+    console.warn(`[yeastar diag] probe failed after shared auth source=${auth.source}; preserving token cache; no re-authentication`);
+    return probed;
+  } catch (err) {
+    const diag = (err as any)?.diagnostic as YeastarDiagnostic | undefined;
+    if (diag) return diag;
+    const { category, message } = classifyNetworkError(err);
+    return { ok: false, category, baseUrl: env.base, endpoint: authEndpoint, userAgent: USER_AGENT, message };
   }
-
-  // 3. Request a fresh token (single-flight).
-  const authDiag = await requestNewToken(env);
-  if (!authDiag.ok) return authDiag;
-  const probed = await probeWithCachedToken(env, authEndpoint);
-  if (!probed.ok) cachedToken = null;
-  return probed;
 }
 
 async function getAccessToken(): Promise<string> {
-  const env = requireEnv();
-  if (!env) throw new Error("Yeastar not configured");
-  ensureCredsFresh();
-  if (cachedToken && cachedToken.expiresAt - 30_000 > Date.now()) {
-    console.log(`[yeastar token] cache hit (${tokenStatus()})`);
-    return cachedToken.token;
-  }
-  console.log(`[yeastar token] cache miss (${tokenStatus()}) — authenticating`);
-  const diag = await diagnoseYeastar();
-  if (!diag.ok || !cachedToken) {
-    const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(diag)}`);
-    err.diagnostic = diag;
-    throw err;
-  }
-  return cachedToken.token;
+  const auth = await getAccessTokenInfo();
+  return auth.accessToken;
 }
 
 
@@ -452,6 +538,9 @@ export interface CdrDiagnostic {
   recordsReturned: number;
   rawResponsePreview: string;
   extensionsSample?: Array<{ number: string; name?: string }>;
+  authSource?: TokenSource;
+  remainingTokenLifetimeSec?: number;
+  getTokenCalled?: boolean;
 }
 
 async function fetchPbxTimezone(base: string, token: string): Promise<string | undefined> {
