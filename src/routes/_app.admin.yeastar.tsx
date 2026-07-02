@@ -4,7 +4,7 @@ import { useState } from "react";
 import { yeastarPhase1Probe, yeastarAuthDiagnostic, yeastarForceExpire, yeastarConfigDiagnostic } from "@/lib/yeastar-diagnostic.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isAdministrator } from "@/lib/auth";
 import { ExtensionMappingValidator } from "@/components/extension-mapping-validator";
 
 export const Route = createFileRoute("/_app/admin/yeastar")({
