@@ -63,17 +63,6 @@ export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
     );
   }
 
-  if (isError || !data) {
-    return (
-      <Card>
-        <CardHeader><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
-        <CardContent className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
-          <span>Unable to load call center analytics.</span>
-          <button onClick={() => refetch()} className="text-xs font-medium text-primary hover:underline">Retry</button>
-        </CardContent>
-      </Card>
-    );
-  }
 
   if (!("configured" in data) || !data.configured) {
     return (
