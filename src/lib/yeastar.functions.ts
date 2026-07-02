@@ -10,10 +10,9 @@ const inputSchema = z.object({
 });
 
 /**
- * Aggregated Yeastar call statistics, scoped to the two operational
- * Extension Groups ("Customer_Care_Emp." and "Telesales_Emp."). Any PBX
- * extension not in one of those groups (Default_All_Extensions, personal
- * extensions, DIDs, external numbers) is excluded from every metric.
+ * Aggregated Yeastar call statistics, scoped to a fixed Extension Whitelist
+ * (see EXTENSION_WHITELIST in yeastar.server.ts). Any PBX extension not on
+ * the whitelist is excluded from every metric.
  */
 export const getYeastarCallStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -21,7 +20,7 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const {
       fetchCdr, aggregateCdr, isYeastarConfigured, diagnoseYeastar,
-      fetchTeamExtensions, normalizeExt, EXTENSION_GROUP_NAMES,
+      getTeamExtensions, normalizeExt, EXTENSION_WHITELIST,
     } = await import("@/lib/yeastar.server");
     const emptyStats = {
       total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0,
@@ -39,32 +38,9 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
       return { configured: true as const, diagnostic: diag, ...emptyStats };
     }
 
-    // Load Extension Groups first — analytics are gated on them existing.
-    let teamExt;
-    try {
-      teamExt = await fetchTeamExtensions();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[Yeastar] extension_group/list failed:", msg);
-      return {
-        configured: true as const,
-        diagnostic: { ...diag, ok: false, category: "http_error" as const, message: `Failed to load Extension Groups: ${msg}` },
-        ...emptyStats,
-      };
-    }
-    if (teamExt.missingGroups.length > 0) {
-      return {
-        configured: true as const,
-        groupConfigError: {
-          missing: teamExt.missingGroups,
-          expected: [EXTENSION_GROUP_NAMES.customer_care, EXTENSION_GROUP_NAMES.telesales],
-          available: teamExt.availableGroups.map((g) => g.name),
-        },
-        ...emptyStats,
-      };
-    }
+    const teamExt = getTeamExtensions();
 
-    // Team scoping: allowed extensions + team map derived from groups.
+    // Team scoping from whitelist (admin extension 4000 is never included).
     const teamsInScope: Array<"customer_care" | "telesales"> =
       data.team === "all" ? ["customer_care", "telesales"] : [data.team];
     const allowedExtensions: string[] = [];
@@ -76,27 +52,39 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
       }
     }
 
-    // Directory: platform agents whose agent_code is in the allowed set.
+    // Directory built ONLY from the whitelist. Match platform profiles by
+    // agent_code so real full names come through when available.
     const { supabase } = context;
-    const [{ data: profiles }, { data: roles }] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,agent_code"),
-      supabase.from("user_roles").select("user_id,role"),
-    ]);
-    const roleMap = new Map((roles ?? []).map((r: any) => [r.user_id, r.role]));
-    const allowedSet = new Set(allowedExtensions.map((e) => normalizeExt(e)));
-    const directory = (profiles ?? [])
-      .filter((p: any) => !!p.agent_code)
-      .map((p: any) => {
-        const code = normalizeExt(p.agent_code);
-        const team = extensionTeamMap[code] ?? (roleMap.get(p.id) === "customer_care" || roleMap.get(p.id) === "telesales" ? (roleMap.get(p.id) as "customer_care" | "telesales") : null);
-        return { extension: code, fullName: p.full_name ?? "", team };
-      })
-      .filter((a) => allowedSet.has(a.extension));
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id,full_name,agent_code");
+    const profileByCode = new Map(
+      (profiles ?? [])
+        .filter((p: any) => !!p.agent_code)
+        .map((p: any) => [normalizeExt(p.agent_code), p]),
+    );
+
+    const allowedSet = new Set(allowedExtensions);
+    const directory = EXTENSION_WHITELIST
+      .filter((w) => w.role === "customer_care" || w.role === "telesales")
+      .filter((w) => allowedSet.has(normalizeExt(w.extension)))
+      .map((w) => {
+        const ext = normalizeExt(w.extension);
+        const p = profileByCode.get(ext);
+        return {
+          extension: ext,
+          fullName: (p?.full_name as string | undefined) || w.fullName,
+          team: w.role as "customer_care" | "telesales",
+        };
+      });
 
     let extensionFilter: string | undefined;
     if (data.agentId) {
       const match = (profiles ?? []).find((p: any) => p.id === data.agentId);
-      if (match?.agent_code) extensionFilter = normalizeExt(match.agent_code);
+      if (match?.agent_code) {
+        const code = normalizeExt(match.agent_code);
+        if (allowedSet.has(code)) extensionFilter = code;
+      }
     }
 
     try {
@@ -130,18 +118,15 @@ export const getYeastarCallStats = createServerFn({ method: "POST" })
   });
 
 /**
- * Validator: lists every platform agent and every PBX extension in the two
- * operational Extension Groups, and shows how each maps to the other.
- * Comparison is performed on the normalized value of `profiles.agent_code`
- * vs the extension number from the group (trim + strip zero-width chars +
- * strip surrounding quotes + lowercase).
+ * Validator: shows the fixed Extension Whitelist and how each whitelisted
+ * extension maps back to a platform profile's `agent_code`.
  */
 export const getYeastarExtensionMapping = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const {
-      isYeastarConfigured, diagnoseYeastar, fetchTeamExtensions,
-      normalizeExt, EXTENSION_GROUP_NAMES,
+      isYeastarConfigured, diagnoseYeastar, getTeamExtensions,
+      normalizeExt, EXTENSION_WHITELIST,
     } = await import("@/lib/yeastar.server");
     if (!isYeastarConfigured()) return { configured: false as const };
     const diag = await diagnoseYeastar();
@@ -160,84 +145,50 @@ export const getYeastarExtensionMapping = createServerFn({ method: "GET" })
       agentCode: p.agent_code ? normalizeExt(p.agent_code) : null,
       role: roleMap.get(p.id) ?? null,
     }));
+    const agentsByCode = new Map(
+      agents.filter((a) => a.agentCode).map((a) => [a.agentCode!, a]),
+    );
 
-    let teamExt: Awaited<ReturnType<typeof fetchTeamExtensions>> | null = null;
-    let fetchError: string | null = null;
-    try {
-      teamExt = await fetchTeamExtensions();
-    } catch (err) {
-      fetchError = err instanceof Error ? err.message : String(err);
-    }
-    const missingGroups = teamExt?.missingGroups ?? [];
-    const pbxExtensions: Array<GroupExt> = teamExt
-      ? teamExt.all.map((e) => ({ number: e.number, name: e.name, status: e.status, team: e.team }))
-      : [];
+    const teamExt = getTeamExtensions();
+    const pbxExtensions = teamExt.all;
 
-    const pbxByNumber = new Map(pbxExtensions.map((e) => [e.number, e]));
-
-    // Log per-agent comparison for debugging (requirement 5).
+    // Log per-agent comparison for debugging.
     for (const a of agents) {
-      const hit = a.agentCode ? pbxByNumber.get(a.agentCode) : undefined;
+      const hit = a.agentCode ? pbxExtensions.find((e) => e.number === a.agentCode) : undefined;
       console.log(`[Yeastar mapping] agent="${a.fullName}" raw="${a.agentCodeRaw ?? ""}" normalized="${a.agentCode ?? ""}" → ${hit ? `MATCH ext=${hit.number} team=${hit.team}` : "NO MATCH"}`);
     }
-    console.log(`[Yeastar mapping] group extensions: [${pbxExtensions.map((e) => `${e.number}(${e.team})`).join(", ")}]`);
 
-    const matched = agents
-      .filter((a) => a.agentCode && pbxByNumber.has(a.agentCode))
-      .map((a) => {
-        const ext = pbxByNumber.get(a.agentCode!)!;
-        return {
-          agentId: a.id, agentName: a.fullName, agentCode: a.agentCode!, role: a.role,
-          pbxName: ext.name ?? null, pbxStatus: ext.status ?? null, team: ext.team,
-        };
-      });
-
-    const unmatchedAgents = agents
-      .filter((a) => !a.agentCode || !pbxByNumber.has(a.agentCode))
-      .map((a) => ({
-        agentId: a.id, agentName: a.fullName, agentCode: a.agentCode, role: a.role,
-        reason: !a.agentCode
-          ? "no agent_code"
-          : `agent_code "${a.agentCodeRaw}" not in Extension Groups (${EXTENSION_GROUP_NAMES.customer_care} / ${EXTENSION_GROUP_NAMES.telesales})`,
-      }));
-
-    const agentsByCode = new Map(agents.filter((a) => a.agentCode).map((a) => [a.agentCode!, a]));
-    const unmatchedExtensions = pbxExtensions
-      .filter((e) => !agentsByCode.has(e.number))
-      .map((e) => ({ number: e.number, name: e.name ?? null, status: e.status ?? null, team: e.team }));
-
-    // First-20 diagnostic view: extension + matched agent + normalized keys.
-    const first20 = pbxExtensions.slice(0, 20).map((e) => {
-      const a = agentsByCode.get(e.number);
+    // Rows: one row per whitelisted extension, showing the matched agent.
+    const whitelistRows = EXTENSION_WHITELIST.map((w) => {
+      const ext = normalizeExt(w.extension);
+      const codeToMatch = normalizeExt(w.agentCode);
+      const matched = agentsByCode.get(codeToMatch) ?? null;
       return {
-        pbxNumber: e.number, pbxName: e.name ?? null, team: e.team,
-        matchedAgent: a?.fullName ?? null, agentCodeRaw: a?.agentCodeRaw ?? null,
-        agentCodeNormalized: a?.agentCode ?? null,
-        matches: !!a,
+        pbxNumber: ext,
+        pbxName: w.fullName,
+        role: w.role,
+        expectedAgentCode: w.agentCode,
+        matchedAgentName: matched?.fullName ?? null,
+        matchedAgentId: matched?.id ?? null,
+        matches: !!matched,
       };
     });
 
+    const matched = whitelistRows.filter((r) => r.matches);
+    const unmatched = whitelistRows.filter((r) => !r.matches);
+
     return {
       configured: true as const,
-      fetchError,
-      groupConfig: {
-        expected: [EXTENSION_GROUP_NAMES.customer_care, EXTENSION_GROUP_NAMES.telesales],
-        missing: missingGroups,
-        available: teamExt?.availableGroups.map((g) => g.name) ?? [],
-      },
-      groupsDiag: teamExt?.diag ?? null,
+      whitelist: EXTENSION_WHITELIST,
       counts: {
-        pbxExtensions: pbxExtensions.length,
-        agents: agents.length,
+        whitelist: EXTENSION_WHITELIST.length,
+        customerCare: EXTENSION_WHITELIST.filter((w) => w.role === "customer_care").length,
+        telesales: EXTENSION_WHITELIST.filter((w) => w.role === "telesales").length,
+        admin: EXTENSION_WHITELIST.filter((w) => w.role === "admin").length,
+        platformAgents: agents.length,
         matched: matched.length,
-        unmatchedAgents: unmatchedAgents.length,
-        unmatchedExtensions: unmatchedExtensions.length,
-        customerCareGroup: teamExt?.groups.customer_care.extensions.length ?? 0,
-        telesalesGroup: teamExt?.groups.telesales.extensions.length ?? 0,
+        unmatched: unmatched.length,
       },
-      matched, unmatchedAgents, unmatchedExtensions,
-      first20Extensions: first20,
+      whitelistRows,
     };
   });
-
-type GroupExt = { number: string; name?: string; status?: string; team: "customer_care" | "telesales" };

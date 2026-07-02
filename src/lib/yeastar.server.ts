@@ -492,23 +492,33 @@ async function fetchExtensionsSample(base: string, token: string): Promise<Array
   } catch { return []; }
 }
 
-// -------- Extension Groups (operational teams) --------
+// -------- Extension Whitelist (fixed configuration) --------
 //
-// Analytics is scoped to two Extension Groups configured on the PBX.
-// Any extension NOT in one of these groups (Default_All_Extensions,
-// personal extensions, DIDs, external numbers) is excluded.
-
-export const EXTENSION_GROUP_NAMES = {
-  customer_care: "Customer_Care_Emp.",
-  telesales: "Telesales_Emp.",
-} as const;
+// The current Yeastar firmware does not expose Extension Groups through the
+// OpenAPI, so team membership is stored here as a fixed whitelist instead.
+// Edit this list to add/remove agents without touching analytics logic.
 
 export type TeamKey = "customer_care" | "telesales";
 
-/**
- * Normalize an extension identifier for comparison.
- * - to string · strip zero-width/BOM · trim · strip surrounding quotes · lowercase
- */
+export interface WhitelistEntry {
+  extension: string;
+  fullName: string;
+  role: "admin" | "customer_care" | "telesales";
+  agentCode: string;
+}
+
+export const EXTENSION_WHITELIST: WhitelistEntry[] = [
+  { extension: "4000", fullName: "Omar Badawi",     role: "admin",         agentCode: "Owner" },
+  { extension: "4002", fullName: "Dalia Basyouni",  role: "customer_care", agentCode: "4002" },
+  { extension: "4003", fullName: "Rahaf Kassem",    role: "customer_care", agentCode: "4003" },
+  { extension: "4004", fullName: "Rana Amin",       role: "customer_care", agentCode: "4004" },
+  { extension: "4005", fullName: "Shams Rafiq",     role: "customer_care", agentCode: "4005" },
+  { extension: "4006", fullName: "Fadwa Shawky",    role: "customer_care", agentCode: "4006" },
+  { extension: "1000", fullName: "Ahmed Mousad",    role: "telesales",     agentCode: "1000" },
+  { extension: "1001", fullName: "Kamr Elsayed",    role: "telesales",     agentCode: "1001" },
+];
+
+/** Normalize an extension identifier for comparison. */
 export function normalizeExt(v: unknown): string {
   return String(v ?? "")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
@@ -519,229 +529,37 @@ export function normalizeExt(v: unknown): string {
 
 export interface GroupExtension { number: string; name?: string; status?: string }
 export interface TeamExtensionResult {
-  groups: Record<TeamKey, { name: string; found: boolean; extensions: GroupExtension[] }>;
-  missingGroups: string[];
+  groups: Record<TeamKey, { name: string; found: true; extensions: GroupExtension[] }>;
   all: Array<GroupExtension & { team: TeamKey }>;
-  availableGroups: Array<{ id?: string; name: string; memberCount: number }>;
-  diag: {
-    endpoint: string;
-    httpStatus: number;
-    errcode: number | null;
-    errmsg: string | null;
-    totalReturned: number;
-    firstGroups: Array<{ id?: string | number; name: string; memberCount: number }>;
-    rawResponsePreview: string;
-    source: "extension_group" | "extension_fallback";
-    fallbackNote?: string;
-  };
 }
 
-async function fetchGroupMembers(base: string, token: string, group: any): Promise<GroupExtension[]> {
-  let members: any[] =
-    group?.member_list ?? group?.members ?? group?.extension_list ??
-    group?.member_extension_list ?? group?.extension_members ?? [];
-  if ((members?.length ?? 0) === 0 && group?.id != null) {
-    try {
-      const detUrl = `${base}/openapi/v1.0/extension_group/get?access_token=${encodeURIComponent(token)}&id=${encodeURIComponent(group.id)}`;
-      const detRes = await timedFetch(detUrl, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
-      const detJson: any = await detRes.json().catch(() => null);
-      const g2 = detJson?.extension_group ?? detJson?.data?.extension_group ?? detJson?.data ?? detJson;
-      members =
-        g2?.member_list ?? g2?.members ?? g2?.extension_list ??
-        g2?.member_extension_list ?? g2?.extension_members ?? [];
-      console.log(`[yeastar groups] extension_group/get id=${group.id} HTTP ${detRes.status} members=${members?.length ?? 0}`);
-    } catch (e) {
-      console.warn(`[yeastar groups] extension_group/get failed for id=${group.id}:`, e instanceof Error ? e.message : e);
+/** Returns the whitelist extensions grouped by team. Admin (4000) is
+ *  intentionally excluded from team stats but remains in EXTENSION_WHITELIST
+ *  for future admin reporting. */
+export function getTeamExtensions(): TeamExtensionResult {
+  const customer_care: GroupExtension[] = [];
+  const telesales: GroupExtension[] = [];
+  const all: Array<GroupExtension & { team: TeamKey }> = [];
+  for (const w of EXTENSION_WHITELIST) {
+    if (w.role === "customer_care") {
+      const e: GroupExtension = { number: normalizeExt(w.extension), name: w.fullName };
+      customer_care.push(e);
+      all.push({ ...e, team: "customer_care" });
+    } else if (w.role === "telesales") {
+      const e: GroupExtension = { number: normalizeExt(w.extension), name: w.fullName };
+      telesales.push(e);
+      all.push({ ...e, team: "telesales" });
     }
   }
-  const exts: GroupExtension[] = [];
-  for (const m of members ?? []) {
-    if (m == null) continue;
-    if (typeof m === "string" || typeof m === "number") {
-      const num = normalizeExt(m);
-      if (num) exts.push({ number: num });
-    } else {
-      const num = normalizeExt(m.number ?? m.extension ?? m.ext ?? m.extension_number ?? m.id);
-      if (num) exts.push({ number: num, name: m.name ?? m.caller_id_name, status: m.status });
-    }
-  }
-  return exts;
-}
-
-/** Fallback: derive group membership by reading each extension's own
- *  group fields (Yeastar returns `extension_group_id_list`,
- *  `extension_group_name_list`, `group_name_list`, or plain `extension_group`
- *  on some firmware). Used when /extension_group/list returns nothing. */
-async function fetchGroupsFromExtensions(
-  base: string, token: string,
-): Promise<{ byName: Map<string, GroupExtension[]>; totalExtensions: number; sampleRaw: string }> {
-  const byName = new Map<string, GroupExtension[]>();
-  let totalExtensions = 0;
-  let sampleRaw = "";
-  const pageSize = 100;
-  for (let page = 1; page <= 20; page++) {
-    const url = `${base}/openapi/v1.0/extension/list?access_token=${encodeURIComponent(token)}&page=${page}&page_size=${pageSize}&sort_by=number&order_by=asc`;
-    const res = await timedFetch(url, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
-    const body = await res.text().catch(() => "");
-    let j: any = null; try { j = body ? JSON.parse(body) : null; } catch { /* non-JSON */ }
-    const list: any[] = j?.extension_list ?? j?.data?.extension_list ?? j?.data ?? [];
-    if (page === 1) sampleRaw = body.slice(0, 800);
-    for (const e of list) {
-      totalExtensions++;
-      const num = normalizeExt(e.number ?? e.extension ?? e.extension_number);
-      if (!num) continue;
-      const ext: GroupExtension = { number: num, name: e.name ?? e.caller_id_name, status: e.status };
-      // Collect group names from every known field variant.
-      const names = new Set<string>();
-      const push = (v: any) => {
-        if (v == null) return;
-        if (Array.isArray(v)) v.forEach(push);
-        else if (typeof v === "string") { const t = v.trim(); if (t) names.add(t); }
-        else if (typeof v === "object") { push(v.name); push(v.group_name); push(v.extension_group_name); }
-      };
-      push(e.extension_group);
-      push(e.extension_group_list);
-      push(e.extension_group_name);
-      push(e.extension_group_name_list);
-      push(e.group_name);
-      push(e.group_name_list);
-      push(e.group);
-      push(e.groups);
-      for (const n of names) {
-        const key = n;
-        if (!byName.has(key)) byName.set(key, []);
-        byName.get(key)!.push(ext);
-      }
-    }
-    if (list.length < pageSize) break;
-  }
-  return { byName, totalExtensions, sampleRaw };
-}
-
-export async function fetchTeamExtensions(): Promise<TeamExtensionResult> {
-  const env = requireEnv();
-  if (!env) throw new Error("Yeastar not configured");
-  const token = await getAccessToken();
-
-  const listUrl = `${env.base}/openapi/v1.0/extension_group/list?access_token=${encodeURIComponent(token)}&page=1&page_size=200`;
-  console.log(`[yeastar groups] GET ${listUrl.replace(/access_token=[^&]+/, "access_token=***")}`);
-  const listRes = await timedFetch(listUrl, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
-  const listBody = await listRes.text().catch(() => "");
-  let listJson: any = null;
-  try { listJson = listBody ? JSON.parse(listBody) : null; } catch { /* non-JSON */ }
-
-  // Try every known response shape across firmware versions.
-  const rawGroups: any[] =
-    listJson?.extension_group_list ??
-    listJson?.data?.extension_group_list ??
-    listJson?.data?.list ??
-    listJson?.data?.groups ??
-    (Array.isArray(listJson?.data) ? listJson.data : null) ??
-    listJson?.list ??
-    listJson?.groups ??
-    (Array.isArray(listJson) ? listJson : []) ??
-    [];
-
-  const errcode = typeof listJson?.errcode === "number" ? listJson.errcode : null;
-  const errmsg = listJson?.errmsg ?? null;
-  console.log(`[yeastar groups] extension_group/list HTTP ${listRes.status} errcode=${errcode} errmsg=${errmsg ?? ""} count=${rawGroups.length} names=[${rawGroups.map((g: any) => g?.name).join(", ")}]`);
-  console.log(`[yeastar groups] raw response preview: ${listBody.slice(0, 500)}`);
-
-  const availableGroups = rawGroups.map((g: any) => ({
-    id: g?.id, name: String(g?.name ?? ""),
-    memberCount: (g?.member_list ?? g?.members ?? g?.extension_list ?? g?.member_extension_list ?? []).length,
-  }));
-
-  const diag: TeamExtensionResult["diag"] = {
-    endpoint: `${env.base}/openapi/v1.0/extension_group/list`,
-    httpStatus: listRes.status,
-    errcode, errmsg,
-    totalReturned: rawGroups.length,
-    firstGroups: availableGroups.slice(0, 10),
-    rawResponsePreview: listBody.slice(0, 800),
-    source: "extension_group",
-  };
-
-  const findGroup = (name: string) =>
-    rawGroups.find((g: any) => normalizeExt(g?.name) === normalizeExt(name));
-
-  const result: TeamExtensionResult = {
+  return {
     groups: {
-      customer_care: { name: EXTENSION_GROUP_NAMES.customer_care, found: false, extensions: [] },
-      telesales:     { name: EXTENSION_GROUP_NAMES.telesales,     found: false, extensions: [] },
+      customer_care: { name: "Customer Care", found: true, extensions: customer_care },
+      telesales:     { name: "Telesales",     found: true, extensions: telesales },
     },
-    missingGroups: [],
-    all: [],
-    availableGroups,
-    diag,
+    all,
   };
-
-  // Primary path: use extension_group/list results.
-  const needFallback = rawGroups.length === 0 || (!findGroup(EXTENSION_GROUP_NAMES.customer_care) && !findGroup(EXTENSION_GROUP_NAMES.telesales));
-
-  if (!needFallback) {
-    for (const key of ["customer_care", "telesales"] as const) {
-      const wanted = EXTENSION_GROUP_NAMES[key];
-      const grp = findGroup(wanted);
-      if (!grp) {
-        result.missingGroups.push(wanted);
-        console.warn(`[yeastar groups] MISSING group "${wanted}" (present: ${availableGroups.map((g) => g.name).join(", ") || "none"})`);
-        continue;
-      }
-      result.groups[key].found = true;
-      const exts = await fetchGroupMembers(env.base, token, grp);
-      result.groups[key].extensions = exts;
-      for (const e of exts) result.all.push({ ...e, team: key });
-      console.log(`[yeastar groups] "${wanted}" resolved ${exts.length} members: [${exts.map((e) => e.number).join(", ")}]`);
-    }
-    return result;
-  }
-
-  // Fallback: extension_group/list unusable — derive membership from extensions.
-  console.warn(`[yeastar groups] falling back to /extension/list (extension_group/list returned ${rawGroups.length} groups)`);
-  try {
-    const { byName, totalExtensions, sampleRaw } = await fetchGroupsFromExtensions(env.base, token);
-    const availableNames = Array.from(byName.keys());
-    console.log(`[yeastar groups] fallback found ${byName.size} distinct group names across ${totalExtensions} extensions: [${availableNames.join(", ")}]`);
-    diag.source = "extension_fallback";
-    diag.fallbackNote = `extension_group/list returned ${rawGroups.length} groups; derived membership from ${totalExtensions} extensions`;
-    diag.firstGroups = availableNames.slice(0, 10).map((n) => ({ name: n, memberCount: byName.get(n)!.length }));
-    diag.totalReturned = byName.size;
-    if (!diag.rawResponsePreview) diag.rawResponsePreview = sampleRaw;
-
-    // Merge into availableGroups so validator UI still shows something useful.
-    for (const [name, exts] of byName.entries()) {
-      if (!availableGroups.find((g) => normalizeExt(g.name) === normalizeExt(name))) {
-        availableGroups.push({ id: undefined, name, memberCount: exts.length });
-      }
-    }
-
-    const findByName = (wanted: string) => {
-      for (const [name, exts] of byName.entries()) {
-        if (normalizeExt(name) === normalizeExt(wanted)) return exts;
-      }
-      return null;
-    };
-    for (const key of ["customer_care", "telesales"] as const) {
-      const wanted = EXTENSION_GROUP_NAMES[key];
-      const exts = findByName(wanted);
-      if (!exts) {
-        result.missingGroups.push(wanted);
-        console.warn(`[yeastar groups] fallback: MISSING "${wanted}" (present: ${availableNames.join(", ") || "none"})`);
-        continue;
-      }
-      result.groups[key].found = true;
-      result.groups[key].extensions = exts;
-      for (const e of exts) result.all.push({ ...e, team: key });
-      console.log(`[yeastar groups] fallback: "${wanted}" resolved ${exts.length} members: [${exts.map((e) => e.number).join(", ")}]`);
-    }
-  } catch (e) {
-    console.error("[yeastar groups] fallback failed:", e instanceof Error ? e.message : e);
-    // Only now do we surface both as missing (both API paths failed).
-    result.missingGroups = [EXTENSION_GROUP_NAMES.customer_care, EXTENSION_GROUP_NAMES.telesales];
-  }
-  return result;
 }
+
 
 /**
  * Fetch CDR records for a date range. Yeastar limits per-page results,

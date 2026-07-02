@@ -128,28 +128,8 @@ export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
     );
   }
 
-  if ("groupConfigError" in data && (data as any).groupConfigError) {
-    const gce = (data as any).groupConfigError as { missing: string[]; expected: string[]; available: string[] };
-    return (
-      <Card>
-        <CardHeader><CardTitle className="text-base flex items-center gap-2"><PhoneOff className="h-4 w-4 text-red-600 dark:text-red-400" />Extension Group configuration error</CardTitle></CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div>Call Analytics requires two PBX Extension Groups:</div>
-          <ul className="list-disc pl-5 text-xs">
-            {gce.expected.map((n) => <li key={n}><code className="px-1 rounded bg-muted">{n}</code></li>)}
-          </ul>
-          <div className="text-xs">
-            Missing on the PBX: {gce.missing.map((n) => <code key={n} className="mx-0.5 px-1 rounded bg-red-500/10">{n}</code>)}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            Available Extension Groups: {gce.available.length ? gce.available.map((n) => <code key={n} className="mx-0.5 px-1 rounded bg-muted">{n}</code>) : "(none)"}
-          </div>
-          <div className="text-xs text-muted-foreground">Create the missing group(s) in the Yeastar PBX and add the agents' extensions to it, then click Retry.</div>
-          <button onClick={() => refetch()} className="text-xs font-medium text-primary hover:underline">Retry</button>
-        </CardContent>
-      </Card>
-    );
-  }
+
+
 
 
 
