@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, isAdministrator } from "@/lib/auth";
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 
-import { ChevronLeft, ChevronRight, Download, Eye, Pencil, Plus, Search } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, Download, Eye, Pencil, Plus, Search } from "lucide-react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import * as XLSX from "xlsx";
@@ -285,33 +285,33 @@ function OrdersList() {
         <CardContent className="p-0">
           {/* Desktop / tablet table — raw table so overflow-x-auto works correctly */}
           <div className="hidden md:block w-full overflow-x-auto">
-            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1240 }}>
+            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1180 }}>
               <colgroup>
+                <col style={{ width: 40 }} />
+                <col style={{ width: 168 }} />
+                <col style={{ width: 92 }} />
+                <col style={{ width: 210 }} />
+                <col style={{ width: 160 }} />
+                <col style={{ width: 118 }} />
+                <col style={{ width: 76 }} />
+                <col style={{ width: 112 }} />
+                <col style={{ width: 122 }} />
+                <col style={{ width: 132 }} />
                 <col style={{ width: 48 }} />
-                <col style={{ width: 180 }} />
-                <col style={{ width: 104 }} />
-                <col style={{ width: 220 }} />
-                <col style={{ width: 170 }} />
-                <col style={{ width: 130 }} />
-                <col style={{ width: 88 }} />
-                <col style={{ width: 120 }} />
-                <col style={{ width: 130 }} />
-                <col style={{ width: 140 }} />
-                <col style={{ width: 56 }} />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
                 <tr className="text-[10.5px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                  <th className="text-center px-3 py-3.5 border-b border-border/70"></th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Order</th>
-                  <th className="text-left px-3 py-3.5 border-b border-border/70">Date</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Customer</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Agent</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Invoice No.</th>
-                  <th className="text-left px-3 py-3.5 border-b border-border/70">Type</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Branch</th>
-                  <th className="text-right px-4 py-3.5 border-b border-border/70">Value</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Status</th>
-                  <th className="px-2 py-3.5 border-b border-border/70"></th>
+                  <th className="text-center px-2 py-3 border-b border-border/70"></th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Order</th>
+                  <th className="text-left px-2 py-3 border-b border-border/70">Date</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Customer</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Agent</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Invoice No.</th>
+                  <th className="text-left px-2 py-3 border-b border-border/70">Type</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Branch</th>
+                  <th className="text-right px-3 py-3 border-b border-border/70">Value</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Status</th>
+                  <th className="px-1 py-3 border-b border-border/70"></th>
                 </tr>
               </thead>
               <tbody>
@@ -325,41 +325,42 @@ function OrdersList() {
                   const rowBg = verified
                     ? "bg-primary/[0.06] dark:bg-primary/[0.12]"
                     : zebra ? "bg-muted/25" : "bg-background";
-                  const cellCls = "align-middle border-b border-border/40 py-4";
+                  const cellCls = "align-middle border-b border-border/40 py-3";
                   return (
                     <tr
                       key={o.id}
                       className={cn("group transition-colors hover:bg-accent/50", rowBg)}
                     >
-                      <td className={cn("text-center px-3 relative", cellCls)} onClick={(e) => e.stopPropagation()}>
+                      <td className={cn("text-center px-2 relative", cellCls)} onClick={(e) => e.stopPropagation()}>
                         {verified && <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />}
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </td>
-                      <td className={cn("px-4", cellCls)}>
+                      <td className={cn("px-3", cellCls)}>
                         <div className="flex flex-col items-start gap-1 min-w-0">
-                          <span className="font-mono font-semibold text-[13px] tracking-tight whitespace-nowrap text-foreground">{formatOrderNo(o.team, o.display_no)}</span>
+                          <CopyableOrderNo value={formatOrderNo(o.team, o.display_no)} />
                           <TeamBadge team={o.team} />
                         </div>
                       </td>
-                      <td className={cn("px-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{o.order_date}</td>
-                      <td className={cn("px-4 text-sm", cellCls)}>
+
+                      <td className={cn("px-2 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{o.order_date}</td>
+                      <td className={cn("px-3 text-sm", cellCls)}>
                         <div className="truncate font-semibold text-foreground leading-tight">{o.customer_name || <span className="text-muted-foreground font-normal">—</span>}</div>
                         {o.customer_phone && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.customer_phone}</div>}
                       </td>
-                      <td className={cn("px-4 text-sm", cellCls)}>
+                      <td className={cn("px-3 text-sm", cellCls)}>
                         <div className="truncate text-foreground leading-tight">{o.agent_name || <span className="text-muted-foreground">—</span>}</div>
                         {o.agent_code && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.agent_code}</div>}
                       </td>
-                      <td className={cn("px-4 text-[13px] font-mono text-foreground/90", cellCls)}>
+                      <td className={cn("px-3 text-[13px] font-mono text-foreground/90", cellCls)}>
                         <div className="truncate">{o.invoice_no || <span className="text-muted-foreground font-sans">—</span>}</div>
                       </td>
-                      <td className={cn("px-3 text-xs text-muted-foreground whitespace-nowrap", cellCls)}>{o.order_type}</td>
-                      <td className={cn("px-4 text-sm", cellCls)}>
+                      <td className={cn("px-2 text-xs text-muted-foreground whitespace-nowrap", cellCls)}>{o.order_type}</td>
+                      <td className={cn("px-3 text-sm", cellCls)}>
                         <div className="font-mono font-medium truncate leading-tight">{o.branch_no ?? "—"}</div>
                         {o.city && <div className="mt-0.5 text-[11px] text-muted-foreground truncate">{o.city}</div>}
                       </td>
-                      <td className={cn("px-4 text-right text-sm font-mono font-semibold tabular-nums whitespace-nowrap text-foreground", cellCls)}>{fmtSAR(o.invoice_value)}</td>
-                      <td onClick={(e) => e.stopPropagation()} className={cn("px-4", cellCls)}>
+                      <td className={cn("px-3 text-right text-sm font-mono font-semibold tabular-nums whitespace-nowrap text-foreground", cellCls)}>{fmtSAR(o.invoice_value)}</td>
+                      <td onClick={(e) => e.stopPropagation()} className={cn("px-3", cellCls)}>
                         {editable ? (
                           <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
                             <SelectTrigger className={cn("h-8 w-full border px-2.5 text-xs font-semibold rounded-md", STATUS_STYLES[o.status] ?? "")}><SelectValue /></SelectTrigger>
@@ -371,11 +372,12 @@ function OrdersList() {
                           <StatusBadge s={o.status} />
                         )}
                       </td>
-                      <td className={cn("px-2 text-center", cellCls)}>
+                      <td className={cn("px-1 text-center", cellCls)}>
                         <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 group-hover:opacity-100 transition-opacity" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label={editable ? "Edit order" : "View order"}>
                           {editable ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
                       </td>
+
                     </tr>
                   );
                 })}
@@ -402,9 +404,10 @@ function OrdersList() {
                     <div className="min-w-0 flex-1" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })}>
                       <div className="flex items-start gap-2 flex-wrap">
                         <div className="flex flex-col items-start gap-1 min-w-0">
-                          <span className="font-mono font-semibold text-sm whitespace-nowrap">{formatOrderNo(o.team, o.display_no)}</span>
+                          <CopyableOrderNo value={formatOrderNo(o.team, o.display_no)} alwaysShowIcon />
                           <TeamBadge team={o.team} />
                         </div>
+
                         <span className="text-xs text-muted-foreground ml-auto">{o.order_date}</span>
                       </div>
                       <div className="mt-2 text-sm font-medium truncate">{o.customer_name || <span className="text-muted-foreground font-normal">No customer</span>}</div>
@@ -467,6 +470,37 @@ function OrdersList() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function CopyableOrderNo({ value, alwaysShowIcon = false }: { value: string; alwaysShowIcon?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async (e: ReactMouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Copy failed");
+    }
+  };
+  return (
+    <span className="inline-flex items-center gap-1.5 min-w-0">
+      <span className="font-mono font-semibold text-[13px] tracking-tight whitespace-nowrap text-foreground">{value}</span>
+      <button
+        type="button"
+        onClick={onCopy}
+        aria-label={copied ? "Copied" : "Copy order number"}
+        className={cn(
+          "inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-opacity",
+          alwaysShowIcon ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus:opacity-100",
+          copied && "opacity-100 text-emerald-600 dark:text-emerald-400",
+        )}
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+    </span>
   );
 }
 
