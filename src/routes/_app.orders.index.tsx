@@ -327,9 +327,8 @@ function OrdersList() {
                     ? "bg-primary/[0.06] dark:bg-primary/[0.12]"
                     : zebra ? "bg-muted/25" : "bg-background";
                   const cellCls = "align-middle border-b border-border/40 py-4";
-                  const stickyBg = verified
-                    ? "bg-[color-mix(in_oklab,hsl(var(--primary))_6%,hsl(var(--background)))] dark:bg-[color-mix(in_oklab,hsl(var(--primary))_12%,hsl(var(--background)))]"
-                    : zebra ? "bg-[color-mix(in_oklab,hsl(var(--muted))_25%,hsl(var(--background)))]" : "bg-background";
+                  const stickyBg = verified ? "bg-primary/10" : "bg-background";
+
                   return (
                     <tr
                       key={o.id}
