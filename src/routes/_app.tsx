@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isAdministrator } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut,
