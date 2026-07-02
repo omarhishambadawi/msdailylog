@@ -386,13 +386,23 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
             )}
           </svg>
 
-          {hover && (
+          {hover && (() => {
+            const labelAbove = hover.labelY < hover.cy;
+            const leftPct = (hover.cx / W) * 100;
+            const topPct = (hover.cy / H) * 100;
+            const flipBelow = labelAbove || hover.cy < H * 0.35;
+            const nearLeft = leftPct < 22;
+            const nearRight = leftPct > 78;
+            const xShift = nearLeft ? "0%" : nearRight ? "-100%" : "-50%";
+            const yShift = flipBelow ? `calc(${hover.r + 16}px)` : `calc(-100% - ${hover.r + 14}px)`;
+            return (
             <div
               className="pointer-events-none absolute z-10 min-w-[210px] rounded-lg border bg-popover/95 backdrop-blur px-3.5 py-2.5 text-xs text-popover-foreground shadow-lg ring-1 ring-black/5"
               style={{
-                left: `${(hover.cx / W) * 100}%`,
-                top: `${(hover.cy / H) * 100}%`,
-                transform: "translate(-50%, calc(-100% - 14px))",
+                left: `${leftPct}%`,
+                top: `${topPct}%`,
+                transform: `translate(${xShift}, ${yShift})`,
+                maxWidth: "min(260px, 92vw)",
               }}
             >
               <div className="mb-1.5 flex items-center gap-2">
