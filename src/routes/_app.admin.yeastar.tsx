@@ -5,12 +5,13 @@ import { yeastarPhase1Probe, yeastarAuthDiagnostic, yeastarForceExpire } from "@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
+import { ExtensionMappingValidator } from "@/components/extension-mapping-validator";
 
 export const Route = createFileRoute("/_app/admin/yeastar")({
   head: () => ({
     meta: [
-      { title: "Yeastar Diagnostic — Phase 1 / 1.5" },
-      { name: "description", content: "Isolated Yeastar auth + CDR diagnostic." },
+      { title: "Admin — Yeastar Integration" },
+      { name: "description", content: "Extension mapping, authentication status, and connection diagnostics." },
     ],
   }),
   component: YeastarDiagnosticPage,
