@@ -338,6 +338,7 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
   try { json = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON */ }
   if (!res.ok || json?.errcode !== 0 || !json?.access_token) {
     const diag = mapAuthErrcode(env, endpoint, res.status, bodyText, json);
+    cacheAuthFailure(diag);
     console.warn(`[yeastar auth] refresh failed HTTP ${res.status} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"}; no /get_token fallback while refresh token is unexpired`);
     return diag;
   }
@@ -734,8 +735,12 @@ export async function fetchCdr(
   const timings = { authMs: 0, requestMs: 0, filterMs: 0, totalFetched: 0, keptAfterFilter: 0 };
   if (!env) return { records: [], diagnostic, timings };
   const tAuth = Date.now();
-  const token = await getAccessToken();
+  const auth = await getAccessTokenInfo();
+  const token = auth.accessToken;
   timings.authMs = Date.now() - tAuth;
+  diagnostic.authSource = auth.source;
+  diagnostic.remainingTokenLifetimeSec = Math.floor(auth.remainingMs / 1000);
+  diagnostic.getTokenCalled = auth.getTokenCalled;
 
   const parseRow = (r: any): YeastarCdrRecord => ({
     call_id: String(r.call_id ?? r.uid ?? r.id ?? ""),
