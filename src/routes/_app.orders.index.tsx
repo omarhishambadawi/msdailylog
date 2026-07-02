@@ -25,7 +25,9 @@ export const Route = createFileRoute("/_app/orders/")({
 });
 
 const toISO = (d: Date) => format(d, "yyyy-MM-dd");
-const PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_STORAGE_KEY = "orders.pageSize";
 const normalizeSearchTerm = (value: string) => value.replace(/[,%.*()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
 
 function OrdersList() {
@@ -51,6 +53,16 @@ function OrdersList() {
   const [status, setStatus] = useState<string>("all");
   const [mineOnly, setMineOnly] = useState<boolean>(false);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSizeState] = useState<number>(() => {
+    if (typeof window === "undefined") return DEFAULT_PAGE_SIZE;
+    const v = Number(window.sessionStorage.getItem(PAGE_SIZE_STORAGE_KEY));
+    return PAGE_SIZE_OPTIONS.includes(v as any) ? v : DEFAULT_PAGE_SIZE;
+  });
+  const setPageSize = (n: number) => {
+    setPageSizeState(n);
+    setPage(0);
+    if (typeof window !== "undefined") window.sessionStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(n));
+  };
 
   const searching = q.trim().length > 0;
   const term = normalizeSearchTerm(q);
@@ -122,8 +134,11 @@ function OrdersList() {
   });
 
   const rows = data ?? [];
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages - 1);
+  const pageRows = rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  const rangeStart = rows.length === 0 ? 0 : currentPage * pageSize + 1;
+  const rangeEnd = Math.min(rows.length, (currentPage + 1) * pageSize);
 
   const summary = useMemo(() => {
     const num = (v: any) => Number(v ?? 0);
@@ -269,10 +284,11 @@ function OrdersList() {
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           {/* Desktop / tablet table */}
-          <div className="hidden md:block w-full">
-            <Table className="table-fixed w-full">
-              <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40 border-b">
+          <div className="hidden md:block w-full overflow-x-auto">
+            <Table className="w-full min-w-[880px]">
+              <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
+                <TableRow className="hover:bg-transparent border-b">
+
                   <TableHead className="w-10 text-center px-2">✓</TableHead>
                   <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground py-3">Order</TableHead>
                   <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-24">Date</TableHead>
@@ -392,21 +408,30 @@ function OrdersList() {
 
 
 
-          {rows.length > PAGE_SIZE && (
-            <div className="flex items-center justify-between p-3 border-t text-sm">
-              <div className="text-muted-foreground">
-                Page {page + 1} of {totalPages} · showing {pageRows.length} of {rows.length}
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
-                  <ChevronLeft className="h-4 w-4 mr-1" />Prev
-                </Button>
-                <Button size="sm" variant="outline" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}>
-                  Next<ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
+          <div className="sticky bottom-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 flex flex-wrap items-center justify-between gap-3 p-3 border-t text-sm">
+            <div className="text-muted-foreground">
+              {rows.length === 0
+                ? "No orders"
+                : <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{rows.length}</span> orders</>}
             </div>
-          )}
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-xs text-muted-foreground hidden sm:inline">Rows per page</span>
+              <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="h-8 w-[72px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZE_OPTIONS.map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground px-2 whitespace-nowrap">Page {currentPage + 1} of {totalPages}</span>
+              <Button size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+                <ChevronLeft className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Prev</span>
+              </Button>
+              <Button size="sm" variant="outline" disabled={currentPage + 1 >= totalPages} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}>
+                <span className="hidden sm:inline">Next</span><ChevronRight className="h-4 w-4 sm:ml-1" />
+              </Button>
+            </div>
+          </div>
+
         </CardContent>
       </Card>
     </div>
