@@ -11,6 +11,8 @@
  * on every dashboard load. Credentials are read from environment variables only.
  */
 
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+
 interface TokenState {
   accessToken: string;
   refreshToken?: string;
@@ -18,7 +20,11 @@ interface TokenState {
   refreshExpiresAt?: number; // epoch ms
 }
 
-type TokenSource = "Cached Access Token" | "Refreshed Token" | "New Authentication";
+type TokenSource =
+  | "Cached Access Token"
+  | "Persistent Cache"
+  | "Refreshed Token"
+  | "New Authentication";
 
 interface TokenResult {
   accessToken: string;
@@ -27,12 +33,31 @@ interface TokenResult {
   getTokenCalled: boolean;
 }
 
-// Module-level cache; shared across requests in the same worker isolate.
+// Refresh the access token when less than 5 minutes remain, rather than
+// waiting until the final seconds. Gives every request plenty of headroom.
+const REFRESH_SKEW_MS = 5 * 60_000;
+
+// Minimum backoff after an errcode 60002 auth failure. Doubles on repeat
+// failures up to `MAX_AUTH_BLOCK_MS`.
+const MIN_AUTH_BLOCK_MS = 5 * 60_000;
+const MAX_AUTH_BLOCK_MS = 30 * 60_000;
+
+// How long a single Worker may hold the distributed auth lease. It only needs
+// to cover one /get_token round-trip; expiry auto-releases it on crash.
+const AUTH_LEASE_SEC = 15;
+
+// Level-1 (in-isolate memory) cache. Level-2 is the yeastar_token_cache table.
 let cachedToken: TokenState | null = null;
 let cachedCredFingerprint: string | null = null;
 let inflightAuth: Promise<TokenResult> | null = null;
 let authBlockedUntil = 0;
 let lastAuthFailure: YeastarDiagnostic | null = null;
+let consecutiveAuthFailures = 0;
+
+// Unique identifier per Worker isolate — used as the lease holder id.
+const WORKER_ID = (typeof crypto !== "undefined" && "randomUUID" in crypto
+  ? crypto.randomUUID()
+  : `w-${Math.random().toString(36).slice(2)}-${Date.now()}`);
 
 function credFingerprint(): string {
   // Short, non-reversible fingerprint of the current credentials so that
@@ -43,6 +68,7 @@ function credFingerprint(): string {
   for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
   return String(h);
 }
+
 
 function ensureCredsFresh(): void {
   const fp = credFingerprint();
@@ -65,11 +91,11 @@ function tokenStatus(): string {
 }
 
 function isAccessTokenValid(): boolean {
-  return !!cachedToken?.accessToken && cachedToken.expiresAt - 30_000 > Date.now();
+  return !!cachedToken?.accessToken && cachedToken.expiresAt - REFRESH_SKEW_MS > Date.now();
 }
 
 function isRefreshTokenValid(): boolean {
-  return !!cachedToken?.refreshToken && (!cachedToken.refreshExpiresAt || cachedToken.refreshExpiresAt - 30_000 > Date.now());
+  return !!cachedToken?.refreshToken && (!cachedToken.refreshExpiresAt || cachedToken.refreshExpiresAt - REFRESH_SKEW_MS > Date.now());
 }
 
 function remainingAccessMs(): number {
@@ -106,10 +132,122 @@ function parseExpiryMs(json: any, absoluteKeys: string[], ttlKeys: string[], fal
 function cacheAuthFailure(diag: YeastarDiagnostic): void {
   lastAuthFailure = diag;
   if (diag.category === "max_limitation" || diag.errcode === 60002) {
-    authBlockedUntil = Date.now() + 30 * 60_000;
-    console.error("[yeastar auth] errcode 60002 received; blocking further /get_token attempts for 30 minutes");
+    consecutiveAuthFailures += 1;
+    const backoff = Math.min(MAX_AUTH_BLOCK_MS, MIN_AUTH_BLOCK_MS * Math.pow(2, consecutiveAuthFailures - 1));
+    authBlockedUntil = Date.now() + backoff;
+    console.error(`[yeastar auth] errcode 60002 (attempt ${consecutiveAuthFailures}); blocking /get_token for ${Math.round(backoff / 60_000)} min. Existing cached tokens (if any) will still be reused.`);
+    void persistBlock(new Date(authBlockedUntil), diag.message).catch(() => { /* best-effort */ });
   }
 }
+
+// -------- Persistent (Supabase) token cache --------
+//
+// Level-2 cache: survives Worker cold starts and is shared across all
+// Cloudflare isolates. Level-1 is `cachedToken` above.
+//
+// A short-lived lease column (auth_lock_holder / auth_lock_expires_at) is used
+// as a distributed lock so that only one Worker at a time performs /get_token
+// or /refresh_token, preventing thundering-herd auth on cold deploys.
+
+interface PersistentTokenRow {
+  access_token: string;
+  refresh_token: string | null;
+  expires_at: string;
+  refresh_expires_at: string | null;
+  cred_fingerprint: string;
+  auth_blocked_until: string | null;
+}
+
+async function loadPersistentToken(): Promise<PersistentTokenRow | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("yeastar_token_cache")
+      .select("access_token, refresh_token, expires_at, refresh_expires_at, cred_fingerprint, auth_blocked_until")
+      .eq("id", "singleton")
+      .maybeSingle();
+    if (error) { console.warn("[yeastar persist] load failed:", error.message); return null; }
+    return (data as PersistentTokenRow) ?? null;
+  } catch (err) {
+    console.warn("[yeastar persist] load exception:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+async function persistToken(state: TokenState, fingerprint: string): Promise<void> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("yeastar_token_cache")
+      .upsert({
+        id: "singleton",
+        access_token: state.accessToken,
+        refresh_token: state.refreshToken ?? null,
+        expires_at: new Date(state.expiresAt).toISOString(),
+        refresh_expires_at: state.refreshExpiresAt ? new Date(state.refreshExpiresAt).toISOString() : null,
+        cred_fingerprint: fingerprint,
+        auth_blocked_until: null,
+        last_error: null,
+      });
+    if (error) console.warn("[yeastar persist] write failed:", error.message);
+    else console.log("[yeastar persist] token written to Supabase (expires in " + Math.floor((state.expiresAt - Date.now()) / 1000) + "s)");
+  } catch (err) {
+    console.warn("[yeastar persist] write exception:", err instanceof Error ? err.message : err);
+  }
+}
+
+async function persistBlock(blockedUntil: Date, errorMessage: string): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("yeastar_token_cache")
+      .update({ auth_blocked_until: blockedUntil.toISOString(), last_error: errorMessage })
+      .eq("id", "singleton");
+  } catch { /* best-effort */ }
+}
+
+/**
+ * Try to acquire the distributed auth lease. Returns the persistent token
+ * snapshot when the lease is granted (so we can double-check whether another
+ * Worker already refreshed the token while we were waiting). Returns null if
+ * another Worker currently holds the lease.
+ */
+async function tryClaimAuthLease(): Promise<PersistentTokenRow | null> {
+  try {
+    const { data, error } = await supabaseAdmin.rpc("yeastar_try_claim_auth_lease", {
+      _holder: WORKER_ID,
+      _lease_sec: AUTH_LEASE_SEC,
+    });
+    if (error) { console.warn("[yeastar lease] claim failed:", error.message); return null; }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.lease_acquired) return null;
+    return row as PersistentTokenRow;
+  } catch (err) {
+    console.warn("[yeastar lease] claim exception:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+async function releaseAuthLease(): Promise<void> {
+  try {
+    await supabaseAdmin.rpc("yeastar_release_auth_lease", { _holder: WORKER_ID });
+  } catch { /* best-effort */ }
+}
+
+function hydrateFromPersistent(row: PersistentTokenRow, fingerprint: string): boolean {
+  if (row.cred_fingerprint !== fingerprint) return false;
+  if (!row.access_token) return false;
+  cachedToken = {
+    accessToken: row.access_token,
+    refreshToken: row.refresh_token ?? undefined,
+    expiresAt: Date.parse(row.expires_at),
+    refreshExpiresAt: row.refresh_expires_at ? Date.parse(row.refresh_expires_at) : undefined,
+  };
+  if (row.auth_blocked_until) {
+    const blockedUntilMs = Date.parse(row.auth_blocked_until);
+    if (blockedUntilMs > Date.now()) authBlockedUntil = blockedUntilMs;
+  }
+  return true;
+}
+
+
 
 function blockedAuthDiagnostic(): YeastarDiagnostic | null {
   if (!lastAuthFailure || Date.now() >= authBlockedUntil) return null;
@@ -352,6 +490,8 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
   };
   lastAuthFailure = null;
   authBlockedUntil = 0;
+  consecutiveAuthFailures = 0;
+  await persistToken(cachedToken, credFingerprint());
   logTokenSource("Refreshed Token", false);
   const ttlSec = Math.floor(remainingAccessMs() / 1000);
   return {
@@ -360,6 +500,7 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
     message: `Refreshed access token (valid for ${ttlSec}s) without opening a new session.`,
   };
 }
+
 
 /**
  * Request a brand-new access token. This is only called by the shared
@@ -412,6 +553,8 @@ async function requestNewToken(env: { base: string; id: string; secret: string }
     };
     lastAuthFailure = null;
     authBlockedUntil = 0;
+    consecutiveAuthFailures = 0;
+    await persistToken(cachedToken, credFingerprint());
     logTokenSource("New Authentication", true);
     const ttlSec = Math.floor(remainingAccessMs() / 1000);
     return {
@@ -420,6 +563,7 @@ async function requestNewToken(env: { base: string; id: string; secret: string }
       message: `Authentication successful. Token valid for ${ttlSec}s.`,
     };
   }
+
   const diag = mapAuthErrcode(env, endpoint, httpStatus, bodyText, json);
   cacheAuthFailure(diag);
   return diag;
@@ -430,6 +574,7 @@ async function getAccessTokenInfo(): Promise<TokenResult> {
   if (!env) throw new Error("Yeastar not configured");
   ensureCredsFresh();
 
+  // ---- Tier 1: in-isolate memory ----
   if (isAccessTokenValid()) {
     logTokenSource("Cached Access Token", false);
     return {
@@ -440,6 +585,7 @@ async function getAccessTokenInfo(): Promise<TokenResult> {
     };
   }
 
+  // Coalesce concurrent callers in the same isolate onto a single auth op.
   if (inflightAuth) {
     console.log(`[yeastar auth] joining shared in-flight authentication request (cache=${tokenStatus()})`);
     return inflightAuth;
@@ -448,70 +594,104 @@ async function getAccessTokenInfo(): Promise<TokenResult> {
   inflightAuth = (async (): Promise<TokenResult> => {
     ensureCredsFresh();
 
-    // Re-check inside the single-flight lock: another caller may have refreshed
-    // while this request was waiting to enter the critical section.
     if (isAccessTokenValid()) {
       logTokenSource("Cached Access Token", false);
-      return {
-        accessToken: cachedToken!.accessToken,
-        source: "Cached Access Token",
-        remainingMs: remainingAccessMs(),
-        getTokenCalled: false,
-      };
+      return { accessToken: cachedToken!.accessToken, source: "Cached Access Token", remainingMs: remainingAccessMs(), getTokenCalled: false };
     }
 
-    const hadRefreshToken = !!cachedToken?.refreshToken;
-    if (isRefreshTokenValid()) {
-      const refreshed = await refreshAccessToken(env);
-      if (refreshed?.ok && cachedToken?.accessToken) {
-        return {
-          accessToken: cachedToken.accessToken,
-          source: "Refreshed Token",
-          remainingMs: remainingAccessMs(),
-          getTokenCalled: false,
-        };
-      }
+    // ---- Tier 2: Supabase persistent cache (survives cold starts / isolate churn) ----
+    const persistedBeforeLease = await loadPersistentToken();
+    if (persistedBeforeLease && hydrateFromPersistent(persistedBeforeLease, credFingerprint()) && isAccessTokenValid()) {
+      logTokenSource("Persistent Cache", false);
+      return { accessToken: cachedToken!.accessToken, source: "Persistent Cache", remainingMs: remainingAccessMs(), getTokenCalled: false };
+    }
 
-      // A still-unexpired refresh token failed. Do NOT fall back to get_token;
-      // that would create a new PBX session and can trigger errcode 60002 loops.
-      const diag = refreshed ?? {
-        ok: false as const,
-        category: "authentication" as const,
-        baseUrl: env.base,
-        endpoint: `${env.base}/openapi/v1.0/refresh_token`,
-        userAgent: USER_AGENT,
-        message: "Refresh token request failed; refusing to open a new PBX session while the refresh token is still valid.",
+    // Local block window (memory) — check before hitting the network.
+    const blockedLocal = blockedAuthDiagnostic();
+    if (blockedLocal) {
+      const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(blockedLocal)}`);
+      err.diagnostic = blockedLocal;
+      throw err;
+    }
+
+    // ---- Distributed lease: only one Worker can hit /refresh_token or /get_token ----
+    let leaseRow: PersistentTokenRow | null = null;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      leaseRow = await tryClaimAuthLease();
+      if (leaseRow) break;
+      console.log(`[yeastar lease] another Worker holds the auth lease; waiting (attempt ${attempt + 1}/6)`);
+      await sleep(500 + Math.floor(Math.random() * 500));
+      // While waiting, another isolate may have written a fresh token.
+      const snap = await loadPersistentToken();
+      if (snap && hydrateFromPersistent(snap, credFingerprint()) && isAccessTokenValid()) {
+        logTokenSource("Persistent Cache", false);
+        return { accessToken: cachedToken!.accessToken, source: "Persistent Cache", remainingMs: remainingAccessMs(), getTokenCalled: false };
+      }
+    }
+    if (!leaseRow) {
+      const diag: YeastarDiagnostic = {
+        ok: false, category: "authentication", baseUrl: env.base,
+        endpoint: `${env.base}/openapi/v1.0/get_token`, userAgent: USER_AGENT,
+        message: "Timed out waiting for the distributed authentication lease; another Worker is refreshing.",
       };
       const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(diag)}`);
       err.diagnostic = diag;
       throw err;
     }
 
-    if (hadRefreshToken) {
-      console.log("[yeastar auth] refresh token expired/unusable; /get_token is now allowed");
-    }
+    try {
+      // Re-check the row we got with the lease — a concurrent Worker may have
+      // written a fresh token seconds ago.
+      if (hydrateFromPersistent(leaseRow, credFingerprint()) && isAccessTokenValid()) {
+        logTokenSource("Persistent Cache", false);
+        return { accessToken: cachedToken!.accessToken, source: "Persistent Cache", remainingMs: remainingAccessMs(), getTokenCalled: false };
+      }
 
-    const blocked = blockedAuthDiagnostic();
-    if (blocked) {
-      const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(blocked)}`);
-      err.diagnostic = blocked;
-      throw err;
-    }
+      // Honor a persisted 60002 block set by another Worker.
+      if (leaseRow.auth_blocked_until) {
+        const blockedUntilMs = Date.parse(leaseRow.auth_blocked_until);
+        if (blockedUntilMs > Date.now()) {
+          authBlockedUntil = blockedUntilMs;
+          const retryInSec = Math.ceil((blockedUntilMs - Date.now()) / 1000);
+          const diag: YeastarDiagnostic = {
+            ok: false, category: "max_limitation", baseUrl: env.base,
+            endpoint: `${env.base}/openapi/v1.0/get_token`, userAgent: USER_AGENT,
+            errcode: 60002,
+            message: `Authentication paused for ${retryInSec}s (persistent 60002 block from another Worker).`,
+          };
+          const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(diag)}`);
+          err.diagnostic = diag;
+          throw err;
+        }
+      }
 
-    const authDiag = await requestNewToken(env);
-    if (!authDiag.ok || !cachedToken?.accessToken) {
-      // Especially for errcode 60002, stop immediately. The shared lock ensures
-      // all concurrent callers receive the same failure instead of retrying auth.
-      const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(authDiag)}`);
-      err.diagnostic = authDiag;
-      throw err;
+      // Try refresh first (no new PBX session).
+      if (isRefreshTokenValid()) {
+        const refreshed = await refreshAccessToken(env);
+        if (refreshed?.ok && cachedToken?.accessToken) {
+          return { accessToken: cachedToken.accessToken, source: "Refreshed Token", remainingMs: remainingAccessMs(), getTokenCalled: false };
+        }
+        const diag = refreshed ?? {
+          ok: false as const, category: "authentication" as const,
+          baseUrl: env.base, endpoint: `${env.base}/openapi/v1.0/refresh_token`, userAgent: USER_AGENT,
+          message: "Refresh token request failed; refusing to open a new PBX session while the refresh token is still valid.",
+        };
+        const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(diag)}`);
+        err.diagnostic = diag;
+        throw err;
+      }
+
+      // Last resort: brand-new /get_token (one PBX session consumed).
+      const authDiag = await requestNewToken(env);
+      if (!authDiag.ok || !cachedToken?.accessToken) {
+        const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(authDiag)}`);
+        err.diagnostic = authDiag;
+        throw err;
+      }
+      return { accessToken: cachedToken.accessToken, source: "New Authentication", remainingMs: remainingAccessMs(), getTokenCalled: true };
+    } finally {
+      await releaseAuthLease();
     }
-    return {
-      accessToken: cachedToken.accessToken,
-      source: "New Authentication",
-      remainingMs: remainingAccessMs(),
-      getTokenCalled: true,
-    };
   })();
 
   try {
@@ -520,6 +700,7 @@ async function getAccessTokenInfo(): Promise<TokenResult> {
     inflightAuth = null;
   }
 }
+
 
 /**
  * Diagnostic entry point used by the UI and the CDR fetcher.
