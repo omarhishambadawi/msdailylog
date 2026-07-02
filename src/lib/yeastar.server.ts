@@ -113,6 +113,7 @@ export interface YeastarDiagnostic {
     | "invalid_client_id"
     | "invalid_client_secret"
     | "ip_forbidden"
+    | "max_limitation"
     | "http_error"
     | "probe_failed"
     | "unknown";
