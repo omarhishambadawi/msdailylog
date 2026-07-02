@@ -145,9 +145,31 @@ export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
   const cdrDiag: any = (data as any).cdrDiagnostic;
   const agentDirectory: any[] = (data as any).agentDirectory ?? [];
 
+  // Clean empty state: API succeeded (errcode 0) AND PBX has zero records for this window.
+  const isTrueEmpty =
+    data.total === 0 && cdrDiag && cdrDiag.errcode === 0 && (cdrDiag.totalNumber ?? 0) === 0;
+  // Suspicious empty: PBX has records but none matched after filtering, OR an API error.
+  const isSuspiciousEmpty =
+    data.total === 0 && cdrDiag && !isTrueEmpty;
+
+  if (isTrueEmpty) {
+    return (
+      <Card>
+        <CardHeader><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
+        <CardContent className="text-sm text-muted-foreground flex items-center justify-between gap-4">
+          <span>No calls found for the selected period ({from} → {to}).</span>
+          <button onClick={() => refetch()} disabled={isFetching} className="text-xs font-medium text-primary hover:underline disabled:opacity-50 shrink-0">
+            {isFetching ? "Refreshing…" : "Refresh"}
+          </button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-3 sm:space-y-4">
-      {data.total === 0 && cdrDiag && (
+      {isSuspiciousEmpty && (
+
         <Card className="border-amber-500/40">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
