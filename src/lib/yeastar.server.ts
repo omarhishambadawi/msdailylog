@@ -91,7 +91,10 @@ function parseExpiryMs(json: any, absoluteKeys: string[], ttlKeys: string[], fal
       if (Number.isFinite(parsed)) return parsed;
     }
     const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) return n > 10_000_000_000 ? n : n * 1000;
+    if (Number.isFinite(n) && n > 0) {
+      if (n < 10_000_000) return Date.now() + n * 1000;
+      return n > 10_000_000_000 ? n : n * 1000;
+    }
   }
   for (const key of ttlKeys) {
     const n = Number(json?.[key]);
