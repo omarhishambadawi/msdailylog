@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const RoleEnum = z.enum(["admin", "customer_care", "telesales", "auditor"]);
+const RoleEnum = z.enum(["owner", "admin", "customer_care", "telesales", "auditor"]);
 
 async function assertAdmin(supabase: any, userId: string) {
   // Owner and admin have identical administrative privileges.
