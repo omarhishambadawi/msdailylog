@@ -5,14 +5,19 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 const RoleEnum = z.enum(["admin", "customer_care", "telesales", "auditor"]);
 
 async function assertAdmin(supabase: any, userId: string) {
-  const { data, error } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden: admin only");
+  // Owner and admin have identical administrative privileges.
+  const { data, error } = await supabase.rpc("is_administrator", { _user_id: userId });
+  if (error) {
+    console.error("[authz] is_administrator RPC error", { userId, error: error.message });
+    throw new Error("Forbidden: authorization check failed");
+  }
+  if (!data) {
+    const { data: roleRow } = await supabase
+      .from("user_roles").select("role").eq("user_id", userId).maybeSingle();
+    console.warn("[authz] non-administrator access attempt", { userId, role: roleRow?.role ?? null });
+    throw new Error("Forbidden: administrator access required (owner or admin)");
+  }
+  console.log("[authz] administrator access granted", { userId });
 }
 
 export const adminCreateUser = createServerFn({ method: "POST" })
