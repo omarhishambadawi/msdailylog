@@ -284,10 +284,11 @@ function OrdersList() {
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           {/* Desktop / tablet table */}
-          <div className="hidden md:block w-full">
-            <Table className="table-fixed w-full">
-              <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40 border-b">
+          <div className="hidden md:block w-full overflow-x-auto">
+            <Table className="w-full min-w-[880px]">
+              <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
+                <TableRow className="hover:bg-transparent border-b">
+
                   <TableHead className="w-10 text-center px-2">✓</TableHead>
                   <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground py-3">Order</TableHead>
                   <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-24">Date</TableHead>
