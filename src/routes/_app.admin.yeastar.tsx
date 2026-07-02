@@ -123,8 +123,15 @@ function YeastarDiagnosticPage() {
 
   return (
     <div className="mx-auto max-w-6xl p-6 space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold">Yeastar Integration</h1>
+        <p className="text-sm text-muted-foreground">Extension whitelist, mapping status, authentication, and connection diagnostics.</p>
+      </div>
+
+      <ExtensionMappingValidator />
+
       <Card>
-        <CardHeader><CardTitle>Yeastar Phase 1.5 — Auth Cache Diagnostic</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Authentication Cache Diagnostic</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Test A: click "Run 10 sequential" — expect 1 get_token max, rest Memory/Persistent Cache.<br />
