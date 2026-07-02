@@ -475,7 +475,7 @@ export async function fetchAllExtensions(): Promise<Array<{ number: string; name
     const j: any = await res.json().catch(() => null);
     const list: any[] = j?.extension_list ?? j?.data?.extension_list ?? [];
     for (const e of list) {
-      out.push({ number: String(e.number ?? e.extension ?? ""), name: e.name ?? e.caller_id_name, status: e.status });
+      out.push({ number: normalizeExt(e.number ?? e.extension), name: e.name ?? e.caller_id_name, status: e.status });
     }
     if (list.length < pageSize) break;
   }
@@ -488,8 +488,121 @@ async function fetchExtensionsSample(base: string, token: string): Promise<Array
     const res = await timedFetch(url, { headers: { "Accept": "application/json", "User-Agent": USER_AGENT } });
     const j: any = await res.json().catch(() => null);
     const list: any[] = j?.extension_list ?? j?.data?.extension_list ?? [];
-    return list.map((e) => ({ number: String(e.number ?? e.extension ?? ""), name: e.name ?? e.caller_id_name }));
+    return list.map((e) => ({ number: normalizeExt(e.number ?? e.extension), name: e.name ?? e.caller_id_name }));
   } catch { return []; }
+}
+
+// -------- Extension Groups (operational teams) --------
+//
+// Analytics is scoped to two Extension Groups configured on the PBX.
+// Any extension NOT in one of these groups (Default_All_Extensions,
+// personal extensions, DIDs, external numbers) is excluded.
+
+export const EXTENSION_GROUP_NAMES = {
+  customer_care: "Customer_Care_Emp.",
+  telesales: "Telesales_Emp.",
+} as const;
+
+export type TeamKey = "customer_care" | "telesales";
+
+/**
+ * Normalize an extension identifier for comparison.
+ * - to string · strip zero-width/BOM · trim · strip surrounding quotes · lowercase
+ */
+export function normalizeExt(v: unknown): string {
+  return String(v ?? "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .toLowerCase();
+}
+
+export interface GroupExtension { number: string; name?: string; status?: string }
+export interface TeamExtensionResult {
+  groups: Record<TeamKey, { name: string; found: boolean; extensions: GroupExtension[] }>;
+  missingGroups: string[];
+  all: Array<GroupExtension & { team: TeamKey }>;
+  availableGroups: Array<{ id?: string; name: string; memberCount: number }>;
+}
+
+async function fetchGroupMembers(base: string, token: string, group: any): Promise<GroupExtension[]> {
+  let members: any[] =
+    group?.member_list ?? group?.members ?? group?.extension_list ??
+    group?.member_extension_list ?? group?.extension_members ?? [];
+  if ((members?.length ?? 0) === 0 && group?.id != null) {
+    try {
+      const detUrl = `${base}/openapi/v1.0/extension_group/get?access_token=${encodeURIComponent(token)}&id=${encodeURIComponent(group.id)}`;
+      const detRes = await timedFetch(detUrl, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
+      const detJson: any = await detRes.json().catch(() => null);
+      const g2 = detJson?.extension_group ?? detJson?.data ?? detJson;
+      members =
+        g2?.member_list ?? g2?.members ?? g2?.extension_list ??
+        g2?.member_extension_list ?? g2?.extension_members ?? [];
+    } catch (e) {
+      console.warn(`[yeastar groups] extension_group/get failed for id=${group.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
+  const exts: GroupExtension[] = [];
+  for (const m of members ?? []) {
+    if (m == null) continue;
+    if (typeof m === "string" || typeof m === "number") {
+      const num = normalizeExt(m);
+      if (num) exts.push({ number: num });
+    } else {
+      const num = normalizeExt(m.number ?? m.extension ?? m.ext ?? m.extension_number ?? m.id);
+      if (num) exts.push({ number: num, name: m.name ?? m.caller_id_name, status: m.status });
+    }
+  }
+  return exts;
+}
+
+export async function fetchTeamExtensions(): Promise<TeamExtensionResult> {
+  const env = requireEnv();
+  if (!env) throw new Error("Yeastar not configured");
+  const token = await getAccessToken();
+
+  const listUrl = `${env.base}/openapi/v1.0/extension_group/list?access_token=${encodeURIComponent(token)}&page=1&page_size=200`;
+  const listRes = await timedFetch(listUrl, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
+  const listBody = await listRes.text().catch(() => "");
+  let listJson: any = null;
+  try { listJson = listBody ? JSON.parse(listBody) : null; } catch { /* non-JSON */ }
+  const rawGroups: any[] =
+    listJson?.extension_group_list ?? listJson?.data ?? listJson?.list ?? listJson?.groups ?? [];
+  console.log(`[yeastar groups] extension_group/list HTTP ${listRes.status} count=${rawGroups.length} names=[${rawGroups.map((g: any) => g?.name).join(", ")}]`);
+
+  const availableGroups = rawGroups.map((g: any) => ({
+    id: g?.id, name: String(g?.name ?? ""),
+    memberCount: (g?.member_list ?? g?.members ?? g?.extension_list ?? g?.member_extension_list ?? []).length,
+  }));
+
+  const findGroup = (name: string) =>
+    rawGroups.find((g: any) => normalizeExt(g?.name) === normalizeExt(name));
+
+  const result: TeamExtensionResult = {
+    groups: {
+      customer_care: { name: EXTENSION_GROUP_NAMES.customer_care, found: false, extensions: [] },
+      telesales:     { name: EXTENSION_GROUP_NAMES.telesales,     found: false, extensions: [] },
+    },
+    missingGroups: [],
+    all: [],
+    availableGroups,
+  };
+
+  for (const key of ["customer_care", "telesales"] as const) {
+    const wanted = EXTENSION_GROUP_NAMES[key];
+    const grp = findGroup(wanted);
+    if (!grp) {
+      result.missingGroups.push(wanted);
+      console.warn(`[yeastar groups] MISSING group "${wanted}"`);
+      continue;
+    }
+    result.groups[key].found = true;
+    const exts = await fetchGroupMembers(env.base, token, grp);
+    result.groups[key].extensions = exts;
+    for (const e of exts) result.all.push({ ...e, team: key });
+    console.log(`[yeastar groups] "${wanted}" resolved ${exts.length} members: [${exts.map((e) => e.number).join(", ")}]`);
+  }
+  return result;
 }
 
 /**
