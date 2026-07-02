@@ -403,6 +403,7 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
 async function getAccessToken(): Promise<string> {
   const env = requireEnv();
   if (!env) throw new Error("Yeastar not configured");
+  ensureCredsFresh();
   if (cachedToken && cachedToken.expiresAt - 30_000 > Date.now()) {
     console.log(`[yeastar token] cache hit (${tokenStatus()})`);
     return cachedToken.token;
