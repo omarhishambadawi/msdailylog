@@ -392,7 +392,7 @@ function OrdersList() {
               const canVerifyRow = canVerifyOrder(o);
               const verified = !!o.call_center_verified;
               return (
-                <div key={o.id} className={cn("p-4 transition-colors active:bg-accent/40", verified && "bg-green-50/50 dark:bg-green-500/[0.05]")}>
+                <div key={o.id} className={cn("relative p-4 transition-colors active:bg-accent/40", verified && "bg-primary/[0.06] dark:bg-primary/[0.12] border-l-[3px] border-l-primary pl-[13px]")}>
                   <div className="flex items-start gap-3">
                     <div onClick={(e) => e.stopPropagation()} className="pt-1">
                       <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
