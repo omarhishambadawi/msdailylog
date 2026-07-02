@@ -91,14 +91,16 @@ const ROLE_DEFAULTS: Record<AppRole, PermKey[]> = {
 
 export function hasPerm(role: AppRole | null, permissions: string[] | null | undefined, perm: PermKey): boolean {
   if (!role) return false;
-  if (role === "admin") return true;
+  // Owner and admin have full access to every permission
+  if (isAdministrator(role)) return true;
   // Auditor is strictly read-only — custom grants may add read-only modules, never mutating perms
   if (role === "auditor") {
     if (!AUDITOR_SAFE_READ_PERMS.includes(perm)) return false;
     if (permissions && permissions.length > 0) return permissions.includes(perm);
     return AUDITOR_PERMS.includes(perm);
   }
-  if (permissions && permissions.length > 0) return ROLE_ALLOWED_PERMS[role].includes(perm) && permissions.includes(perm);
+  const nonAdminRole = role as Exclude<AppRole, "admin" | "owner">;
+  if (permissions && permissions.length > 0) return ROLE_ALLOWED_PERMS[nonAdminRole].includes(perm) && permissions.includes(perm);
   return ROLE_DEFAULTS[role].includes(perm);
 }
 
