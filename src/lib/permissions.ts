@@ -55,7 +55,7 @@ const AUDITOR_PERMS: PermKey[] = [
 
 const AUDITOR_SAFE_READ_PERMS: PermKey[] = [...AUDITOR_PERMS];
 
-const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin">, PermKey[]> = {
+const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin" | "owner">, PermKey[]> = {
   customer_care: [
     "view_orders", "create_orders", "edit_orders",
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
