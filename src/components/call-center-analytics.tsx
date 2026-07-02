@@ -140,9 +140,69 @@ export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
     { name: "Outbound", value: data.outbound, fill: COLORS.outbound },
   ];
   const topAgents = data.byAgent.slice(0, 10);
+  const cdrDiag: any = (data as any).cdrDiagnostic;
+  const agentDirectory: any[] = (data as any).agentDirectory ?? [];
 
   return (
     <div className="space-y-3 sm:space-y-4">
+      {data.total === 0 && cdrDiag && (
+        <Card className="border-amber-500/40">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <PhoneOff className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              CDR diagnostic — no calls returned by PBX
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="rounded-md border overflow-hidden">
+              <table className="w-full text-xs">
+                <tbody>
+                  {[
+                    ["API endpoint", cdrDiag.endpoint],
+                    ["Request URL", cdrDiag.requestUrl],
+                    ["Time range queried", `${cdrDiag.timeRange.start}  →  ${cdrDiag.timeRange.end}`],
+                    ["PBX timezone", cdrDiag.pbxTimezone ?? "(unknown)"],
+                    ["HTTP status", cdrDiag.httpStatus],
+                    ["errcode / errmsg", `${cdrDiag.errcode ?? "—"} / ${cdrDiag.errmsg ?? "—"}`],
+                    ["total_number (PBX)", cdrDiag.totalNumber ?? "—"],
+                    ["Records returned", cdrDiag.recordsReturned],
+                    ["Platform agents mapped", `${agentDirectory.filter((a) => a.extension).length} extensions`],
+                  ].map(([k, v]) => (
+                    <tr key={String(k)} className="border-b last:border-0">
+                      <td className="px-3 py-1.5 font-medium text-muted-foreground w-48">{String(k)}</td>
+                      <td className="px-3 py-1.5 font-mono break-all">{String(v ?? "—")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {cdrDiag.extensionsSample && cdrDiag.extensionsSample.length > 0 && (
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">
+                  PBX extensions (sample) — match these numbers against agents' <code>agent_code</code>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {cdrDiag.extensionsSample.map((e: any) => (
+                    <span key={e.number} className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded">
+                      {e.number}{e.name ? ` · ${e.name}` : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {cdrDiag.rawResponsePreview && (
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Raw response body (masked)</div>
+                <pre className="text-[11px] bg-muted rounded p-2 overflow-x-auto max-h-48">{cdrDiag.rawResponsePreview}</pre>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              If <code>total_number</code> is 0, no CDR records exist in this window on the PBX. If it is greater than 0 but Records returned is 0, check pagination or account permissions on the API app.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
         <Stat icon={Phone} label="Total calls" value={data.total} />
         <Stat icon={PhoneCall} label="Answered" value={data.answered} tone="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" />
