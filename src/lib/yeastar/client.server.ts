@@ -37,9 +37,9 @@ export interface TokenState {
 }
 
 export function readEnv(): YeastarEnv | null {
-  const raw = process.env.YEASTAR_BASE_URL;
-  const clientId = process.env.YEASTAR_CLIENT_ID;
-  const clientSecret = process.env.YEASTAR_CLIENT_SECRET;
+  const raw = process.env.YEASTAR_BASE_URL?.trim();
+  const clientId = process.env.YEASTAR_CLIENT_ID?.trim();
+  const clientSecret = process.env.YEASTAR_CLIENT_SECRET?.trim();
   if (!raw || !clientId || !clientSecret) return null;
   const trimmed = raw.replace(/\/+$/, "");
   const baseUrl = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
