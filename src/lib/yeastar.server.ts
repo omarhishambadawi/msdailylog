@@ -484,6 +484,7 @@ async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnos
   if (!cachedToken?.refreshToken) return null;
   if (!isRefreshTokenValid()) return null;
   const endpoint = `${env.base}/openapi/v1.0/refresh_token`;
+  lastAuthTrace.refreshTokenCalled = true;
   console.log(`[yeastar auth] POST /refresh_token (no new PBX session; cache=${tokenStatus()})`);
   let res: Response;
   try {
