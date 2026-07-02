@@ -20,7 +20,28 @@ interface TokenState {
 
 // Module-level cache; shared across requests in the same worker isolate.
 let cachedToken: TokenState | null = null;
+let cachedCredFingerprint: string | null = null;
 let inflightAuth: Promise<YeastarDiagnostic> | null = null;
+
+function credFingerprint(): string {
+  // Short, non-reversible fingerprint of the current credentials so that
+  // rotating YEASTAR_CLIENT_SECRET automatically invalidates any cached token
+  // minted from the previous secret.
+  const raw = `${process.env.YEASTAR_CLIENT_ID ?? ""}::${process.env.YEASTAR_CLIENT_SECRET ?? ""}`;
+  let h = 0;
+  for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
+  return String(h);
+}
+
+function ensureCredsFresh(): void {
+  const fp = credFingerprint();
+  if (cachedCredFingerprint !== fp) {
+    if (cachedToken) console.log("[Yeastar] credentials changed — clearing cached token");
+    cachedToken = null;
+    cachedCredFingerprint = fp;
+  }
+}
+
 
 function tokenStatus(): string {
   if (!cachedToken) return "none";
