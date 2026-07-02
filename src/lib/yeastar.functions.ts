@@ -39,22 +39,25 @@ async function getAllowedAgents(
     return allowedCache;
   }
   const t0 = Date.now();
-  // profiles + user_roles join, filtered to active customer_care / telesales
-  // users with a non-null agent_code.
-  const { data: rows, error } = await supabase
-    .from("profiles")
-    .select("id, full_name, agent_code, active, user_roles!inner(role)")
-    .eq("active", true)
-    .not("agent_code", "is", null)
-    .in("user_roles.role", ["customer_care", "telesales"]);
-  if (error) throw new Error(`Failed to load active agents: ${error.message}`);
+  // No FK between profiles and user_roles, so fetch both and join in memory.
+  const [profilesRes, rolesRes] = await Promise.all([
+    supabase.from("profiles").select("id, full_name, agent_code, active").eq("active", true),
+    supabase.from("user_roles").select("user_id, role").in("role", ["customer_care", "telesales"]),
+  ]);
+  if (profilesRes.error) throw new Error(`Failed to load active agents: ${profilesRes.error.message}`);
+  if (rolesRes.error) throw new Error(`Failed to load active agents: ${rolesRes.error.message}`);
+  const roleByUser = new Map<string, "customer_care" | "telesales">();
+  for (const r of rolesRes.data ?? []) {
+    if (r.role === "customer_care" || r.role === "telesales") roleByUser.set(r.user_id, r.role);
+  }
   const agents: CachedAgent[] = [];
-  for (const r of rows ?? []) {
-    const ext = normalizeExt(r.agent_code);
+  for (const p of profilesRes.data ?? []) {
+    if (!p.agent_code) continue;
+    const ext = normalizeExt(p.agent_code);
     if (!ext) continue;
-    const role = Array.isArray(r.user_roles) ? r.user_roles[0]?.role : r.user_roles?.role;
-    if (role !== "customer_care" && role !== "telesales") continue;
-    agents.push({ id: r.id, fullName: r.full_name ?? `Ext ${ext}`, extension: ext, team: role });
+    const role = roleByUser.get(p.id);
+    if (!role) continue;
+    agents.push({ id: p.id, fullName: p.full_name ?? `Ext ${ext}`, extension: ext, team: role });
   }
   const extensions = new Set(agents.map((a) => a.extension));
   const byExtension = new Map(agents.map((a) => [a.extension, a]));
