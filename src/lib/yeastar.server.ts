@@ -331,6 +331,25 @@ async function fetchPbxTimezone(base: string, token: string): Promise<string | u
   } catch { return undefined; }
 }
 
+export async function fetchAllExtensions(): Promise<Array<{ number: string; name?: string; status?: string }>> {
+  const env = requireEnv();
+  if (!env) return [];
+  const token = await getAccessToken();
+  const out: Array<{ number: string; name?: string; status?: string }> = [];
+  const pageSize = 100;
+  for (let page = 1; page <= 20; page++) {
+    const url = `${env.base}/openapi/v1.0/extension/list?access_token=${encodeURIComponent(token)}&page=${page}&page_size=${pageSize}&sort_by=number&order_by=asc`;
+    const res = await timedFetch(url, { headers: { "Accept": "application/json", "User-Agent": USER_AGENT } });
+    const j: any = await res.json().catch(() => null);
+    const list: any[] = j?.extension_list ?? j?.data?.extension_list ?? [];
+    for (const e of list) {
+      out.push({ number: String(e.number ?? e.extension ?? ""), name: e.name ?? e.caller_id_name, status: e.status });
+    }
+    if (list.length < pageSize) break;
+  }
+  return out.filter((e) => e.number);
+}
+
 async function fetchExtensionsSample(base: string, token: string): Promise<Array<{ number: string; name?: string }>> {
   try {
     const url = `${base}/openapi/v1.0/extension/list?access_token=${encodeURIComponent(token)}&page=1&page_size=100&sort_by=number&order_by=asc`;
