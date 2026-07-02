@@ -148,111 +148,53 @@ function classifyNetworkError(err: unknown): { category: YeastarDiagnostic["cate
   return { category: "unknown", message: msg };
 }
 
-export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
-  const env = requireEnv();
-  if (!env) {
-    return {
-      ok: false, category: "not_configured", baseUrl: null, endpoint: null, userAgent: USER_AGENT,
-      message: "Yeastar is not configured. Missing YEASTAR_BASE_URL, YEASTAR_CLIENT_ID, or YEASTAR_CLIENT_SECRET.",
-    };
-  }
-  const endpoint = `${env.base}/openapi/v1.0/get_token`;
-
-  // Per Yeastar P-Series OpenAPI (Appliance/Software/Cloud editions), the
-  // request body is JSON with `username` = Client ID and `password` = Client
-  // Secret, sent EXACTLY as configured on the PBX web portal (no MD5, no
-  // hashing, no url-encoding). The User-Agent header is required.
-  let res: Response;
+/**
+ * Run a full probe using the current cached token. Does NOT request a new
+ * token. Returns an "ok" diagnostic on success, or a `probe_failed` diagnostic
+ * otherwise. The caller decides whether to re-auth.
+ */
+async function probeWithCachedToken(env: { base: string }, endpoint: string): Promise<YeastarDiagnostic> {
+  const token = cachedToken!.token;
+  const probeUrl = `${env.base}${PROBE_ENDPOINT}?access_token=${encodeURIComponent(token)}&page=1&page_size=1&sort_by=id&order_by=asc`;
+  let probeStatus: number | undefined;
+  let probeBody = "";
+  let probeJson: any = null;
   try {
-    res = await timedFetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": USER_AGENT,
-      },
-      body: JSON.stringify({ username: env.id, password: env.secret }),
+    const p = await timedFetch(probeUrl, {
+      method: "GET",
+      headers: { "Accept": "application/json", "User-Agent": USER_AGENT },
     });
+    probeStatus = p.status;
+    probeBody = await p.text().catch(() => "");
+    try { probeJson = probeBody ? JSON.parse(probeBody) : null; } catch { /* non-JSON */ }
   } catch (err) {
     const { category, message } = classifyNetworkError(err);
-    console.error("[yeastar diagnostic] transport failure:", category, message);
-    return { ok: false, category, baseUrl: env.base, endpoint, userAgent: USER_AGENT, message };
-  }
-
-  const bodyText = await res.text().catch(() => "");
-  const httpStatus = res.status;
-  console.log(`[yeastar diagnostic] auth HTTP ${httpStatus} from ${endpoint}`);
-  console.log(`[yeastar diagnostic] auth body: ${bodyText.slice(0, 500)}`);
-
-  if (httpStatus === 404) {
-    return { ok: false, category: "invalid_endpoint", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-      httpStatus, responseBody: bodyText,
-      message: "Endpoint not found (HTTP 404). Verify the Base URL includes scheme + host + port (e.g. https://pbx.example.com:8088) and no trailing slash." };
-  }
-  if (httpStatus === 400 && /user.?agent|header/i.test(bodyText)) {
-    return { ok: false, category: "missing_headers", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-      httpStatus, responseBody: bodyText, message: "PBX rejected the request headers (User-Agent required)." };
-  }
-
-  let json: any = null;
-  try { json = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON */ }
-
-  if (!res.ok) {
-    return { ok: false, category: "http_error", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-      httpStatus, responseBody: bodyText, message: `PBX returned HTTP ${httpStatus}.` };
-  }
-
-  if (json && json.errcode === 0 && json.access_token) {
-    // P-Series returns `access_token_expire_time` (seconds). Older docs used `expire_time`.
-    const ttlSec = Number(json.access_token_expire_time ?? json.expire_time ?? 1800);
-    cachedToken = { token: json.access_token, expiresAt: Date.now() + ttlSec * 1000 };
-
-    // Step 2: probe a simple authenticated endpoint (Extension List) to confirm
-    // the token actually works before we consider auth successful.
-    const probeUrl = `${env.base}${PROBE_ENDPOINT}?access_token=${encodeURIComponent(json.access_token)}&page=1&page_size=1&sort_by=id&order_by=asc`;
-    let probeStatus: number | undefined;
-    let probeBody = "";
-    let probeJson: any = null;
-    try {
-      const p = await timedFetch(probeUrl, {
-        method: "GET",
-        headers: { "Accept": "application/json", "User-Agent": USER_AGENT },
-      });
-      probeStatus = p.status;
-      probeBody = await p.text().catch(() => "");
-      try { probeJson = probeBody ? JSON.parse(probeBody) : null; } catch { /* non-JSON */ }
-      console.log(`[yeastar diagnostic] probe HTTP ${probeStatus} from ${PROBE_ENDPOINT}`);
-    } catch (err) {
-      const { category, message } = classifyNetworkError(err);
-      cachedToken = null;
-      return {
-        ok: false, category, baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-        httpStatus, errcode: 0,
-        message: `Got an access token but the probe request to ${PROBE_ENDPOINT} failed: ${message}`,
-        probe: { endpoint: PROBE_ENDPOINT, ok: false, body: message },
-      };
-    }
-
-    const probeOk = probeStatus === 200 && probeJson?.errcode === 0;
-    if (!probeOk) {
-      cachedToken = null;
-      return {
-        ok: false, category: "probe_failed", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-        httpStatus, errcode: 0,
-        message: `Access token obtained, but probe endpoint ${PROBE_ENDPOINT} returned HTTP ${probeStatus}${probeJson?.errcode != null ? ` (errcode ${probeJson.errcode}: ${probeJson.errmsg ?? ""})` : ""}.`,
-        hint: "Verify the API app on the PBX has the required permissions (Extension, CDR).",
-        probe: { endpoint: PROBE_ENDPOINT, httpStatus: probeStatus, errcode: probeJson?.errcode, errmsg: probeJson?.errmsg, ok: false, body: probeBody.slice(0, 500) },
-      };
-    }
-
     return {
-      ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
-      httpStatus, errcode: 0,
-      message: `Authentication successful. Token valid for ${ttlSec}s. Probe ${PROBE_ENDPOINT} returned HTTP 200 (errcode 0).`,
-      probe: { endpoint: PROBE_ENDPOINT, httpStatus: probeStatus, errcode: 0, ok: true },
+      ok: false, category, baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      message: `Probe request to ${PROBE_ENDPOINT} failed: ${message}`,
+      probe: { endpoint: PROBE_ENDPOINT, ok: false, body: message },
     };
   }
+  const probeOk = probeStatus === 200 && probeJson?.errcode === 0;
+  if (!probeOk) {
+    return {
+      ok: false, category: "probe_failed", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+      httpStatus: probeStatus,
+      message: `Probe endpoint ${PROBE_ENDPOINT} returned HTTP ${probeStatus}${probeJson?.errcode != null ? ` (errcode ${probeJson.errcode}: ${probeJson.errmsg ?? ""})` : ""}.`,
+      hint: "Verify the API app on the PBX has the required permissions (Extension, CDR).",
+      probe: { endpoint: PROBE_ENDPOINT, httpStatus: probeStatus, errcode: probeJson?.errcode, errmsg: probeJson?.errmsg, ok: false, body: probeBody.slice(0, 500) },
+    };
+  }
+  const remainingSec = Math.max(0, Math.floor((cachedToken!.expiresAt - Date.now()) / 1000));
+  return {
+    ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+    httpStatus: 200, errcode: 0,
+    message: `Reused cached access token (valid for ~${remainingSec}s). Probe ${PROBE_ENDPOINT} returned HTTP 200.`,
+    probe: { endpoint: PROBE_ENDPOINT, httpStatus: 200, errcode: 0, ok: true },
+  };
+}
 
+function mapAuthErrcode(env: { base: string }, endpoint: string, httpStatus: number, bodyText: string, json: any): YeastarDiagnostic {
   const errcode = json?.errcode;
   const errmsg = json?.errmsg;
   const base = { ok: false as const, baseUrl: env.base, endpoint, userAgent: USER_AGENT, httpStatus, responseBody: bodyText, errcode, errmsg };
@@ -261,43 +203,197 @@ export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
       return { ...base, category: "ip_forbidden",
         message: `IP forbidden (errcode 70087): ${errmsg ?? "PBX rejected the server IP."}`,
         hint: "Allowlist the Lovable server IP in Yeastar → Settings → PBX → General → API (or set it to Any)." };
+    case 60002:
+      return { ...base, category: "max_limitation",
+        message: `MAX LIMITATION EXCEEDED (errcode 60002): the PBX has hit the concurrent session cap for this API app.`,
+        hint: "Wait ~30 minutes for existing sessions to expire, or open Yeastar → Integrations → API and re-issue the Client Secret to invalidate old sessions. Once resolved, cached tokens will be reused instead of creating new sessions." };
     case 40002:
       return { ...base, category: "invalid_client_secret",
-        message: `Invalid parameters (errcode 40002): ${errmsg ?? ""}. Verify the Client Secret is copied exactly from the PBX API app (case-sensitive, no whitespace).`,
-        hint: "In Yeastar → Integrations → API, open the app and re-copy the Client Secret into YEASTAR_CLIENT_SECRET." };
+        message: `Invalid parameters (errcode 40002): ${errmsg ?? ""}. Verify the Client Secret is copied exactly from the PBX API app.` };
     case 40004:
     case 40005:
     case 40011:
       return { ...base, category: "invalid_client_id",
-        message: `Invalid Client ID (errcode ${errcode}): ${errmsg ?? ""}.`,
-        hint: "Verify YEASTAR_CLIENT_ID matches the PBX API app ID exactly." };
-    case 40001:
-    case 40003:
-      return { ...base, category: "authentication",
-        message: `Authentication failed (errcode ${errcode}): ${errmsg ?? ""}.` };
+        message: `Invalid Client ID (errcode ${errcode}): ${errmsg ?? ""}.` };
     default:
       return { ...base, category: "authentication",
         message: `Authentication failed${errcode != null ? ` (errcode ${errcode})` : ""}: ${errmsg ?? "no access_token returned"}.` };
   }
 }
 
+/**
+ * POST /openapi/v1.0/refresh_token — exchange a refresh token for a new
+ * access token WITHOUT consuming a new API-app session slot.
+ */
+async function refreshAccessToken(env: { base: string }): Promise<YeastarDiagnostic | null> {
+  if (!cachedToken?.refreshToken) return null;
+  if (cachedToken.refreshExpiresAt && cachedToken.refreshExpiresAt < Date.now()) return null;
+  const endpoint = `${env.base}/openapi/v1.0/refresh_token`;
+  console.log(`[yeastar auth] refreshing access token via ${endpoint}`);
+  let res: Response;
+  try {
+    res = await timedFetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": USER_AGENT },
+      body: JSON.stringify({ refresh_token: cachedToken.refreshToken }),
+    });
+  } catch (err) {
+    const { category, message } = classifyNetworkError(err);
+    console.warn("[yeastar auth] refresh transport failure:", category, message);
+    return null;
+  }
+  const bodyText = await res.text().catch(() => "");
+  let json: any = null;
+  try { json = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON */ }
+  if (!res.ok || json?.errcode !== 0 || !json?.access_token) {
+    console.warn(`[yeastar auth] refresh failed HTTP ${res.status} errcode=${json?.errcode} errmsg=${json?.errmsg}`);
+    return null;
+  }
+  const ttlSec = Number(json.access_token_expire_time ?? json.expire_time ?? 1800);
+  const refreshTtlSec = Number(json.refresh_token_expire_time ?? 0);
+  cachedToken = {
+    token: json.access_token,
+    expiresAt: Date.now() + ttlSec * 1000,
+    refreshToken: json.refresh_token ?? cachedToken.refreshToken,
+    refreshExpiresAt: refreshTtlSec > 0 ? Date.now() + refreshTtlSec * 1000 : cachedToken.refreshExpiresAt,
+  };
+  console.log(`[yeastar auth] refresh succeeded; new token TTL ${ttlSec}s`);
+  return {
+    ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+    httpStatus: 200, errcode: 0,
+    message: `Refreshed access token (valid for ${ttlSec}s) without opening a new session.`,
+  };
+}
+
+/**
+ * Request a brand-new access token. Deduplicated: concurrent callers share
+ * a single in-flight request so a dashboard load with N parallel widgets
+ * cannot burn N sessions.
+ */
+async function requestNewToken(env: { base: string; id: string; secret: string }): Promise<YeastarDiagnostic> {
+  if (inflightAuth) {
+    console.log("[yeastar auth] joining in-flight get_token request");
+    return inflightAuth;
+  }
+  const endpoint = `${env.base}/openapi/v1.0/get_token`;
+  inflightAuth = (async (): Promise<YeastarDiagnostic> => {
+    console.log(`[yeastar auth] POST ${endpoint} (cache=${tokenStatus()})`);
+    let res: Response;
+    try {
+      res = await timedFetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": USER_AGENT },
+        body: JSON.stringify({ username: env.id, password: env.secret }),
+      });
+    } catch (err) {
+      const { category, message } = classifyNetworkError(err);
+      console.error("[yeastar auth] transport failure:", category, message);
+      return { ok: false, category, baseUrl: env.base, endpoint, userAgent: USER_AGENT, message };
+    }
+    const bodyText = await res.text().catch(() => "");
+    const httpStatus = res.status;
+    console.log(`[yeastar auth] HTTP ${httpStatus} body=${bodyText.slice(0, 300)}`);
+    if (httpStatus === 404) {
+      return { ok: false, category: "invalid_endpoint", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+        httpStatus, responseBody: bodyText,
+        message: "Endpoint not found (HTTP 404). Verify the Base URL." };
+    }
+    let json: any = null;
+    try { json = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON */ }
+    if (!res.ok) {
+      return { ok: false, category: "http_error", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+        httpStatus, responseBody: bodyText, message: `PBX returned HTTP ${httpStatus}.` };
+    }
+    if (json && json.errcode === 0 && json.access_token) {
+      const ttlSec = Number(json.access_token_expire_time ?? json.expire_time ?? 1800);
+      const refreshTtlSec = Number(json.refresh_token_expire_time ?? 0);
+      cachedToken = {
+        token: json.access_token,
+        expiresAt: Date.now() + ttlSec * 1000,
+        refreshToken: json.refresh_token,
+        refreshExpiresAt: refreshTtlSec > 0 ? Date.now() + refreshTtlSec * 1000 : undefined,
+      };
+      console.log(`[yeastar auth] new session acquired; TTL access=${ttlSec}s refresh=${refreshTtlSec}s`);
+      return {
+        ok: true, category: "ok", baseUrl: env.base, endpoint, userAgent: USER_AGENT,
+        httpStatus, errcode: 0,
+        message: `Authentication successful. Token valid for ${ttlSec}s.`,
+      };
+    }
+    return mapAuthErrcode(env, endpoint, httpStatus, bodyText, json);
+  })();
+  try {
+    return await inflightAuth;
+  } finally {
+    inflightAuth = null;
+  }
+}
+
+/**
+ * Diagnostic entry point used by the UI and the CDR fetcher.
+ *
+ * Order of operations:
+ *   1. If a cached access token is still valid, probe with it. On success we
+ *      never touch /get_token — this prevents burning API-app sessions.
+ *   2. If cache is expired but we still have a valid refresh token, refresh
+ *      (no new session slot) and probe.
+ *   3. Only as a last resort do we call POST /get_token.
+ */
+export async function diagnoseYeastar(): Promise<YeastarDiagnostic> {
+  const env = requireEnv();
+  if (!env) {
+    return {
+      ok: false, category: "not_configured", baseUrl: null, endpoint: null, userAgent: USER_AGENT,
+      message: "Yeastar is not configured. Missing YEASTAR_BASE_URL, YEASTAR_CLIENT_ID, or YEASTAR_CLIENT_SECRET.",
+    };
+  }
+  const authEndpoint = `${env.base}/openapi/v1.0/get_token`;
+  console.log(`[yeastar diag] cache=${tokenStatus()}`);
+
+  // 1. Reuse cached token.
+  if (cachedToken && cachedToken.expiresAt - 30_000 > Date.now()) {
+    console.log("[yeastar diag] reusing cached access token (no /get_token call)");
+    const probed = await probeWithCachedToken(env, authEndpoint);
+    if (probed.ok) return probed;
+    // Cached token was rejected by the PBX (revoked, restarted, etc.).
+    console.warn("[yeastar diag] cached token rejected by probe; clearing cache");
+    cachedToken = null;
+  }
+
+  // 2. Try refresh_token if we have one.
+  if (cachedToken?.refreshToken) {
+    const refreshed = await refreshAccessToken(env);
+    if (refreshed?.ok) {
+      const probed = await probeWithCachedToken(env, authEndpoint);
+      if (probed.ok) return probed;
+    }
+    cachedToken = null;
+  }
+
+  // 3. Request a fresh token (single-flight).
+  const authDiag = await requestNewToken(env);
+  if (!authDiag.ok) return authDiag;
+  const probed = await probeWithCachedToken(env, authEndpoint);
+  if (!probed.ok) cachedToken = null;
+  return probed;
+}
 
 async function getAccessToken(): Promise<string> {
   const env = requireEnv();
   if (!env) throw new Error("Yeastar not configured");
-  const now = Date.now();
-  if (cachedToken && cachedToken.expiresAt - 30_000 > now) return cachedToken.token;
-
-  const token = await withRetry("auth", async () => {
-    const diag = await diagnoseYeastar();
-    if (!diag.ok || !cachedToken) {
-      const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(diag)}`);
-      err.diagnostic = diag;
-      throw err;
-    }
+  if (cachedToken && cachedToken.expiresAt - 30_000 > Date.now()) {
+    console.log(`[yeastar token] cache hit (${tokenStatus()})`);
     return cachedToken.token;
-  });
-  return token;
+  }
+  console.log(`[yeastar token] cache miss (${tokenStatus()}) — authenticating`);
+  const diag = await diagnoseYeastar();
+  if (!diag.ok || !cachedToken) {
+    const err: any = new Error(`YEASTAR_DIAG:${JSON.stringify(diag)}`);
+    err.diagnostic = diag;
+    throw err;
+  }
+  return cachedToken.token;
+}
 }
 
 
