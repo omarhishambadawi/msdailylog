@@ -420,7 +420,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                 } />
               </div>
             </div>
-          )}
+            );
+          })()}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
