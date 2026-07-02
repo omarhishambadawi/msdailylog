@@ -39,28 +39,30 @@ function Stat({ icon: Icon, label, value, tone }: { icon: any; label: string; va
 
 export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
   const fetchStats = useServerFn(getYeastarCallStats);
-  const { data, isLoading, isError, isFetching, refetch } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch, error } = useQuery({
     queryKey: ["yeastar-stats", from, to, team, agentId ?? "all"],
     queryFn: () => fetchStats({ data: { from, to, team, agentId } }),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: 0,
   });
 
   if (isLoading) {
-    return <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading call center analytics…</CardContent></Card>;
+    return <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading call center analytics for {from} → {to}…</CardContent></Card>;
   }
   if (isError || !data) {
+    const msg = error instanceof Error ? error.message : "Unable to load call center analytics.";
     return (
       <Card>
         <CardHeader><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
         <CardContent className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
-          <span>Unable to load call center analytics.</span>
-          <button onClick={() => refetch()} className="text-xs font-medium text-primary hover:underline">Retry</button>
+          <span className="truncate">{msg}</span>
+          <button onClick={() => refetch()} className="text-xs font-medium text-primary hover:underline shrink-0">Retry</button>
         </CardContent>
       </Card>
     );
   }
+
 
   if (!("configured" in data) || !data.configured) {
     return (
@@ -143,9 +145,31 @@ export function CallCenterAnalytics({ from, to, team, agentId }: Props) {
   const cdrDiag: any = (data as any).cdrDiagnostic;
   const agentDirectory: any[] = (data as any).agentDirectory ?? [];
 
+  // Clean empty state: API succeeded (errcode 0) AND PBX has zero records for this window.
+  const isTrueEmpty =
+    data.total === 0 && cdrDiag && cdrDiag.errcode === 0 && (cdrDiag.totalNumber ?? 0) === 0;
+  // Suspicious empty: PBX has records but none matched after filtering, OR an API error.
+  const isSuspiciousEmpty =
+    data.total === 0 && cdrDiag && !isTrueEmpty;
+
+  if (isTrueEmpty) {
+    return (
+      <Card>
+        <CardHeader><CardTitle className="text-base">Call Center Analytics</CardTitle></CardHeader>
+        <CardContent className="text-sm text-muted-foreground flex items-center justify-between gap-4">
+          <span>No calls found for the selected period ({from} → {to}).</span>
+          <button onClick={() => refetch()} disabled={isFetching} className="text-xs font-medium text-primary hover:underline disabled:opacity-50 shrink-0">
+            {isFetching ? "Refreshing…" : "Refresh"}
+          </button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-3 sm:space-y-4">
-      {data.total === 0 && cdrDiag && (
+      {isSuspiciousEmpty && (
+
         <Card className="border-amber-500/40">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
