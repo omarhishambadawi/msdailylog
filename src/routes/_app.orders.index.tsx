@@ -285,33 +285,33 @@ function OrdersList() {
         <CardContent className="p-0">
           {/* Desktop / tablet table — raw table so overflow-x-auto works correctly */}
           <div className="hidden md:block w-full overflow-x-auto">
-            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1240 }}>
+            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1180 }}>
               <colgroup>
+                <col style={{ width: 40 }} />
+                <col style={{ width: 168 }} />
+                <col style={{ width: 92 }} />
+                <col style={{ width: 210 }} />
+                <col style={{ width: 160 }} />
+                <col style={{ width: 118 }} />
+                <col style={{ width: 76 }} />
+                <col style={{ width: 112 }} />
+                <col style={{ width: 122 }} />
+                <col style={{ width: 132 }} />
                 <col style={{ width: 48 }} />
-                <col style={{ width: 180 }} />
-                <col style={{ width: 104 }} />
-                <col style={{ width: 220 }} />
-                <col style={{ width: 170 }} />
-                <col style={{ width: 130 }} />
-                <col style={{ width: 88 }} />
-                <col style={{ width: 120 }} />
-                <col style={{ width: 130 }} />
-                <col style={{ width: 140 }} />
-                <col style={{ width: 56 }} />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
                 <tr className="text-[10.5px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                  <th className="text-center px-3 py-3.5 border-b border-border/70"></th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Order</th>
-                  <th className="text-left px-3 py-3.5 border-b border-border/70">Date</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Customer</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Agent</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Invoice No.</th>
-                  <th className="text-left px-3 py-3.5 border-b border-border/70">Type</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Branch</th>
-                  <th className="text-right px-4 py-3.5 border-b border-border/70">Value</th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Status</th>
-                  <th className="px-2 py-3.5 border-b border-border/70"></th>
+                  <th className="text-center px-2 py-3 border-b border-border/70"></th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Order</th>
+                  <th className="text-left px-2 py-3 border-b border-border/70">Date</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Customer</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Agent</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Invoice No.</th>
+                  <th className="text-left px-2 py-3 border-b border-border/70">Type</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Branch</th>
+                  <th className="text-right px-3 py-3 border-b border-border/70">Value</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Status</th>
+                  <th className="px-1 py-3 border-b border-border/70"></th>
                 </tr>
               </thead>
               <tbody>
@@ -325,22 +325,23 @@ function OrdersList() {
                   const rowBg = verified
                     ? "bg-primary/[0.06] dark:bg-primary/[0.12]"
                     : zebra ? "bg-muted/25" : "bg-background";
-                  const cellCls = "align-middle border-b border-border/40 py-4";
+                  const cellCls = "align-middle border-b border-border/40 py-3";
                   return (
                     <tr
                       key={o.id}
                       className={cn("group transition-colors hover:bg-accent/50", rowBg)}
                     >
-                      <td className={cn("text-center px-3 relative", cellCls)} onClick={(e) => e.stopPropagation()}>
+                      <td className={cn("text-center px-2 relative", cellCls)} onClick={(e) => e.stopPropagation()}>
                         {verified && <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />}
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </td>
-                      <td className={cn("px-4", cellCls)}>
+                      <td className={cn("px-3", cellCls)}>
                         <div className="flex flex-col items-start gap-1 min-w-0">
-                          <span className="font-mono font-semibold text-[13px] tracking-tight whitespace-nowrap text-foreground">{formatOrderNo(o.team, o.display_no)}</span>
+                          <CopyableOrderNo value={formatOrderNo(o.team, o.display_no)} />
                           <TeamBadge team={o.team} />
                         </div>
                       </td>
+
                       <td className={cn("px-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{o.order_date}</td>
                       <td className={cn("px-4 text-sm", cellCls)}>
                         <div className="truncate font-semibold text-foreground leading-tight">{o.customer_name || <span className="text-muted-foreground font-normal">—</span>}</div>
