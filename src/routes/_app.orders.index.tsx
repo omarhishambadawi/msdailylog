@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isAdministrator } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,7 +32,7 @@ function OrdersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user, role, profile } = useAuth();
-  const isAdmin = role === "admin";
+  const isAdmin = isAdministrator(role);
   const canView = hasPerm(role, profile?.permissions as any, "view_orders");
   const canCreate = hasPerm(role, profile?.permissions as any, "create_orders");
   const canEditAll = isAdmin || hasPerm(role, profile?.permissions as any, "edit_all_orders");

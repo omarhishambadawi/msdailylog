@@ -2,11 +2,22 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function assertAdmin(ctx: { supabase: any; userId: string }) {
-  const { data, error } = await ctx.supabase.rpc("has_role", {
+  // Owner and admin have identical administrative privileges.
+  const { data, error } = await ctx.supabase.rpc("is_administrator", {
     _user_id: ctx.userId,
-    _role: "admin",
   });
-  if (error || !data) throw new Error("Forbidden: admin only");
+  if (error) {
+    console.error("[authz] is_administrator RPC error", { userId: ctx.userId, error: error.message });
+    throw new Error("Forbidden: authorization check failed");
+  }
+  if (!data) {
+    // Fetch role for debugging (owner/admin/etc.)
+    const { data: roleRow } = await ctx.supabase
+      .from("user_roles").select("role").eq("user_id", ctx.userId).maybeSingle();
+    console.warn("[authz] non-administrator access attempt", { userId: ctx.userId, role: roleRow?.role ?? null });
+    throw new Error("Forbidden: administrator access required (owner or admin)");
+  }
+  console.log("[authz] administrator access granted", { userId: ctx.userId });
 }
 
 /**

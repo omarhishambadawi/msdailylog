@@ -364,6 +364,7 @@ export type Database = {
         Returns: boolean
       }
       is_active: { Args: { _user_id: string }; Returns: boolean }
+      is_administrator: { Args: { _user_id: string }; Returns: boolean }
       notify_users: {
         Args: {
           _body: string
@@ -394,7 +395,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "customer_care" | "telesales" | "auditor"
+      app_role: "admin" | "customer_care" | "telesales" | "auditor" | "owner"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -522,7 +523,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "customer_care", "telesales", "auditor"],
+      app_role: ["admin", "customer_care", "telesales", "auditor", "owner"],
     },
   },
 } as const

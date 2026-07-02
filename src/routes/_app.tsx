@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isAdministrator } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut,
@@ -60,7 +60,7 @@ function AppLayout() {
     ...(canComplaints ? [{ to: "/complaints", label: "Complaints", icon: MessageSquareWarning }] : []),
     ...(canUsers ? [{ to: "/admin/users", label: "Users", icon: Users }] : []),
     ...(canAdminBranches ? [{ to: "/admin/branches", label: "Branches", icon: MapPin }] : []),
-    ...(role === "admin" ? [{ to: "/admin/yeastar", label: "Yeastar", icon: PhoneCall }] : []),
+    ...(isAdministrator(role) ? [{ to: "/admin/yeastar", label: "Yeastar", icon: PhoneCall }] : []),
   ] as const;
 
   const sidebarWidth = collapsed ? "w-16" : "w-60";

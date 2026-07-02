@@ -3,7 +3,16 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { hasPerm } from "@/lib/permissions";
 
-export type AppRole = "admin" | "customer_care" | "telesales" | "auditor";
+export type AppRole = "owner" | "admin" | "customer_care" | "telesales" | "auditor";
+
+/**
+ * Centralized administrator check. Owner and admin have identical
+ * top-level privileges across the platform (dashboard, users, Yeastar,
+ * diagnostics, orders/complaints admin, system settings).
+ */
+export function isAdministrator(role: AppRole | null | undefined): boolean {
+  return role === "owner" || role === "admin";
+}
 
 export interface Profile {
   id: string;

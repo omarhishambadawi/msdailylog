@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isAdministrator } from "@/lib/auth";
 import { adminCreateUser, adminListUsers, adminSetActive, adminSetRole, adminSetPassword, adminUpdateProfile, adminDeleteUser } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +26,7 @@ export const Route = createFileRoute("/_app/admin/users")({
 
 function AdminUsers() {
   const { role, profile } = useAuth();
-  const canManageUsers = role === "admin" && hasPerm(role, profile?.permissions as any, "manage_users");
+  const canManageUsers = isAdministrator(role) && hasPerm(role, profile?.permissions as any, "manage_users");
   const qc = useQueryClient();
   const listFn = useServerFn(adminListUsers);
   const createFn = useServerFn(adminCreateUser);
