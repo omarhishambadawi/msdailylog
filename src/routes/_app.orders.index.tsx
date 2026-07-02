@@ -299,10 +299,10 @@ function OrdersList() {
                 <col style={{ width: 140 }} />
                 <col style={{ width: 56 }} />
               </colgroup>
-              <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
+              <thead className="sticky top-0 z-20 bg-muted/95 backdrop-blur">
                 <tr className="text-[10.5px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                  <th className="text-center px-3 py-3.5 border-b border-border/70"></th>
-                  <th className="text-left px-4 py-3.5 border-b border-border/70">Order</th>
+                  <th className="text-center px-3 py-3.5 border-b border-border/70 sticky left-0 z-30 bg-muted"></th>
+                  <th className="text-left px-4 py-3.5 border-b border-border/70 sticky left-[48px] z-30 bg-muted shadow-[1px_0_0_0_hsl(var(--border)/0.6)]">Order</th>
                   <th className="text-left px-3 py-3.5 border-b border-border/70">Date</th>
                   <th className="text-left px-4 py-3.5 border-b border-border/70">Customer</th>
                   <th className="text-left px-4 py-3.5 border-b border-border/70">Agent</th>
@@ -311,7 +311,7 @@ function OrdersList() {
                   <th className="text-left px-4 py-3.5 border-b border-border/70">Branch</th>
                   <th className="text-right px-4 py-3.5 border-b border-border/70">Value</th>
                   <th className="text-left px-4 py-3.5 border-b border-border/70">Status</th>
-                  <th className="px-2 py-3.5 border-b border-border/70"></th>
+                  <th className="px-2 py-3.5 border-b border-border/70 sticky right-0 z-30 bg-muted shadow-[-1px_0_0_0_hsl(var(--border)/0.6)]"></th>
                 </tr>
               </thead>
               <tbody>
@@ -326,16 +326,19 @@ function OrdersList() {
                     ? "bg-primary/[0.06] dark:bg-primary/[0.12]"
                     : zebra ? "bg-muted/25" : "bg-background";
                   const cellCls = "align-middle border-b border-border/40 py-4";
+                  const stickyBg = verified
+                    ? "bg-[color-mix(in_oklab,hsl(var(--primary))_6%,hsl(var(--background)))] dark:bg-[color-mix(in_oklab,hsl(var(--primary))_12%,hsl(var(--background)))]"
+                    : zebra ? "bg-[color-mix(in_oklab,hsl(var(--muted))_25%,hsl(var(--background)))]" : "bg-background";
                   return (
                     <tr
                       key={o.id}
                       className={cn("group transition-colors hover:bg-accent/50", rowBg)}
                     >
-                      <td className={cn("text-center px-3 relative", cellCls)} onClick={(e) => e.stopPropagation()}>
+                      <td className={cn("text-center px-3 relative sticky left-0 z-10 group-hover:bg-accent/50", stickyBg, cellCls)} onClick={(e) => e.stopPropagation()}>
                         {verified && <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />}
                         <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
                       </td>
-                      <td className={cn("px-4", cellCls)}>
+                      <td className={cn("px-4 sticky left-[48px] z-10 group-hover:bg-accent/50 shadow-[1px_0_0_0_hsl(var(--border)/0.4)]", stickyBg, cellCls)}>
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="font-mono font-semibold text-[13px] tracking-tight whitespace-nowrap text-foreground">{formatOrderNo(o.team, o.display_no)}</span>
                           <TeamBadge team={o.team} />
@@ -371,8 +374,8 @@ function OrdersList() {
                           <StatusBadge s={o.status} />
                         )}
                       </td>
-                      <td className={cn("px-2 text-center", cellCls)}>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-50 group-hover:opacity-100 transition-opacity" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label={editable ? "Edit order" : "View order"}>
+                      <td className={cn("px-2 text-center sticky right-0 z-10 group-hover:bg-accent/50 shadow-[-1px_0_0_0_hsl(var(--border)/0.4)]", stickyBg, cellCls)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 group-hover:opacity-100 transition-opacity" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label={editable ? "Edit order" : "View order"}>
                           {editable ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
                       </td>
@@ -382,6 +385,7 @@ function OrdersList() {
               </tbody>
             </table>
           </div>
+
 
           {/* Mobile card list */}
           <div className="md:hidden divide-y">
