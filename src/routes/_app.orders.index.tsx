@@ -374,7 +374,7 @@ function OrdersList() {
                           <StatusBadge s={o.status} />
                         )}
                       </td>
-                      <td className={cn("px-2 text-center sticky right-0 z-10 group-hover:bg-accent/50 shadow-[-1px_0_0_0_hsl(var(--border)/0.4)]", stickyBg, cellCls)}>
+                      <td className={cn("px-2 text-center sticky right-0 z-10 group-hover:bg-accent shadow-[-1px_0_0_0_var(--border)]", stickyBg, cellCls)}>
                         <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 group-hover:opacity-100 transition-opacity" onClick={() => navigate({ to: "/orders/$id", params: { id: o.id } })} aria-label={editable ? "Edit order" : "View order"}>
                           {editable ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
