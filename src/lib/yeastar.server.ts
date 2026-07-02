@@ -273,7 +273,7 @@ async function persistBlock(blockedUntil: Date, errorMessage: string): Promise<v
 async function tryClaimAuthLease(): Promise<PersistentTokenRow | null> {
   try {
     const { data, error } = await supabaseAdmin.rpc("yeastar_try_claim_auth_lease", {
-      _holder: WORKER_ID,
+      _holder: getOrInitWorkerId(),
       _lease_sec: AUTH_LEASE_SEC,
     });
     if (error) { console.warn("[yeastar lease] claim failed:", error.message); return null; }
@@ -288,7 +288,7 @@ async function tryClaimAuthLease(): Promise<PersistentTokenRow | null> {
 
 async function releaseAuthLease(): Promise<void> {
   try {
-    await supabaseAdmin.rpc("yeastar_release_auth_lease", { _holder: WORKER_ID });
+    await supabaseAdmin.rpc("yeastar_release_auth_lease", { _holder: getOrInitWorkerId() });
   } catch { /* best-effort */ }
 }
 
