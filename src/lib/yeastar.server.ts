@@ -48,11 +48,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function isRetriable(err: unknown): boolean {
   const diag = (err as any)?.diagnostic as YeastarDiagnostic | undefined;
   if (diag) {
-    return ["timeout", "network", "dns", "ip_forbidden", "http_error"].includes(diag.category);
+    // Never retry auth failures, invalid credentials, IP allowlist rejections,
+    // or MAX LIMITATION EXCEEDED — retrying just burns more sessions.
+    return ["timeout", "network", "dns", "http_error"].includes(diag.category);
   }
   const msg = err instanceof Error ? err.message : String(err);
+  if (/MAX_LIMITATION|max limitation|60002/i.test(msg)) return false;
   return (
-    /IP_FORBIDDEN/i.test(msg) ||
     /abort/i.test(msg) ||
     /timeout/i.test(msg) ||
     /network/i.test(msg) ||
