@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { yeastarPhase1Probe, yeastarAuthDiagnostic, yeastarForceExpire } from "@/lib/yeastar-diagnostic.functions";
+import { yeastarPhase1Probe, yeastarAuthDiagnostic, yeastarForceExpire, yeastarConfigDiagnostic } from "@/lib/yeastar-diagnostic.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
@@ -50,11 +50,18 @@ function YeastarDiagnosticPage() {
   const runProbe = useServerFn(yeastarPhase1Probe);
   const runAuth = useServerFn(yeastarAuthDiagnostic);
   const forceExpire = useServerFn(yeastarForceExpire);
+  const runConfig = useServerFn(yeastarConfigDiagnostic);
   const [probeResult, setProbeResult] = useState<any>(null);
   const [probeBusy, setProbeBusy] = useState(false);
   const [expireMsg, setExpireMsg] = useState<string | null>(null);
   const [rows, setRows] = useState<AuthRow[]>([]);
   const [busy, setBusy] = useState<null | "one" | "ten">(null);
+  const [configResult, setConfigResult] = useState<any>(null);
+  const [configBusy, setConfigBusy] = useState(false);
+  const checkConfig = async () => {
+    setConfigBusy(true);
+    try { setConfigResult(await runConfig()); } finally { setConfigBusy(false); }
+  };
 
   const doOne = async (n: number) => {
     const r: any = await runAuth();
@@ -129,6 +136,25 @@ function YeastarDiagnosticPage() {
       </div>
 
       <ExtensionMappingValidator />
+
+      <Card>
+        <CardHeader><CardTitle>Configuration Diagnostic</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Verifies that YEASTAR_BASE_URL, YEASTAR_CLIENT_ID, and YEASTAR_CLIENT_SECRET are
+            readable from <code>process.env</code> inside a server handler at request time.
+            Values are never returned — only booleans.
+          </p>
+          <Button size="sm" onClick={checkConfig} disabled={configBusy}>
+            {configBusy ? "Checking…" : "Check configuration"}
+          </Button>
+          {configResult && (
+            <pre className="text-xs bg-muted p-3 rounded overflow-auto">
+              {JSON.stringify(configResult, null, 2)}
+            </pre>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle>Authentication Cache Diagnostic</CardTitle></CardHeader>
