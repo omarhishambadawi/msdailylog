@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isAdministrator } from "@/lib/auth";
 import { adminCreateUser, adminListUsers, adminSetActive, adminSetRole, adminSetPassword, adminUpdateProfile, adminDeleteUser } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
