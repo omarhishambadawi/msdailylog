@@ -307,32 +307,95 @@ export interface YeastarCdrRecord {
 const fmtDate = (d: string) => `${d} 00:00:00`;
 const fmtDateEnd = (d: string) => `${d} 23:59:59`;
 
+export interface CdrDiagnostic {
+  endpoint: string;
+  requestUrl: string; // access_token masked
+  queryParams: Record<string, string>;
+  timeRange: { start: string; end: string };
+  pbxTimezone?: string;
+  httpStatus?: number;
+  errcode?: number;
+  errmsg?: string;
+  totalNumber?: number;
+  recordsReturned: number;
+  rawResponsePreview: string;
+  extensionsSample?: Array<{ number: string; name?: string }>;
+}
+
+async function fetchPbxTimezone(base: string, token: string): Promise<string | undefined> {
+  try {
+    const url = `${base}/openapi/v1.0/pbx_info?access_token=${encodeURIComponent(token)}`;
+    const res = await timedFetch(url, { headers: { "Accept": "application/json", "User-Agent": USER_AGENT } });
+    const j: any = await res.json().catch(() => null);
+    return j?.pbx_info?.time_zone ?? j?.time_zone ?? j?.data?.time_zone;
+  } catch { return undefined; }
+}
+
+async function fetchExtensionsSample(base: string, token: string): Promise<Array<{ number: string; name?: string }>> {
+  try {
+    const url = `${base}/openapi/v1.0/extension/list?access_token=${encodeURIComponent(token)}&page=1&page_size=100&sort_by=number&order_by=asc`;
+    const res = await timedFetch(url, { headers: { "Accept": "application/json", "User-Agent": USER_AGENT } });
+    const j: any = await res.json().catch(() => null);
+    const list: any[] = j?.extension_list ?? j?.data?.extension_list ?? [];
+    return list.map((e) => ({ number: String(e.number ?? e.extension ?? ""), name: e.name ?? e.caller_id_name }));
+  } catch { return []; }
+}
+
 /**
  * Fetch CDR records for a date range. Yeastar limits per-page results,
  * so we paginate. Dates in `YYYY-MM-DD` format.
  */
-export async function fetchCdr(fromDate: string, toDate: string): Promise<YeastarCdrRecord[]> {
+export async function fetchCdr(
+  fromDate: string,
+  toDate: string,
+): Promise<{ records: YeastarCdrRecord[]; diagnostic: CdrDiagnostic }> {
   const env = requireEnv();
-  if (!env) return [];
+  const endpoint = `${env!.base}/openapi/v1.0/cdr/list`;
+  const start = fmtDate(fromDate);
+  const end = fmtDateEnd(toDate);
+  const diagnostic: CdrDiagnostic = {
+    endpoint,
+    requestUrl: "",
+    queryParams: { start_time: start, end_time: end, page: "1", page_size: "500" },
+    timeRange: { start, end },
+    recordsReturned: 0,
+    rawResponsePreview: "",
+  };
+  if (!env) return { records: [], diagnostic };
   const token = await getAccessToken();
+  diagnostic.pbxTimezone = await fetchPbxTimezone(env.base, token);
   const results: YeastarCdrRecord[] = [];
   const pageSize = 500;
   let page = 1;
-  // Hard safety cap: 20 pages = 10k records
   while (page <= 20) {
     const currentPage = page;
     const rows = await withRetry(`cdr page ${currentPage}`, async () => {
-      const url = new URL(`${env.base}/openapi/v1.0/cdr/list`);
+      const url = new URL(endpoint);
       url.searchParams.set("access_token", token);
-      url.searchParams.set("start_time", fmtDate(fromDate));
-      url.searchParams.set("end_time", fmtDateEnd(toDate));
+      url.searchParams.set("start_time", start);
+      url.searchParams.set("end_time", end);
       url.searchParams.set("page", String(currentPage));
       url.searchParams.set("page_size", String(pageSize));
+      const masked = url.toString().replace(encodeURIComponent(token), "***MASKED***");
+      if (currentPage === 1) diagnostic.requestUrl = masked;
+      console.log(`[yeastar cdr] GET ${masked}`);
       const res = await timedFetch(url.toString(), {
         headers: { "Accept": "application/json", "User-Agent": USER_AGENT },
       });
-      if (!res.ok) throw new Error(`Yeastar CDR HTTP ${res.status}`);
-      const json: any = await res.json();
+      const bodyText = await res.text().catch(() => "");
+      if (currentPage === 1) {
+        diagnostic.httpStatus = res.status;
+        diagnostic.rawResponsePreview = bodyText.slice(0, 1500);
+      }
+      console.log(`[yeastar cdr] page ${currentPage} HTTP ${res.status} bytes=${bodyText.length}`);
+      if (!res.ok) throw new Error(`Yeastar CDR HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
+      let json: any = null;
+      try { json = JSON.parse(bodyText); } catch { throw new Error(`Yeastar CDR non-JSON response: ${bodyText.slice(0, 200)}`); }
+      if (currentPage === 1) {
+        diagnostic.errcode = json?.errcode;
+        diagnostic.errmsg = json?.errmsg;
+        diagnostic.totalNumber = json?.total_number;
+      }
       if (json.errcode !== 0) {
         if (json.errcode === 70087) throw new Error("IP_FORBIDDEN: PBX rejected the server IP.");
         throw new Error(`Yeastar CDR error ${json.errcode}: ${json.errmsg ?? "unknown"}`);
@@ -343,7 +406,12 @@ export async function fetchCdr(fromDate: string, toDate: string): Promise<Yeasta
     if (rows.length < pageSize) break;
     page += 1;
   }
-  return results;
+  diagnostic.recordsReturned = results.length;
+  if (results.length === 0) {
+    diagnostic.extensionsSample = (await fetchExtensionsSample(env.base, token)).slice(0, 25);
+  }
+  console.log(`[yeastar cdr] window=${start}..${end} tz=${diagnostic.pbxTimezone ?? "?"} records=${results.length} total_number=${diagnostic.totalNumber}`);
+  return { records: results, diagnostic };
 }
 
 // -------- Aggregation helpers (pure, testable, no I/O) --------
