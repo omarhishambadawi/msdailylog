@@ -35,7 +35,7 @@ interface AuthRow {
 
 function YeastarDiagnosticPage() {
   const { role } = useAuth();
-  if (role !== "admin") {
+  if (!isAdministrator(role)) {
     return (
       <div className="mx-auto max-w-2xl p-6">
         <Card>
