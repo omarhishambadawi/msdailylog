@@ -143,13 +143,22 @@ export const yeastarCallAnalytics = createServerFn({ method: "POST" })
         : result;
       if (data.agentCode) {
         const sum = filtered.rows.reduce(
-          (acc, r) => ({ total: acc.total + r.total, answered: acc.answered + r.answered, missed: acc.missed + r.missed, inbound: acc.inbound + r.inbound, outbound: acc.outbound + r.outbound }),
-          { total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0 },
+          (acc, r) => ({
+            total: acc.total + r.total,
+            answered: acc.answered + r.answered,
+            missed: acc.missed + r.missed,
+            inbound: acc.inbound + r.inbound,
+            outbound: acc.outbound + r.outbound,
+            talkTimeSec: acc.talkTimeSec + r.talkTimeSec,
+          }),
+          { total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0, talkTimeSec: 0 },
         );
         filtered.totals = {
-          ...sum,
+          total: sum.total, answered: sum.answered, missed: sum.missed,
+          inbound: sum.inbound, outbound: sum.outbound,
           answerRate: sum.total > 0 ? Math.round((sum.answered / sum.total) * 1000) / 10 : 0,
           missedRate: sum.total > 0 ? Math.round((sum.missed / sum.total) * 1000) / 10 : 0,
+          avgTalkSec: sum.answered > 0 ? Math.round(sum.talkTimeSec / sum.answered) : 0,
         };
       }
       return { ok: true as const, configured: true as const, ...filtered };

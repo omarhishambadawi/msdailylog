@@ -98,7 +98,7 @@ export function CallCenterSection({ from, to, team, agentId }: Props) {
         <Card><CardContent className="p-4 text-sm text-destructive">Yeastar: {("error" in (data as any)) ? (data as any).error : "unavailable"}</CardContent></Card>
       ) : null}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
         <Kpi label="Total calls" value={totals?.total ?? 0} loading={analytics.isPending} />
         <Kpi label="Answered" value={totals?.answered ?? 0} accent="text-green-600 dark:text-green-400" loading={analytics.isPending} />
         <Kpi label="Missed" value={totals?.missed ?? 0} accent="text-red-600 dark:text-red-400" loading={analytics.isPending} />
@@ -106,6 +106,7 @@ export function CallCenterSection({ from, to, team, agentId }: Props) {
         <Kpi label="Outbound" value={totals?.outbound ?? 0} loading={analytics.isPending} />
         <Kpi label="Answer rate" value={`${totals?.answerRate ?? 0}%`} accent="text-green-600 dark:text-green-400" loading={analytics.isPending} />
         <Kpi label="Missed rate" value={`${totals?.missedRate ?? 0}%`} accent="text-red-600 dark:text-red-400" loading={analytics.isPending} />
+        <Kpi label="Avg talk" value={formatDuration(totals?.avgTalkSec ?? 0)} loading={analytics.isPending} />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-3 sm:gap-4">
@@ -233,4 +234,11 @@ function Kpi({ label, value, accent, loading }: { label: string; value: string |
       <div className={`mt-1 text-xl font-bold tabular-nums leading-tight ${accent ?? ""}`}>{loading ? "…" : value}</div>
     </div>
   );
+}
+
+function formatDuration(sec: number): string {
+  if (!sec || sec <= 0) return "0s";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }

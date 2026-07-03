@@ -1,21 +1,43 @@
 /**
- * Yeastar Call Reports — replicates the exact request the Yeastar Web UI
- * (Reports → Call Reports) makes:
+ * Yeastar Call Analytics — OpenAPI-only implementation.
  *
- *   GET /api/v2.0/report/searchbytype
- *       ?ext_id_list=<id1>,<id2>,
- *       &time_begin=DD/MM/YYYY hh:mm:ss AM
- *       &time_end=DD/MM/YYYY hh:mm:ss PM
- *       &call_type=InOutbound|Inbound|Outbound
- *       &type=extcallstatistics
+ * Single documented data source:
+ *   GET /openapi/v1.0/cdr/list
+ *     ?page=<n>&page_size=100
+ *     &sort_by=time_start&order_by=desc
+ *     &start_time=yyyy-MM-dd HH:mm:ss
+ *     &end_time=yyyy-MM-dd HH:mm:ss
  *
- * The Web UI authenticates via a websession cookie; the OpenAPI access_token
- * (query param) is accepted on this firmware for the same path. The response
- * carries `ext_call_statistics_list` and — when the account is authorised —
- * `ext_group_call_statistics_list`.
+ * We do NOT touch /api/v2.0/*, websessions, cookies, or PBX admin credentials.
+ * The endpoint is authenticated with the OpenAPI access_token appended by
+ * `yeastarFetch()` (see ./client.server.ts).
  *
- * Extension selection uses the local `yeastar_extension_map` table
- * (see ./mapping.server.ts) as the single source of truth for team grouping.
+ * Attribution model
+ * -----------------
+ * Every CDR row exposes `call_from` / `call_to` (either an extension number
+ * or an external phone number) plus `call_type`. We compute an "extension
+ * side" per row:
+ *   - Inbound  : the extension is on `call_to`
+ *   - Outbound : the extension is on `call_from`
+ *   - Internal : both sides may be extensions; each side is credited once
+ *
+ * A row is kept only if its extension side matches an ext_num in
+ * `yeastar_extension_map` (filtered by the requested team). Everything else
+ * is silently ignored — including calls that never touched a mapped agent.
+ *
+ * KPI definitions
+ * ---------------
+ *   total       = rows attributed to a mapped extension
+ *   answered    = talk_duration > 0  OR  status == "ANSWERED"
+ *   missed      = total - answered
+ *   inbound     = rows classified Inbound
+ *   outbound    = rows classified Outbound
+ *   answerRate  = answered / total          (percentage, 1 decimal)
+ *   missedRate  = missed  / total           (percentage, 1 decimal)
+ *   talkTimeSec = sum of talk_duration on answered rows
+ *
+ * Pagination is capped at MAX_PAGES to keep worker cost bounded; if the
+ * window overflows we surface `truncated: true` in the result.
  */
 import { yeastarFetch } from "./client.server";
 import { resolveMappingContext, type Team } from "./mapping.server";
@@ -48,84 +70,190 @@ export interface CallStatsResult {
     total: number; answered: number; missed: number;
     inbound: number; outbound: number;
     answerRate: number; missedRate: number;
+    avgTalkSec: number;
   };
   mapping: {
     mappedExtensions: number;
     missingOnPbx: string[];
     unmappedFromPbx: string[];
   };
-  elapsedMs: number;
-  request?: { url: string; params: Record<string, string> };
-  raw?: {
-    httpStatus: number;
-    errcode: number | null;
-    errmsg: string | null;
-    total_number: number | null;
-    keys: string[];
-    ext_group_call_statistics_list: RawStatRow[] | null;
-    bodyPreview: string;
+  cdr: {
+    endpoint: string;
+    pagesFetched: number;
+    rowsFetched: number;
+    rowsAttributed: number;
+    truncated: boolean;
+    pageSize: number;
+    maxPages: number;
   };
-
-  rawExtNums?: string[];
+  elapsedMs: number;
 }
 
-const REPORT_PATH = "/api/v2.0/report/searchbytype";
+const CDR_PATH = "/openapi/v1.0/cdr/list";
+const PAGE_SIZE = 100;
+const MAX_PAGES = 200; // 20 000 rows / window — enough for a day at high volume
+
+// ---- helpers ---------------------------------------------------------------
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
-// Web-UI style: "DD/MM/YYYY hh:mm:ss AM" (12-hour clock, AM/PM).
-function fmtDate(iso: string, kind: "start" | "end"): string {
-  // iso is "YYYY-MM-DD"
-  const [y, m, d] = iso.split("-");
-  return kind === "start"
-    ? `${d}/${m}/${y} 12:00:00 AM`
-    : `${d}/${m}/${y} 11:59:59 PM`;
-}
+/** Yeastar CDR expects PBX-local "yyyy-MM-dd HH:mm:ss". */
+function fmtStart(iso: string): string { return `${iso} 00:00:00`; }
+function fmtEnd(iso: string): string { return `${iso} 23:59:59`; }
 
-function pbxCallType(t: CommunicationType): string {
-  return t === "All" ? "InOutbound" : t;
+interface RawCdr {
+  id?: string | number;
+  uuid?: string;
+  time_start?: string;
+  call_from?: string;
+  call_to?: string;
+  src?: string; dst?: string;
+  src_name?: string; dst_name?: string;
+  call_type?: string;
+  status?: string;
+  talk_duration?: number | string;
+  talking?: number | string;
+  duration?: number | string;
+  billsec?: number | string;
 }
-
-interface InOutStats {
-  answered_calls?: number; no_answer_calls?: number; busy_calls?: number;
-  failed_calls?: number; voicemail_calls?: number; abandoned_calls?: number; total?: number;
-}
-interface RawStatRow {
-  ext_num?: string; ext_name?: string;
-  answered_calls?: number; no_answer_calls?: number; busy_calls?: number;
-  failed_calls?: number; voicemail_calls?: number;
-  total_call_count?: number; total_talking_time?: number;
-  inbound_stats?: InOutStats; outbound_stats?: InOutStats;
-}
-interface ReportResponse {
+interface CdrPage {
   errcode?: number; errmsg?: string;
   total_number?: number;
-  ext_call_statistics_list?: RawStatRow[];
-  ext_group_call_statistics_list?: RawStatRow[];
+  cdr_list?: RawCdr[];
+  data?: RawCdr[];
+  list?: RawCdr[];
 }
 
-function derive(raw: RawStatRow) {
-  const inb = raw.inbound_stats ?? {};
-  const out = raw.outbound_stats ?? {};
-  const inboundTotal = inb.total ?? ((inb.answered_calls ?? 0) + (inb.no_answer_calls ?? 0) + (inb.busy_calls ?? 0) + (inb.abandoned_calls ?? 0) + (inb.voicemail_calls ?? 0));
-  const outboundTotal = out.total ?? ((out.answered_calls ?? 0) + (out.no_answer_calls ?? 0) + (out.busy_calls ?? 0) + (out.failed_calls ?? 0));
-  const total = raw.total_call_count ?? (inboundTotal + outboundTotal);
-  const answered = (inb.answered_calls ?? 0) + (out.answered_calls ?? 0);
-  return { inb, out, inboundTotal, outboundTotal, total, answered };
+function pickList(json: CdrPage | null): RawCdr[] {
+  if (!json) return [];
+  return json.cdr_list ?? json.data ?? json.list ?? [];
 }
 
-async function fetchReport(extIds: string[], from: string, to: string, comm: CommunicationType) {
-  // Match the Web UI verbatim — including the trailing comma after the last id.
-  const params: Record<string, string> = {
-    ext_id_list: extIds.join(",") + ",",
-    time_begin: fmtDate(from, "start"),
-    time_end: fmtDate(to, "end"),
-    call_type: pbxCallType(comm),
-    type: "extcallstatistics",
-  };
-  const { httpStatus, json, body } = await yeastarFetch<ReportResponse>(REPORT_PATH, params);
-  return { httpStatus, json, body, params };
+function toNum(v: unknown): number {
+  if (v == null || v === "") return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
+
+function isExtensionish(s: string | undefined | null): boolean {
+  // Yeastar internal extensions are short numeric strings (2–7 digits).
+  if (!s) return false;
+  return /^\d{2,7}$/.test(s);
+}
+
+type Direction = "Inbound" | "Outbound" | "Internal" | "Other";
+
+function classify(row: RawCdr): Direction {
+  const t = String(row.call_type ?? "").toLowerCase();
+  if (t.includes("inbound")) return "Inbound";
+  if (t.includes("outbound")) return "Outbound";
+  if (t.includes("internal")) return "Internal";
+  // Fallback: infer from ext-shape of both sides.
+  const from = row.call_from ?? row.src ?? "";
+  const to = row.call_to ?? row.dst ?? "";
+  const fromExt = isExtensionish(from);
+  const toExt = isExtensionish(to);
+  if (fromExt && toExt) return "Internal";
+  if (!fromExt && toExt) return "Inbound";
+  if (fromExt && !toExt) return "Outbound";
+  return "Other";
+}
+
+function isAnswered(row: RawCdr): boolean {
+  const talk = toNum(row.talk_duration ?? row.talking ?? row.billsec);
+  if (talk > 0) return true;
+  const s = String(row.status ?? "").toUpperCase();
+  return s === "ANSWERED";
+}
+
+function talkSec(row: RawCdr): number {
+  return toNum(row.talk_duration ?? row.talking ?? row.billsec);
+}
+
+// ---- pagination ------------------------------------------------------------
+
+async function fetchAllCdr(from: string, to: string): Promise<{ rows: RawCdr[]; pages: number; truncated: boolean }> {
+  const out: RawCdr[] = [];
+  let pages = 0;
+  let truncated = false;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const { httpStatus, json, body } = await yeastarFetch<CdrPage>(CDR_PATH, {
+      page, page_size: PAGE_SIZE,
+      sort_by: "time_start", order_by: "desc",
+      start_time: fmtStart(from),
+      end_time: fmtEnd(to),
+    });
+    if (httpStatus !== 200 || !json || json.errcode !== 0) {
+      throw new Error(`${CDR_PATH} failed page=${page}: HTTP ${httpStatus} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"} body=${body.slice(0, 200)}`);
+    }
+    const list = pickList(json);
+    pages = page;
+    out.push(...list);
+    if (list.length < PAGE_SIZE) break;
+    if (page === MAX_PAGES) { truncated = true; break; }
+  }
+  return { rows: out, pages, truncated };
+}
+
+// ---- aggregation -----------------------------------------------------------
+
+interface Bucket {
+  total: number; answered: number; missed: number;
+  inbound: number; outbound: number;
+  inboundAnswered: number; outboundAnswered: number;
+  talkTimeSec: number;
+}
+function emptyBucket(): Bucket {
+  return { total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0, inboundAnswered: 0, outboundAnswered: 0, talkTimeSec: 0 };
+}
+function credit(b: Bucket, row: RawCdr, direction: "Inbound" | "Outbound") {
+  const answered = isAnswered(row);
+  b.total += 1;
+  if (answered) { b.answered += 1; b.talkTimeSec += talkSec(row); }
+  else b.missed += 1;
+  if (direction === "Inbound") {
+    b.inbound += 1;
+    if (answered) b.inboundAnswered += 1;
+  } else {
+    b.outbound += 1;
+    if (answered) b.outboundAnswered += 1;
+  }
+}
+
+interface Attribution {
+  ext_num: string;
+  direction: "Inbound" | "Outbound";
+}
+
+/**
+ * Returns the mapped-extension sides of a CDR row. A row can produce 0, 1, or
+ * 2 attributions (0 when neither side is a mapped extension, 2 for internal
+ * calls between two mapped agents).
+ */
+function attribute(row: RawCdr, mappedNums: Set<string>): Attribution[] {
+  const from = row.call_from ?? row.src ?? "";
+  const to = row.call_to ?? row.dst ?? "";
+  const dir = classify(row);
+  const acc: Attribution[] = [];
+  switch (dir) {
+    case "Inbound":
+      if (mappedNums.has(to)) acc.push({ ext_num: to, direction: "Inbound" });
+      break;
+    case "Outbound":
+      if (mappedNums.has(from)) acc.push({ ext_num: from, direction: "Outbound" });
+      break;
+    case "Internal":
+      if (mappedNums.has(from)) acc.push({ ext_num: from, direction: "Outbound" });
+      if (mappedNums.has(to)) acc.push({ ext_num: to, direction: "Inbound" });
+      break;
+    default:
+      if (mappedNums.has(from)) acc.push({ ext_num: from, direction: "Outbound" });
+      else if (mappedNums.has(to)) acc.push({ ext_num: to, direction: "Inbound" });
+  }
+  return acc;
+}
+
+// ---- public API ------------------------------------------------------------
 
 export function resetReportProbeCache() { /* no-op; kept for API compatibility */ }
 
@@ -135,77 +263,68 @@ export async function fetchCallStatistics(opts: {
   const started = Date.now();
   const ctx = await resolveMappingContext();
 
-  // Only extensions that are (a) in our mapping and (b) known to the PBX.
-  const wantedExtNums: string[] = [];
-  for (const [ext_num, row] of ctx.byExtNum) {
+  // Mapped extension numbers to attribute against, respecting team filter.
+  const mappedNums = new Set<string>();
+  for (const [ext, row] of ctx.byExtNum) {
     if (opts.team !== "all" && row.team !== opts.team) continue;
-    if (ctx.extNumToId.has(ext_num)) wantedExtNums.push(ext_num);
+    mappedNums.add(ext);
   }
-  const extIds = wantedExtNums.map((n) => ctx.extNumToId.get(n)!);
+
+  const perExt = new Map<string, Bucket>();
+  let rowsAttributed = 0;
+
+  const { rows: cdrRows, pages, truncated } = await fetchAllCdr(opts.from, opts.to);
+
+  for (const row of cdrRows) {
+    const atts = attribute(row, mappedNums);
+    for (const a of atts) {
+      if (opts.communicationType !== "All" && a.direction !== opts.communicationType) continue;
+      let b = perExt.get(a.ext_num);
+      if (!b) { b = emptyBucket(); perExt.set(a.ext_num, b); }
+      credit(b, row, a.direction);
+      rowsAttributed += 1;
+    }
+  }
 
   const rows: CallStatsRow[] = [];
-  let rawList: RawStatRow[] = [];
-  let raw: CallStatsResult["raw"] | undefined;
-  let request: CallStatsResult["request"] | undefined;
-
-  if (extIds.length > 0) {
-    const { httpStatus, json, body, params } = await fetchReport(extIds, opts.from, opts.to, opts.communicationType);
-    rawList = json?.ext_call_statistics_list ?? [];
-    raw = {
-      httpStatus,
-      errcode: json?.errcode ?? null,
-      errmsg: json?.errmsg ?? null,
-      total_number: json?.total_number ?? null,
-      keys: json && typeof json === "object" ? Object.keys(json) : [],
-      ext_group_call_statistics_list: json?.ext_group_call_statistics_list ?? null,
-      bodyPreview: body.slice(0, 400),
-    };
-    request = { url: REPORT_PATH, params };
-
-    if (httpStatus !== 200 || json?.errcode !== 0) {
-      throw new Error(`${REPORT_PATH} failed: HTTP ${httpStatus} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"} body=${body.slice(0, 200)}`);
-    }
-
-    for (const r of rawList) {
-      const ext_num = String(r.ext_num ?? "");
-      const mapped = ctx.byExtNum.get(ext_num);
-      if (!mapped) continue;
-      if (opts.team !== "all" && mapped.team !== opts.team) continue;
-      const d = derive(r);
-      rows.push({
-        ext_num,
-        ext_name: mapped.agent_name || r.ext_name || ext_num,
-        group: mapped.team,
-        agent_code: mapped.agent_code ?? ext_num,
-        total: d.total,
-        answered: d.answered,
-        missed: Math.max(0, d.total - d.answered),
-        inbound: d.inboundTotal,
-        outbound: d.outboundTotal,
-        inboundAnswered: d.inb.answered_calls ?? 0,
-        outboundAnswered: d.out.answered_calls ?? 0,
-        answerRate: d.total > 0 ? Math.round((d.answered / d.total) * 1000) / 10 : 0,
-        talkTimeSec: r.total_talking_time ?? 0,
-      });
-    }
-    rows.sort((a, b) => b.total - a.total);
+  for (const [ext_num, b] of perExt) {
+    const mapped = ctx.byExtNum.get(ext_num);
+    if (!mapped) continue;
+    rows.push({
+      ext_num,
+      ext_name: mapped.agent_name || ext_num,
+      group: mapped.team,
+      agent_code: mapped.agent_code ?? ext_num,
+      total: b.total,
+      answered: b.answered,
+      missed: b.missed,
+      inbound: b.inbound,
+      outbound: b.outbound,
+      inboundAnswered: b.inboundAnswered,
+      outboundAnswered: b.outboundAnswered,
+      answerRate: b.total > 0 ? Math.round((b.answered / b.total) * 1000) / 10 : 0,
+      talkTimeSec: b.talkTimeSec,
+    });
   }
-
-  console.log(`[yeastar reports] mapped=${ctx.byExtNum.size} ids=${extIds.length} pbxRows=${rawList.length}`);
+  rows.sort((a, b) => b.total - a.total);
 
   const sum = rows.reduce(
     (acc, r) => {
       acc.total += r.total; acc.answered += r.answered; acc.missed += r.missed;
-      acc.inbound += r.inbound; acc.outbound += r.outbound;
+      acc.inbound += r.inbound; acc.outbound += r.outbound; acc.talkTimeSec += r.talkTimeSec;
       return acc;
     },
-    { total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0 },
+    { total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0, talkTimeSec: 0 },
   );
   const totals = {
-    ...sum,
+    total: sum.total, answered: sum.answered, missed: sum.missed,
+    inbound: sum.inbound, outbound: sum.outbound,
     answerRate: sum.total > 0 ? Math.round((sum.answered / sum.total) * 1000) / 10 : 0,
     missedRate: sum.total > 0 ? Math.round((sum.missed / sum.total) * 1000) / 10 : 0,
+    avgTalkSec: sum.answered > 0 ? Math.round(sum.talkTimeSec / sum.answered) : 0,
   };
+
+  console.log(`[yeastar cdr] window=${opts.from}..${opts.to} pages=${pages} cdrRows=${cdrRows.length} attributed=${rowsAttributed} mapped=${mappedNums.size} truncated=${truncated}`);
 
   return {
     window: { from: opts.from, to: opts.to },
@@ -218,55 +337,66 @@ export async function fetchCallStatistics(opts: {
       missingOnPbx: ctx.missingOnPbx,
       unmappedFromPbx: ctx.unmappedFromPbx,
     },
+    cdr: {
+      endpoint: CDR_PATH,
+      pagesFetched: pages,
+      rowsFetched: cdrRows.length,
+      rowsAttributed,
+      truncated,
+      pageSize: PAGE_SIZE,
+      maxPages: MAX_PAGES,
+    },
     elapsedMs: Date.now() - started,
-    request,
-    raw,
-    rawExtNums: Array.from(new Set(rawList.map((r) => String(r.ext_num ?? "")))).filter(Boolean),
   };
 }
 
-// ---- Daily activity (for the trend chart) -----------------------------------
+// ---- daily volume ----------------------------------------------------------
 
-export interface DailyPoint { date: string; total: number; answered: number; missed: number; inbound: number; outbound: number }
-
-function daysBetween(from: string, to: string): string[] {
-  const out: string[] = [];
-  const start = new Date(`${from}T00:00:00Z`);
-  const end = new Date(`${to}T00:00:00Z`);
-  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-    out.push(d.toISOString().slice(0, 10));
-  }
-  return out.slice(0, 62);
+export interface DailyPoint {
+  date: string;
+  total: number; answered: number; missed: number;
+  inbound: number; outbound: number;
 }
 
+function dayKey(iso: string): string { return iso.slice(0, 10); }
+
+/**
+ * Reuses the same CDR pull as fetchCallStatistics — we walk the window once
+ * and bucket per day. No extra network calls per day.
+ */
 export async function fetchDailyVolume(opts: {
   from: string; to: string; team: TeamFilter; communicationType: CommunicationType;
 }): Promise<DailyPoint[]> {
   const ctx = await resolveMappingContext();
-  const ids: string[] = [];
-  for (const [ext_num, row] of ctx.byExtNum) {
+  const mappedNums = new Set<string>();
+  for (const [ext, row] of ctx.byExtNum) {
     if (opts.team !== "all" && row.team !== opts.team) continue;
-    const id = ctx.extNumToId.get(ext_num);
-    if (id) ids.push(id);
+    mappedNums.add(ext);
   }
-  if (ids.length === 0) return [];
+  if (mappedNums.size === 0) return [];
 
-  const days = daysBetween(opts.from, opts.to);
-  const results: DailyPoint[] = [];
-  for (const day of days) {
-    const { json } = await fetchReport(ids, day, day, opts.communicationType);
-    const list = json?.ext_call_statistics_list ?? [];
-    let total = 0, answered = 0, inbound = 0, outbound = 0;
-    for (const r of list) {
-      if (!ctx.byExtNum.has(String(r.ext_num ?? ""))) continue;
-      const d = derive(r);
-      total += d.total; answered += d.answered; inbound += d.inboundTotal; outbound += d.outboundTotal;
+  const { rows: cdrRows } = await fetchAllCdr(opts.from, opts.to);
+
+  const byDay = new Map<string, DailyPoint>();
+  for (const row of cdrRows) {
+    const atts = attribute(row, mappedNums);
+    if (atts.length === 0) continue;
+    const day = dayKey(String(row.time_start ?? ""));
+    if (!day) continue;
+    let p = byDay.get(day);
+    if (!p) { p = { date: day, total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0 }; byDay.set(day, p); }
+    for (const a of atts) {
+      if (opts.communicationType !== "All" && a.direction !== opts.communicationType) continue;
+      const answered = isAnswered(row);
+      p.total += 1;
+      if (answered) p.answered += 1; else p.missed += 1;
+      if (a.direction === "Inbound") p.inbound += 1; else p.outbound += 1;
     }
-    results.push({ date: day, total, answered, missed: Math.max(0, total - answered), inbound, outbound });
   }
-  return results;
+
+  return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
-// Kept for backwards compatibility with any callers referring to old symbols.
+// Backwards-compat exports (older callers).
 export const lastReportProbes: never[] = [];
 export type ReportProbe = never;
