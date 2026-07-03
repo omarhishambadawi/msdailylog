@@ -62,9 +62,10 @@ export interface CallStatsResult {
     errmsg: string | null;
     total_number: number | null;
     keys: string[];
-    ext_group_call_statistics_list: unknown;
+    ext_group_call_statistics_list: RawStatRow[] | null;
     bodyPreview: string;
   };
+
   rawExtNums?: string[];
 }
 
