@@ -1,13 +1,21 @@
 /**
- * Yeastar Call Reports — Extension Call Statistics.
+ * Yeastar Call Reports — replicates the exact request the Yeastar Web UI
+ * (Reports → Call Reports) makes:
  *
- * Uses GET /openapi/v1.0/call_report/list with `type=extcallstatistics`.
- * Extensions are selected via the Extension Mapping table (see
- * ./mapping.server.ts) — extension groups on the PBX are NOT used, because
- * some firmwares don't expose them through the OpenAPI.
+ *   GET /api/v2.0/report/searchbytype
+ *       ?ext_id_list=<id1>,<id2>,
+ *       &time_begin=DD/MM/YYYY hh:mm:ss AM
+ *       &time_end=DD/MM/YYYY hh:mm:ss PM
+ *       &call_type=InOutbound|Inbound|Outbound
+ *       &type=extcallstatistics
  *
- * Any extension not present in the mapping is silently excluded from all
- * dashboards; its ext_num is surfaced in `unmappedFromPbx` for diagnostics.
+ * The Web UI authenticates via a websession cookie; the OpenAPI access_token
+ * (query param) is accepted on this firmware for the same path. The response
+ * carries `ext_call_statistics_list` and — when the account is authorised —
+ * `ext_group_call_statistics_list`.
+ *
+ * Extension selection uses the local `yeastar_extension_map` table
+ * (see ./mapping.server.ts) as the single source of truth for team grouping.
  */
 import { yeastarFetch } from "./client.server";
 import { resolveMappingContext, type Team } from "./mapping.server";
@@ -47,20 +55,52 @@ export interface CallStatsResult {
     unmappedFromPbx: string[];
   };
   elapsedMs: number;
-  probes?: ReportProbe[];
+  request?: { url: string; params: Record<string, string> };
+  raw?: {
+    httpStatus: number;
+    errcode: number | null;
+    errmsg: string | null;
+    total_number: number | null;
+    keys: string[];
+    ext_group_call_statistics_list: unknown;
+    bodyPreview: string;
+  };
   rawExtNums?: string[];
 }
 
-function fmtStart(d: string) { return `${d} 00:00:00`; }
-function fmtEnd(d: string) { return `${d} 23:59:59`; }
-function pbxCommType(t: CommunicationType): string { return t === "All" ? "InOutbound" : t; }
+const REPORT_PATH = "/api/v2.0/report/searchbytype";
 
-interface InOutStats { answered_calls?: number; no_answer_calls?: number; busy_calls?: number; failed_calls?: number; voicemail_calls?: number; abandoned_calls?: number; total?: number }
+function pad(n: number) { return String(n).padStart(2, "0"); }
+
+// Web-UI style: "DD/MM/YYYY hh:mm:ss AM" (12-hour clock, AM/PM).
+function fmtDate(iso: string, kind: "start" | "end"): string {
+  // iso is "YYYY-MM-DD"
+  const [y, m, d] = iso.split("-");
+  return kind === "start"
+    ? `${d}/${m}/${y} 12:00:00 AM`
+    : `${d}/${m}/${y} 11:59:59 PM`;
+}
+
+function pbxCallType(t: CommunicationType): string {
+  return t === "All" ? "InOutbound" : t;
+}
+
+interface InOutStats {
+  answered_calls?: number; no_answer_calls?: number; busy_calls?: number;
+  failed_calls?: number; voicemail_calls?: number; abandoned_calls?: number; total?: number;
+}
 interface RawStatRow {
   ext_num?: string; ext_name?: string;
-  answered_calls?: number; no_answer_calls?: number; busy_calls?: number; failed_calls?: number; voicemail_calls?: number; abandoned_calls?: number;
+  answered_calls?: number; no_answer_calls?: number; busy_calls?: number;
+  failed_calls?: number; voicemail_calls?: number;
   total_call_count?: number; total_talking_time?: number;
   inbound_stats?: InOutStats; outbound_stats?: InOutStats;
+}
+interface ReportResponse {
+  errcode?: number; errmsg?: string;
+  total_number?: number;
+  ext_call_statistics_list?: RawStatRow[];
+  ext_group_call_statistics_list?: RawStatRow[];
 }
 
 function derive(raw: RawStatRow) {
@@ -73,98 +113,20 @@ function derive(raw: RawStatRow) {
   return { inb, out, inboundTotal, outboundTotal, total, answered };
 }
 
-export interface ReportProbe { path: string; params: Record<string, string|number>; httpStatus: number; errcode: number|null; errmsg: string|null; keys: string[]; listKey: string|null; count: number; bodyPreview: string; }
-export const lastReportProbes: ReportProbe[] = [];
-
-// Candidate endpoint + payload shapes across Yeastar firmwares.
-// The first shape that returns errcode=0 with a non-empty list wins;
-// if all return errcode=0 with an empty list we still fall back to the first
-// so downstream aggregation works.
-type Shape = { path: string; build: (extIds: string[], from: string, to: string, comm: CommunicationType) => Record<string, string|number> };
-const SHAPES: Shape[] = [
-  { path: "/openapi/v1.0/call_report/list", build: (ids, f, t, c) => ({
-      type: "extcallstatistics", ext_id_list: ids.join(","),
-      start_time: fmtStart(f), end_time: fmtEnd(t),
-      communication_type: pbxCommType(c), page: 1, page_size: 200,
-    }) },
-  { path: "/openapi/v1.0/callreport/get_ext_call_statistics", build: (ids, f, t, c) => ({
-      ext_ids: ids.join(","),
-      time_start: fmtStart(f), time_end: fmtEnd(t),
-      communication_type: pbxCommType(c),
-    }) },
-  { path: "/openapi/v1.0/callreport/query_extension_call_statistics", build: (ids, f, t, c) => ({
-      ext_id_list: ids.join(","),
-      start_time: fmtStart(f), end_time: fmtEnd(t),
-      communication_type: pbxCommType(c), page: 1, page_size: 200,
-    }) },
-  { path: "/openapi/v1.0/call_statistics/extension", build: (ids, f, t, c) => ({
-      ext_id_list: ids.join(","),
-      start_time: fmtStart(f), end_time: fmtEnd(t),
-      communication_type: pbxCommType(c), page: 1, page_size: 200,
-    }) },
-];
-
-const LIST_KEYS = ["ext_call_statistics_list","extension_call_statistics_list","ext_call_statistics","data","list","items"];
-
-function pickList(json: any): { key: string|null; list: RawStatRow[] } {
-  if (!json || typeof json !== "object") return { key: null, list: [] };
-  for (const k of LIST_KEYS) if (Array.isArray(json[k])) return { key: k, list: json[k] };
-  for (const [k, v] of Object.entries(json)) if (Array.isArray(v) && (v as any[]).some((r) => r && typeof r === "object" && "ext_num" in (r as any))) return { key: k, list: v as RawStatRow[] };
-  return { key: null, list: [] };
-}
-
-async function fetchStatsChunk(shape: Shape, extIds: string[], from: string, to: string, comm: CommunicationType): Promise<{ list: RawStatRow[]; probe: ReportProbe }> {
-  const params = shape.build(extIds, from, to, comm);
-  const { httpStatus, json, body } = await yeastarFetch<any>(shape.path, params);
-  const errcode = json?.errcode ?? null;
-  const errmsg = json?.errmsg ?? null;
-  const picked = pickList(json);
-  const probe: ReportProbe = {
-    path: shape.path, params,
-    httpStatus, errcode, errmsg,
-    keys: json && typeof json === "object" ? Object.keys(json) : [],
-    listKey: picked.key, count: picked.list.length,
-    bodyPreview: body.slice(0, 400),
+async function fetchReport(extIds: string[], from: string, to: string, comm: CommunicationType) {
+  // Match the Web UI verbatim — including the trailing comma after the last id.
+  const params: Record<string, string> = {
+    ext_id_list: extIds.join(",") + ",",
+    time_begin: fmtDate(from, "start"),
+    time_end: fmtDate(to, "end"),
+    call_type: pbxCallType(comm),
+    type: "extcallstatistics",
   };
-  if (httpStatus !== 200 || errcode !== 0) throw new Error(`${shape.path} failed: HTTP ${httpStatus} errcode=${errcode ?? "n/a"} errmsg=${errmsg ?? "n/a"} body=${body.slice(0, 200)}`);
-  return { list: picked.list, probe };
+  const { httpStatus, json, body } = await yeastarFetch<ReportResponse>(REPORT_PATH, params);
+  return { httpStatus, json, body, params };
 }
 
-// Remember the working shape between calls to avoid reprobing.
-let activeShape: Shape | null = null;
-
-async function fetchStats(extIds: string[], from: string, to: string, comm: CommunicationType): Promise<RawStatRow[]> {
-  if (extIds.length === 0) return [];
-  const out: RawStatRow[] = [];
-  const CHUNK = 40;
-
-  // Probe if we don't know which shape works.
-  if (!activeShape) {
-    lastReportProbes.length = 0;
-    let firstOk: Shape | null = null;
-    for (const shape of SHAPES) {
-      try {
-        const { list, probe } = await fetchStatsChunk(shape, extIds.slice(0, CHUNK), from, to, comm);
-        lastReportProbes.push(probe);
-        if (!firstOk) firstOk = shape;
-        if (list.length > 0) { activeShape = shape; break; }
-      } catch (e: any) {
-        lastReportProbes.push({ path: shape.path, params: shape.build(extIds.slice(0,CHUNK), from, to, comm), httpStatus: 0, errcode: null, errmsg: String(e?.message ?? e), keys: [], listKey: null, count: 0, bodyPreview: "" });
-      }
-    }
-    if (!activeShape) activeShape = firstOk; // may still be null if all threw
-    if (!activeShape) return [];
-  }
-
-  for (let i = 0; i < extIds.length; i += CHUNK) {
-    const chunk = extIds.slice(i, i + CHUNK);
-    const { list } = await fetchStatsChunk(activeShape, chunk, from, to, comm);
-    out.push(...list);
-  }
-  return out;
-}
-
-export function resetReportProbeCache() { activeShape = null; lastReportProbes.length = 0; }
+export function resetReportProbeCache() { /* no-op; kept for API compatibility */ }
 
 export async function fetchCallStatistics(opts: {
   from: string; to: string; team: TeamFilter; communicationType: CommunicationType;
@@ -172,7 +134,7 @@ export async function fetchCallStatistics(opts: {
   const started = Date.now();
   const ctx = await resolveMappingContext();
 
-  // Filter mapping by requested team, then map to PBX ext_ids we know.
+  // Only extensions that are (a) in our mapping and (b) known to the PBX.
   const wantedExtNums: string[] = [];
   for (const [ext_num, row] of ctx.byExtNum) {
     if (opts.team !== "all" && row.team !== opts.team) continue;
@@ -180,33 +142,55 @@ export async function fetchCallStatistics(opts: {
   }
   const extIds = wantedExtNums.map((n) => ctx.extNumToId.get(n)!);
 
-  const raw = await fetchStats(extIds, opts.from, opts.to, opts.communicationType);
-  console.log(`[yeastar reports] mapped=${ctx.byExtNum.size} ids=${extIds.length} pbxRows=${raw.length} unmapped(pbx)=${ctx.unmappedFromPbx.length}`);
-
   const rows: CallStatsRow[] = [];
-  for (const r of raw) {
-    const ext_num = String(r.ext_num ?? "");
-    const mapped = ctx.byExtNum.get(ext_num);
-    if (!mapped) continue; // silently exclude anything not in the mapping
-    if (opts.team !== "all" && mapped.team !== opts.team) continue;
-    const d = derive(r);
-    rows.push({
-      ext_num,
-      ext_name: mapped.agent_name || r.ext_name || ext_num,
-      group: mapped.team,
-      agent_code: mapped.agent_code ?? ext_num,
-      total: d.total,
-      answered: d.answered,
-      missed: Math.max(0, d.total - d.answered),
-      inbound: d.inboundTotal,
-      outbound: d.outboundTotal,
-      inboundAnswered: d.inb.answered_calls ?? 0,
-      outboundAnswered: d.out.answered_calls ?? 0,
-      answerRate: d.total > 0 ? Math.round((d.answered / d.total) * 1000) / 10 : 0,
-      talkTimeSec: r.total_talking_time ?? 0,
-    });
+  let rawList: RawStatRow[] = [];
+  let raw: CallStatsResult["raw"] | undefined;
+  let request: CallStatsResult["request"] | undefined;
+
+  if (extIds.length > 0) {
+    const { httpStatus, json, body, params } = await fetchReport(extIds, opts.from, opts.to, opts.communicationType);
+    rawList = json?.ext_call_statistics_list ?? [];
+    raw = {
+      httpStatus,
+      errcode: json?.errcode ?? null,
+      errmsg: json?.errmsg ?? null,
+      total_number: json?.total_number ?? null,
+      keys: json && typeof json === "object" ? Object.keys(json) : [],
+      ext_group_call_statistics_list: json?.ext_group_call_statistics_list ?? null,
+      bodyPreview: body.slice(0, 400),
+    };
+    request = { url: REPORT_PATH, params };
+
+    if (httpStatus !== 200 || json?.errcode !== 0) {
+      throw new Error(`${REPORT_PATH} failed: HTTP ${httpStatus} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"} body=${body.slice(0, 200)}`);
+    }
+
+    for (const r of rawList) {
+      const ext_num = String(r.ext_num ?? "");
+      const mapped = ctx.byExtNum.get(ext_num);
+      if (!mapped) continue;
+      if (opts.team !== "all" && mapped.team !== opts.team) continue;
+      const d = derive(r);
+      rows.push({
+        ext_num,
+        ext_name: mapped.agent_name || r.ext_name || ext_num,
+        group: mapped.team,
+        agent_code: mapped.agent_code ?? ext_num,
+        total: d.total,
+        answered: d.answered,
+        missed: Math.max(0, d.total - d.answered),
+        inbound: d.inboundTotal,
+        outbound: d.outboundTotal,
+        inboundAnswered: d.inb.answered_calls ?? 0,
+        outboundAnswered: d.out.answered_calls ?? 0,
+        answerRate: d.total > 0 ? Math.round((d.answered / d.total) * 1000) / 10 : 0,
+        talkTimeSec: r.total_talking_time ?? 0,
+      });
+    }
+    rows.sort((a, b) => b.total - a.total);
   }
-  rows.sort((a, b) => b.total - a.total);
+
+  console.log(`[yeastar reports] mapped=${ctx.byExtNum.size} ids=${extIds.length} pbxRows=${rawList.length}`);
 
   const sum = rows.reduce(
     (acc, r) => {
@@ -234,8 +218,9 @@ export async function fetchCallStatistics(opts: {
       unmappedFromPbx: ctx.unmappedFromPbx,
     },
     elapsedMs: Date.now() - started,
-    probes: lastReportProbes.slice(),
-    rawExtNums: Array.from(new Set(raw.map((r) => String(r.ext_num ?? "")))).filter(Boolean),
+    request,
+    raw,
+    rawExtNums: Array.from(new Set(rawList.map((r) => String(r.ext_num ?? "")))).filter(Boolean),
   };
 }
 
@@ -268,9 +253,10 @@ export async function fetchDailyVolume(opts: {
   const days = daysBetween(opts.from, opts.to);
   const results: DailyPoint[] = [];
   for (const day of days) {
-    const raw = await fetchStats(ids, day, day, opts.communicationType);
+    const { json } = await fetchReport(ids, day, day, opts.communicationType);
+    const list = json?.ext_call_statistics_list ?? [];
     let total = 0, answered = 0, inbound = 0, outbound = 0;
-    for (const r of raw) {
+    for (const r of list) {
       if (!ctx.byExtNum.has(String(r.ext_num ?? ""))) continue;
       const d = derive(r);
       total += d.total; answered += d.answered; inbound += d.inboundTotal; outbound += d.outboundTotal;
@@ -279,3 +265,7 @@ export async function fetchDailyVolume(opts: {
   }
   return results;
 }
+
+// Kept for backwards compatibility with any callers referring to old symbols.
+export const lastReportProbes: never[] = [];
+export type ReportProbe = never;
