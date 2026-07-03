@@ -235,3 +235,10 @@ function Kpi({ label, value, accent, loading }: { label: string; value: string |
     </div>
   );
 }
+
+function formatDuration(sec: number): string {
+  if (!sec || sec <= 0) return "0s";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
