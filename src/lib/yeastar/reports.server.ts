@@ -234,6 +234,8 @@ export async function fetchCallStatistics(opts: {
       unmappedFromPbx: ctx.unmappedFromPbx,
     },
     elapsedMs: Date.now() - started,
+    probes: lastReportProbes.slice(),
+    rawExtNums: Array.from(new Set(raw.map((r) => String(r.ext_num ?? "")))).filter(Boolean),
   };
 }
 
