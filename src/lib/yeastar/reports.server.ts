@@ -179,7 +179,7 @@ async function fetchAllCdr(from: string, to: string): Promise<{ rows: RawCdr[]; 
   for (let page = 1; page <= MAX_PAGES; page++) {
     const { httpStatus, json, body } = await yeastarFetch<CdrPage>(CDR_PATH, {
       page, page_size: PAGE_SIZE,
-      sort_by: "time_start", order_by: "desc",
+      sort_by: "time", order_by: "desc",
       start_time: fmtStart(from),
       end_time: fmtEnd(to),
     });
