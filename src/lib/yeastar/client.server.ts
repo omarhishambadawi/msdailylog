@@ -1,37 +1,27 @@
 /**
  * Yeastar P-Series OpenAPI client (server-only).
  *
- * Responsibilities:
- *   - Read credentials from env at request time (never at module scope).
- *   - Obtain an access_token via POST /openapi/v1.0/get_token.
- *   - Refresh proactively via POST /openapi/v1.0/refresh_token when the
- *     access token is within REFRESH_SKEW_MS of expiry.
- *   - Serialize concurrent auth requests inside a single Worker isolate
- *     using an in-flight promise (single-flight).
- *   - Provide `yeastarFetch()` — a thin authenticated GET helper that
- *     appends `access_token=` to the URL and retries once on HTTP 401.
+ * Two-tier cache:
+ *   L1: module-scoped memory (per-isolate)
+ *   L2: public.yeastar_token_cache (shared across isolates / cold starts)
  *
- * Cache scope: process memory only. A cold start re-authenticates. This is
- * intentional to keep the surface area minimal; the PBX allows session
- * reuse across the token lifetime (~30 min).
+ * The PBX rate-limits /get_token aggressively (errcode 60002 = MAX LIMITATION
+ * EXCEEDED). Without L2, every cold start / new isolate would hit that limit.
+ * On 60002 we persist a `blocked_until` window so no isolate retries until it
+ * expires.
  */
 
 const TOKEN_PATH = "/openapi/v1.0/get_token";
 const REFRESH_PATH = "/openapi/v1.0/refresh_token";
-const REFRESH_SKEW_MS = 60_000; // refresh 60s before expiry
-// Yeastar docs require User-Agent: OpenAPI — PBX rejects other UAs with errcode -1 / FAILURE.
+const REFRESH_SKEW_MS = 60_000;
 const UA = "OpenAPI";
+const BLOCK_MS = 5 * 60_000; // 5 minutes after a 60002
 
-export interface YeastarEnv {
-  baseUrl: string;
-  clientId: string;
-  clientSecret: string;
-}
-
+export interface YeastarEnv { baseUrl: string; clientId: string; clientSecret: string; }
 export interface TokenState {
   accessToken: string;
   refreshToken: string;
-  accessExpiresAt: number; // epoch ms
+  accessExpiresAt: number;
   refreshExpiresAt: number;
   obtainedAt: number;
 }
@@ -45,27 +35,88 @@ export function readEnv(): YeastarEnv | null {
   const baseUrl = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   return { baseUrl, clientId, clientSecret };
 }
+export function isConfigured(): boolean { return readEnv() !== null; }
 
-export function isConfigured(): boolean {
-  return readEnv() !== null;
-}
-
-// ---- module cache -----------------------------------------------------------
+// ---- L1 cache ---------------------------------------------------------------
 let token: TokenState | null = null;
 let inFlight: Promise<TokenState> | null = null;
-
 export function _resetForTests() { token = null; inFlight = null; }
 
+// ---- L2 cache (Supabase) ----------------------------------------------------
+interface L2Row {
+  access_token: string | null;
+  refresh_token: string | null;
+  access_expires_at: string | null;
+  refresh_expires_at: string | null;
+  obtained_at: string | null;
+  blocked_until: string | null;
+  block_reason: string | null;
+}
+
+async function loadL2(): Promise<L2Row | null> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("yeastar_token_cache")
+      .select("access_token, refresh_token, access_expires_at, refresh_expires_at, obtained_at, blocked_until, block_reason")
+      .eq("id", 1)
+      .maybeSingle();
+    if (error) { console.warn("[yeastar] L2 load failed:", error.message); return null; }
+    return (data as L2Row) ?? null;
+  } catch (e) {
+    console.warn("[yeastar] L2 load exception:", (e as Error).message);
+    return null;
+  }
+}
+
+async function saveL2Token(state: TokenState) {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("yeastar_token_cache").upsert({
+      id: 1,
+      access_token: state.accessToken,
+      refresh_token: state.refreshToken,
+      access_expires_at: new Date(state.accessExpiresAt).toISOString(),
+      refresh_expires_at: new Date(state.refreshExpiresAt).toISOString(),
+      obtained_at: new Date(state.obtainedAt).toISOString(),
+      blocked_until: null,
+      block_reason: null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+  } catch (e) { console.warn("[yeastar] L2 save failed:", (e as Error).message); }
+}
+
+async function saveL2Block(reason: string, ms = BLOCK_MS) {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("yeastar_token_cache").upsert({
+      id: 1,
+      blocked_until: new Date(Date.now() + ms).toISOString(),
+      block_reason: reason,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+    console.warn(`[yeastar] L2 block persisted for ${Math.round(ms / 1000)}s: ${reason}`);
+  } catch (e) { console.warn("[yeastar] L2 block save failed:", (e as Error).message); }
+}
+
+function l2ToState(row: L2Row): TokenState | null {
+  if (!row.access_token || !row.access_expires_at || !row.refresh_token || !row.refresh_expires_at || !row.obtained_at) return null;
+  return {
+    accessToken: row.access_token,
+    refreshToken: row.refresh_token,
+    accessExpiresAt: new Date(row.access_expires_at).getTime(),
+    refreshExpiresAt: new Date(row.refresh_expires_at).getTime(),
+    obtainedAt: new Date(row.obtained_at).getTime(),
+  };
+}
+
 // ---- low-level HTTP ---------------------------------------------------------
-
 interface JsonResponse<T = any> { httpStatus: number; body: string; json: T | null; }
-
 async function postJson<T = any>(url: string, payload: unknown, signal?: AbortSignal): Promise<JsonResponse<T>> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": UA },
-    body: JSON.stringify(payload),
-    signal,
+    body: JSON.stringify(payload), signal,
   });
   const body = await res.text().catch(() => "");
   let json: T | null = null;
@@ -74,15 +125,16 @@ async function postJson<T = any>(url: string, payload: unknown, signal?: AbortSi
 }
 
 // ---- auth flows -------------------------------------------------------------
-
 async function requestNewToken(env: YeastarEnv): Promise<TokenState> {
   const url = `${env.baseUrl}${TOKEN_PATH}`;
   console.log("[yeastar] POST /get_token");
   const { httpStatus, body, json } = await postJson<any>(url, {
-    username: env.clientId,
-    password: env.clientSecret,
+    username: env.clientId, password: env.clientSecret,
   });
   if (httpStatus !== 200 || !json || json.errcode !== 0 || !json.access_token) {
+    if (json?.errcode === 60002) {
+      await saveL2Block(`60002 ${json?.errmsg ?? "MAX LIMITATION EXCEEDED"}`, BLOCK_MS);
+    }
     throw new YeastarAuthError(
       `get_token failed: HTTP ${httpStatus} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"}`,
       { httpStatus, errcode: json?.errcode ?? null, errmsg: json?.errmsg ?? null, bodyPreview: body.slice(0, 300) },
@@ -97,6 +149,7 @@ async function requestNewToken(env: YeastarEnv): Promise<TokenState> {
     obtainedAt: now,
   };
   console.log(`[yeastar] get_token OK; access lifetime=${Math.round((state.accessExpiresAt - now) / 1000)}s`);
+  await saveL2Token(state);
   return state;
 }
 
@@ -109,65 +162,73 @@ async function refreshToken(env: YeastarEnv, current: TokenState): Promise<Token
     return requestNewToken(env);
   }
   const now = Date.now();
-  return {
+  const state: TokenState = {
     accessToken: json.access_token,
     refreshToken: json.refresh_token ?? current.refreshToken,
     accessExpiresAt: now + Number(json.access_token_expire_time ?? 1800) * 1000,
     refreshExpiresAt: now + Number(json.refresh_token_expire_time ?? 86400) * 1000,
     obtainedAt: now,
   };
+  await saveL2Token(state);
+  return state;
 }
 
 export class YeastarAuthError extends Error {
   details: { httpStatus: number; errcode: number | null; errmsg: string | null; bodyPreview: string };
   constructor(msg: string, details: YeastarAuthError["details"]) {
-    super(msg);
-    this.name = "YeastarAuthError";
-    this.details = details;
+    super(msg); this.name = "YeastarAuthError"; this.details = details;
   }
 }
 
 // ---- public: getAccessToken -------------------------------------------------
+export interface AuthResult { token: TokenState; source: "cache" | "l2" | "refresh" | "new"; }
 
-export interface AuthResult { token: TokenState; source: "cache" | "refresh" | "new"; }
+function isFresh(t: TokenState): boolean {
+  return t.accessExpiresAt - Date.now() > REFRESH_SKEW_MS;
+}
 
 export async function getAccessToken(): Promise<AuthResult> {
   const env = readEnv();
   if (!env) throw new Error("Yeastar not configured (missing env vars)");
 
-  const now = Date.now();
-  if (token && token.accessExpiresAt - now > REFRESH_SKEW_MS) {
-    return { token, source: "cache" };
-  }
+  // 1. L1 cache
+  if (token && isFresh(token)) return { token, source: "cache" };
 
-  if (inFlight) {
-    const t = await inFlight;
-    return { token: t, source: "cache" };
-  }
+  // 2. single-flight across the isolate
+  if (inFlight) return { token: await inFlight, source: "cache" };
 
-  const canRefresh = !!token && token.refreshExpiresAt - now > 5_000;
   inFlight = (async () => {
-    try {
-      const next = canRefresh ? await refreshToken(env, token!) : await requestNewToken(env);
-      token = next;
-      return next;
-    } finally {
-      inFlight = null;
+    // 3. L2 cache (shared)
+    const row = await loadL2();
+    if (row) {
+      if (row.blocked_until && new Date(row.blocked_until).getTime() > Date.now()) {
+        const remainingSec = Math.round((new Date(row.blocked_until).getTime() - Date.now()) / 1000);
+        throw new YeastarAuthError(
+          `PBX auth temporarily blocked (${row.block_reason ?? "rate-limited"}); retry in ${remainingSec}s`,
+          { httpStatus: 0, errcode: 60002, errmsg: row.block_reason, bodyPreview: "" },
+        );
+      }
+      const l2 = l2ToState(row);
+      if (l2 && isFresh(l2)) { token = l2; return l2; }
+
+      // 4. try refresh with L2 refresh_token
+      if (l2 && l2.refreshExpiresAt - Date.now() > 5_000) {
+        try { const next = await refreshToken(env, l2); token = next; return next; }
+        catch { /* fall through */ }
+      }
     }
-  })();
+
+    // 5. brand-new token
+    const next = await requestNewToken(env);
+    token = next;
+    return next;
+  })().finally(() => { inFlight = null; });
 
   const next = await inFlight;
-  return { token: next, source: canRefresh ? "refresh" : "new" };
+  return { token: next, source: "new" };
 }
 
 // ---- public: yeastarFetch ---------------------------------------------------
-
-/**
- * Authenticated GET against the Yeastar OpenAPI. `path` must start with `/`.
- * `query` params are URL-encoded; `access_token` is appended automatically.
- * On HTTP 401 / errcode 10003 (Session Expired), token is invalidated and
- * the request is retried exactly once.
- */
 export async function yeastarFetch<T = any>(
   path: string,
   query: Record<string, string | number | undefined> = {},
@@ -201,9 +262,7 @@ export async function yeastarFetch<T = any>(
       const errcode = (json as any)?.errcode;
       const retryAuth = res.status === 401 || errcode === 10003 || errcode === 10004;
       return { httpStatus: res.status, json, body, retryAuth };
-    } finally {
-      clearTimeout(timer);
-    }
+    } finally { clearTimeout(timer); }
   };
 
   let out = await doOnce();

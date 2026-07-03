@@ -335,6 +335,42 @@ export type Database = {
         }
         Relationships: []
       }
+      yeastar_token_cache: {
+        Row: {
+          access_expires_at: string | null
+          access_token: string | null
+          block_reason: string | null
+          blocked_until: string | null
+          id: number
+          obtained_at: string | null
+          refresh_expires_at: string | null
+          refresh_token: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          access_expires_at?: string | null
+          access_token?: string | null
+          block_reason?: string | null
+          blocked_until?: string | null
+          id?: number
+          obtained_at?: string | null
+          refresh_expires_at?: string | null
+          refresh_token?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          access_expires_at?: string | null
+          access_token?: string | null
+          block_reason?: string | null
+          blocked_until?: string | null
+          id?: number
+          obtained_at?: string | null
+          refresh_expires_at?: string | null
+          refresh_token?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
