@@ -71,30 +71,98 @@ function derive(raw: RawStatRow) {
   return { inb, out, inboundTotal, outboundTotal, total, answered };
 }
 
+export interface ReportProbe { path: string; params: Record<string, string|number>; httpStatus: number; errcode: number|null; errmsg: string|null; keys: string[]; listKey: string|null; count: number; bodyPreview: string; }
+export const lastReportProbes: ReportProbe[] = [];
+
+// Candidate endpoint + payload shapes across Yeastar firmwares.
+// The first shape that returns errcode=0 with a non-empty list wins;
+// if all return errcode=0 with an empty list we still fall back to the first
+// so downstream aggregation works.
+type Shape = { path: string; build: (extIds: string[], from: string, to: string, comm: CommunicationType) => Record<string, string|number> };
+const SHAPES: Shape[] = [
+  { path: "/openapi/v1.0/call_report/list", build: (ids, f, t, c) => ({
+      type: "extcallstatistics", ext_id_list: ids.join(","),
+      start_time: fmtStart(f), end_time: fmtEnd(t),
+      communication_type: pbxCommType(c), page: 1, page_size: 200,
+    }) },
+  { path: "/openapi/v1.0/callreport/get_ext_call_statistics", build: (ids, f, t, c) => ({
+      ext_ids: ids.join(","),
+      time_start: fmtStart(f), time_end: fmtEnd(t),
+      communication_type: pbxCommType(c),
+    }) },
+  { path: "/openapi/v1.0/callreport/query_extension_call_statistics", build: (ids, f, t, c) => ({
+      ext_id_list: ids.join(","),
+      start_time: fmtStart(f), end_time: fmtEnd(t),
+      communication_type: pbxCommType(c), page: 1, page_size: 200,
+    }) },
+  { path: "/openapi/v1.0/call_statistics/extension", build: (ids, f, t, c) => ({
+      ext_id_list: ids.join(","),
+      start_time: fmtStart(f), end_time: fmtEnd(t),
+      communication_type: pbxCommType(c), page: 1, page_size: 200,
+    }) },
+];
+
+const LIST_KEYS = ["ext_call_statistics_list","extension_call_statistics_list","ext_call_statistics","data","list","items"];
+
+function pickList(json: any): { key: string|null; list: RawStatRow[] } {
+  if (!json || typeof json !== "object") return { key: null, list: [] };
+  for (const k of LIST_KEYS) if (Array.isArray(json[k])) return { key: k, list: json[k] };
+  for (const [k, v] of Object.entries(json)) if (Array.isArray(v) && (v as any[]).some((r) => r && typeof r === "object" && "ext_num" in (r as any))) return { key: k, list: v as RawStatRow[] };
+  return { key: null, list: [] };
+}
+
+async function fetchStatsChunk(shape: Shape, extIds: string[], from: string, to: string, comm: CommunicationType): Promise<{ list: RawStatRow[]; probe: ReportProbe }> {
+  const params = shape.build(extIds, from, to, comm);
+  const { httpStatus, json, body } = await yeastarFetch<any>(shape.path, params);
+  const errcode = json?.errcode ?? null;
+  const errmsg = json?.errmsg ?? null;
+  const picked = pickList(json);
+  const probe: ReportProbe = {
+    path: shape.path, params,
+    httpStatus, errcode, errmsg,
+    keys: json && typeof json === "object" ? Object.keys(json) : [],
+    listKey: picked.key, count: picked.list.length,
+    bodyPreview: body.slice(0, 400),
+  };
+  if (httpStatus !== 200 || errcode !== 0) throw new Error(`${shape.path} failed: HTTP ${httpStatus} errcode=${errcode ?? "n/a"} errmsg=${errmsg ?? "n/a"} body=${body.slice(0, 200)}`);
+  return { list: picked.list, probe };
+}
+
+// Remember the working shape between calls to avoid reprobing.
+let activeShape: Shape | null = null;
+
 async function fetchStats(extIds: string[], from: string, to: string, comm: CommunicationType): Promise<RawStatRow[]> {
   if (extIds.length === 0) return [];
   const out: RawStatRow[] = [];
-  // The PBX supports comma-separated ext_id_list. Chunk to keep URL length sane.
   const CHUNK = 40;
+
+  // Probe if we don't know which shape works.
+  if (!activeShape) {
+    lastReportProbes.length = 0;
+    let firstOk: Shape | null = null;
+    for (const shape of SHAPES) {
+      try {
+        const { list, probe } = await fetchStatsChunk(shape, extIds.slice(0, CHUNK), from, to, comm);
+        lastReportProbes.push(probe);
+        if (!firstOk) firstOk = shape;
+        if (list.length > 0) { activeShape = shape; break; }
+      } catch (e: any) {
+        lastReportProbes.push({ path: shape.path, params: shape.build(extIds.slice(0,CHUNK), from, to, comm), httpStatus: 0, errcode: null, errmsg: String(e?.message ?? e), keys: [], listKey: null, count: 0, bodyPreview: "" });
+      }
+    }
+    if (!activeShape) activeShape = firstOk; // may still be null if all threw
+    if (!activeShape) return [];
+  }
+
   for (let i = 0; i < extIds.length; i += CHUNK) {
     const chunk = extIds.slice(i, i + CHUNK);
-    const { httpStatus, json, body } = await yeastarFetch<any>("/openapi/v1.0/call_report/list", {
-      type: "extcallstatistics",
-      ext_id_list: chunk.join(","),
-      start_time: fmtStart(from),
-      end_time: fmtEnd(to),
-      communication_type: pbxCommType(comm),
-      page: 1,
-      page_size: 200,
-    });
-    if (httpStatus !== 200 || !json || json.errcode !== 0) {
-      throw new Error(`call_report/list failed: HTTP ${httpStatus} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"} body=${body.slice(0, 200)}`);
-    }
-    const list: RawStatRow[] = json.ext_call_statistics_list ?? [];
+    const { list } = await fetchStatsChunk(activeShape, chunk, from, to, comm);
     out.push(...list);
   }
   return out;
 }
+
+export function resetReportProbeCache() { activeShape = null; lastReportProbes.length = 0; }
 
 export async function fetchCallStatistics(opts: {
   from: string; to: string; team: TeamFilter; communicationType: CommunicationType;
