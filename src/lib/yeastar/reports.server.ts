@@ -47,6 +47,8 @@ export interface CallStatsResult {
     unmappedFromPbx: string[];
   };
   elapsedMs: number;
+  probes?: ReportProbe[];
+  rawExtNums?: string[];
 }
 
 function fmtStart(d: string) { return `${d} 00:00:00`; }
