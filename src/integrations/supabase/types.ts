@@ -305,6 +305,36 @@ export type Database = {
         }
         Relationships: []
       }
+      yeastar_extension_map: {
+        Row: {
+          active: boolean
+          agent_code: string | null
+          agent_name: string
+          created_at: string
+          ext_num: string
+          team: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          agent_code?: string | null
+          agent_name: string
+          created_at?: string
+          ext_num: string
+          team: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          agent_code?: string | null
+          agent_name?: string
+          created_at?: string
+          ext_num?: string
+          team?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
