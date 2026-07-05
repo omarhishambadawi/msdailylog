@@ -30,6 +30,19 @@ const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_STORAGE_KEY = "orders.pageSize";
 const normalizeSearchTerm = (value: string) => value.replace(/[,%.*()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
 
+// In-memory filter cache. Survives SPA navigation (e.g. edit an order and come
+// back) but is wiped on a full page refresh because the JS module reloads.
+type OrdersFilterCache = {
+  range?: { from?: string; to?: string };
+  q: string;
+  team: string;
+  agent: string;
+  status: string;
+  mineOnly: boolean;
+  page: number;
+};
+let ordersFilterCache: OrdersFilterCache | null = null;
+
 function OrdersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -43,16 +56,22 @@ function OrdersList() {
   const canVerifyOwn = hasPerm(role, profile?.permissions as any, "verify_own_orders");
 
   const today = new Date();
-  const [range, setRange] = useState<DateRange | undefined>({ from: today, to: today });
+  const initial = ordersFilterCache;
+  const [range, setRange] = useState<DateRange | undefined>(() => {
+    if (initial?.range?.from) {
+      return { from: new Date(initial.range.from), to: initial.range.to ? new Date(initial.range.to) : undefined };
+    }
+    return { from: today, to: today };
+  });
   const from = range?.from ? toISO(range.from) : toISO(today);
   const to = range?.to ? toISO(range.to) : from;
 
-  const [q, setQ] = useState("");
-  const [team, setTeam] = useState<string>("all");
-  const [agent, setAgent] = useState<string>("all");
-  const [status, setStatus] = useState<string>("all");
-  const [mineOnly, setMineOnly] = useState<boolean>(false);
-  const [page, setPage] = useState(0);
+  const [q, setQ] = useState(initial?.q ?? "");
+  const [team, setTeam] = useState<string>(initial?.team ?? "all");
+  const [agent, setAgent] = useState<string>(initial?.agent ?? "all");
+  const [status, setStatus] = useState<string>(initial?.status ?? "all");
+  const [mineOnly, setMineOnly] = useState<boolean>(initial?.mineOnly ?? false);
+  const [page, setPage] = useState(initial?.page ?? 0);
   const [pageSize, setPageSizeState] = useState<number>(() => {
     if (typeof window === "undefined") return DEFAULT_PAGE_SIZE;
     const v = Number(window.sessionStorage.getItem(PAGE_SIZE_STORAGE_KEY));
@@ -62,6 +81,12 @@ function OrdersList() {
     setPageSizeState(n);
     setPage(0);
     if (typeof window !== "undefined") window.sessionStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(n));
+  };
+
+  // Persist filter state on every render so returning from edit restores it.
+  ordersFilterCache = {
+    range: range?.from ? { from: range.from.toISOString(), to: range.to?.toISOString() } : undefined,
+    q, team, agent, status, mineOnly, page,
   };
 
   const searching = q.trim().length > 0;
