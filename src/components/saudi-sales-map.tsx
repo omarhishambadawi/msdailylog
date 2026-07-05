@@ -309,8 +309,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
               filter="url(#ksa-shadow)"
             />
 
-            {/* Label leader lines */}
-            {placed.map((p) => {
+            {/* Label leader lines — drawn largest-last so top bubbles' lines sit above */}
+            {[...placed].reverse().map((p) => {
               const active = hoverName === p.name;
               const tx = p.anchor === "start" ? p.labelX - 2 : p.anchor === "end" ? p.labelX + 2 : p.labelX;
               const ty = p.anchor === "middle" && p.labelY < p.cy ? p.labelY + 3 : p.labelY - 4;
@@ -322,8 +322,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
               );
             })}
 
-            {/* Bubbles */}
-            {placed.map((p, i) => {
+            {/* Bubbles — render smallest first so the largest bubble paints on top */}
+            {[...placed].reverse().map((p, i) => {
               const active = hoverName === p.name;
               return (
                 <g key={p.name}
@@ -337,9 +337,9 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                     transition: `transform 480ms cubic-bezier(.34,1.4,.5,1) ${i * 40}ms, opacity 320ms ease ${i * 40}ms`,
                   }}
                 >
-                  <circle cx={p.cx} cy={p.cy} r={p.r} fill={p.color} fillOpacity={active ? 0.28 : 0.18} />
+                  <circle cx={p.cx} cy={p.cy} r={p.r} fill={p.color} fillOpacity={active ? 0.32 : 0.22} />
                   <circle cx={p.cx} cy={p.cy} r={p.r} fill="none"
-                    stroke={p.color} strokeWidth={active ? 2.25 : 1.5} strokeOpacity={0.9}
+                    stroke={p.color} strokeWidth={active ? 2.25 : 1.5} strokeOpacity={0.95}
                     style={{ transition: "stroke-width 180ms ease" }}
                   />
                   <circle cx={p.cx} cy={p.cy} r={active ? 4.2 : 3.2} fill={p.color}
