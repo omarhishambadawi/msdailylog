@@ -137,11 +137,11 @@ export function CallCenterSection({ from, to, team, agentId }: Props) {
         <Kpi label="Outbound" value={totals?.outbound ?? 0} loading={isLoading} />
         <Kpi label="Answer rate" value={`${totals ? totals.answerRate.toFixed(1) : "0.0"}%`} accent="text-green-600 dark:text-green-400" loading={isLoading} />
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         <Kpi label="Total talk time" value={formatDuration(totals?.talkSeconds ?? 0)} loading={isLoading} />
         <Kpi label="Agents with calls" value={agents.length} loading={isLoading} />
-        <Kpi label="Unmatched calls" value={unmatched?.records ?? 0} loading={isLoading} />
       </div>
+
 
       {showEmpty ? (
         <Card>
