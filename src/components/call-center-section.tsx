@@ -67,7 +67,7 @@ export function CallCenterSection({ from, to, team, agentId }: Props) {
   const totals = ok ? data.totals : null;
   const agents = ok ? data.agents : [];
   const byDay = ok ? data.byDay : [];
-  const unmatched = ok ? data.unmatched : null;
+  
   const cdrMeta = ok ? data.cdr : null;
 
   const hasCalls = !!totals && totals.total > 0;
