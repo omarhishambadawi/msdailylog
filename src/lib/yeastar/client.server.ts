@@ -232,10 +232,12 @@ export async function getAccessToken(): Promise<AuthResult> {
 export async function yeastarFetch<T = any>(
   path: string,
   query: Record<string, string | number | undefined> = {},
-  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: { signal?: AbortSignal; timeoutMs?: number; method?: "GET" | "POST"; body?: Record<string, unknown> } = {},
 ): Promise<{ httpStatus: number; json: T | null; body: string }> {
   const env = readEnv();
   if (!env) throw new Error("Yeastar not configured");
+
+  const method = opts.method ?? "GET";
 
   const buildUrl = (accessToken: string) => {
     const qs = new URLSearchParams();
@@ -251,11 +253,17 @@ export async function yeastarFetch<T = any>(
     const timer = setTimeout(() => controller.abort(), timeout);
     const signal = opts.signal ?? controller.signal;
     try {
-      const res = await fetch(buildUrl(t.accessToken), {
-        method: "GET",
-        headers: { Accept: "application/json", "User-Agent": UA },
+      const init: RequestInit = {
+        method,
+        headers: {
+          Accept: "application/json",
+          "User-Agent": UA,
+          ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+        },
         signal,
-      });
+      };
+      if (method === "POST") init.body = JSON.stringify(opts.body ?? {});
+      const res = await fetch(buildUrl(t.accessToken), init);
       const body = await res.text().catch(() => "");
       let json: T | null = null;
       try { json = body ? (JSON.parse(body) as T) : null; } catch { /* non-JSON */ }
@@ -273,6 +281,7 @@ export async function yeastarFetch<T = any>(
   }
   return { httpStatus: out.httpStatus, json: out.json, body: out.body };
 }
+
 
 export function tokenSnapshot() {
   if (!token) return null;
