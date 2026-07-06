@@ -1,18 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ShieldAlert } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import { hasPerm } from "@/lib/permissions";
 import {
   yeastarConfigDiagnostic,
   yeastarAuthDiagnostic,
-  yeastarMappingList,
-  yeastarMappingDiagnostic,
-  yeastarMappingImport,
-  yeastarCallAnalytics,
+  yeastarCdrProbe,
+  yeastarAgentMappingDiagnostic,
 } from "@/lib/yeastar.functions";
 
 export const Route = createFileRoute("/_app/admin/yeastar")({
@@ -28,45 +30,39 @@ function Json({ data }: { data: unknown }) {
 }
 
 function YeastarAdmin() {
+  const { role, profile } = useAuth();
+  const isAdmin = hasPerm(role, profile?.permissions as any, "view_all_agents");
+
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-  const qc = useQueryClient();
+
+  const [from, setFrom] = useState(yesterday);
+  const [to, setTo] = useState(today);
 
   const configFn = useServerFn(yeastarConfigDiagnostic);
   const authFn = useServerFn(yeastarAuthDiagnostic);
-  const mapListFn = useServerFn(yeastarMappingList);
-  const mapDiagFn = useServerFn(yeastarMappingDiagnostic);
-  const mapImportFn = useServerFn(yeastarMappingImport);
-  const analyticsFn = useServerFn(yeastarCallAnalytics);
+  const probeFn = useServerFn(yeastarCdrProbe);
+  const mapFn = useServerFn(yeastarAgentMappingDiagnostic);
 
-  const config = useQuery({ queryKey: ["yeastar-config"], queryFn: () => configFn() });
-  const mapList = useQuery({ queryKey: ["yeastar-mapping-list"], queryFn: () => mapListFn() });
+  const config = useQuery({ queryKey: ["yeastar-config"], queryFn: () => configFn(), enabled: isAdmin });
   const auth = useMutation({ mutationFn: () => authFn() });
-  const mapDiag = useMutation({ mutationFn: () => mapDiagFn() });
-  const analytics = useMutation({
-    mutationFn: () => analyticsFn({ data: { from: yesterday, to: today, team: "all", communicationType: "All" } }),
-  });
+  const probe = useMutation({ mutationFn: () => probeFn({ data: { from, to } }) });
+  const map = useMutation({ mutationFn: () => mapFn({ data: { from, to } }) });
 
-  const [csv, setCsv] = useState("");
-  const [replace, setReplace] = useState(true);
-  const importMut = useMutation({
-    mutationFn: () => mapImportFn({ data: { csv, replace } }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["yeastar-mapping-list"] });
-    },
-  });
-
-  const rows = mapList.data?.rows ?? [];
-  const byTeam = rows.reduce(
-    (acc, r) => { if (r.team === "customer_care") acc.cc++; else if (r.team === "telesales") acc.ts++; return acc; },
-    { cc: 0, ts: 0 },
-  );
+  if (!isAdmin) {
+    return (
+      <div className="text-center py-16">
+        <ShieldAlert className="mx-auto h-10 w-10 text-destructive" />
+        <p className="mt-2 text-sm text-muted-foreground">You don't have access to Yeastar diagnostics.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-5xl">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Yeastar Integration</h1>
-        <p className="text-sm text-muted-foreground">Configuration · Authentication · Extension Mapping · Call Reports</p>
+        <p className="text-sm text-muted-foreground">Configuration · Authentication · CDR probe · Agent mapping</p>
       </div>
 
       <Card>
@@ -76,6 +72,12 @@ function YeastarAdmin() {
             <Pill ok={!!config.data?.baseUrlLoaded} label="YEASTAR_BASE_URL" />
             <Pill ok={!!config.data?.clientIdLoaded} label="YEASTAR_CLIENT_ID" />
             <Pill ok={!!config.data?.clientSecretLoaded} label="YEASTAR_CLIENT_SECRET" />
+            {config.data ? (
+              <>
+                <Badge variant="outline" className="font-normal">TZ offset: {config.data.utcOffsetMinutes}m</Badge>
+                <Badge variant="outline" className="font-normal">Date format: {config.data.datetimeFormat}</Badge>
+              </>
+            ) : null}
           </div>
           <Button size="sm" variant="outline" onClick={() => config.refetch()} disabled={config.isFetching}>
             {config.isFetching ? "Checking…" : "Re-check"}
@@ -95,82 +97,37 @@ function YeastarAdmin() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">3. Extension mapping</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant="secondary" className="font-normal">Total: {rows.length}</Badge>
-            <Badge variant="secondary" className="font-normal">Customer Care: {byTeam.cc}</Badge>
-            <Badge variant="secondary" className="font-normal">Telesales: {byTeam.ts}</Badge>
-            <Button size="sm" variant="outline" onClick={() => mapList.refetch()} disabled={mapList.isFetching}>
-              {mapList.isFetching ? "Loading…" : "Reload"}
-            </Button>
-            <Button size="sm" onClick={() => mapDiag.mutate()} disabled={mapDiag.isPending}>
-              {mapDiag.isPending ? "Checking PBX…" : "Diagnose (compare with PBX)"}
-            </Button>
-          </div>
-
-          <div className="space-y-2">
-            <div className="text-xs text-muted-foreground">
-              Paste CSV rows: <code>ext_num,agent_name,team</code>. Team must be <code>customer_care</code> or <code>telesales</code>. A header row is optional.
-            </div>
-            <Textarea
-              rows={8}
-              value={csv}
-              onChange={(e) => setCsv(e.target.value)}
-              placeholder={`ext_num,agent_name,team\n1001,Ahmed Ali,customer_care\n1002,Sara Khan,telesales`}
-              className="font-mono text-xs"
-            />
-            <div className="flex items-center gap-3">
-              <label className="text-xs flex items-center gap-2">
-                <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
-                Replace all existing mappings
-              </label>
-              <Button size="sm" onClick={() => importMut.mutate()} disabled={importMut.isPending || !csv.trim()}>
-                {importMut.isPending ? "Importing…" : "Import mapping"}
-              </Button>
-            </div>
-            {importMut.data ? <Json data={importMut.data} /> : null}
-          </div>
-
-          {mapDiag.data ? <Json data={mapDiag.data} /> : null}
-
-          {rows.length > 0 ? (
-            <div className="border rounded-md overflow-auto max-h-[360px]">
-              <table className="w-full text-xs">
-                <thead className="bg-muted sticky top-0">
-                  <tr>
-                    <th className="text-left p-2">Ext</th>
-                    <th className="text-left p-2">Agent</th>
-                    <th className="text-left p-2">Team</th>
-                    <th className="text-left p-2">Agent Code</th>
-                    <th className="text-left p-2">Active</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.ext_num} className="border-t">
-                      <td className="p-2 font-mono">{r.ext_num}</td>
-                      <td className="p-2">{r.agent_name}</td>
-                      <td className="p-2">{r.team}</td>
-                      <td className="p-2 font-mono">{r.agent_code ?? "—"}</td>
-                      <td className="p-2">{r.active ? "yes" : "no"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
+        <CardHeader><CardTitle className="text-base">Date window (used by probe + mapping diagnostic)</CardTitle></CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1"><Label className="text-xs">From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+          <div className="space-y-1"><Label className="text-xs">To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">4. Call Reports probe (yesterday → today, all teams)</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">3. CDR probe</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <Button size="sm" onClick={() => analytics.mutate()} disabled={analytics.isPending}>
-            {analytics.isPending ? "Fetching…" : "Fetch call statistics"}
+          <Button size="sm" onClick={() => probe.mutate()} disabled={probe.isPending}>
+            {probe.isPending ? "Fetching…" : "Fetch CDRs for range"}
           </Button>
-          {analytics.data ? <Json data={analytics.data} /> : null}
-          {analytics.error ? <div className="text-sm text-destructive">{(analytics.error as Error).message}</div> : null}
+          {probe.data ? <Json data={probe.data} /> : null}
+          {probe.error ? <div className="text-sm text-destructive">{(probe.error as Error).message}</div> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">4. Agent mapping</CardTitle>
+          <div className="text-xs text-muted-foreground">
+            Set each agent's PBX extension in <span className="font-mono">Users → edit → Yeastar extension</span>. Missing extensions and top unmatched PBX extensions are listed here.
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button size="sm" onClick={() => map.mutate()} disabled={map.isPending}>
+            {map.isPending ? "Checking…" : "Run mapping diagnostic"}
+          </Button>
+          {map.data ? <Json data={map.data} /> : null}
+          {map.error ? <div className="text-sm text-destructive">{(map.error as Error).message}</div> : null}
         </CardContent>
       </Card>
     </div>

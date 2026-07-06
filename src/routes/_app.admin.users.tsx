@@ -90,7 +90,7 @@ function AdminUsers() {
       const toStore = editing._usingDefaults || permsEqual(currentPerms, defaultPermsForRole(roleKey))
         ? []
         : currentPerms;
-      await updFn({ data: { userId: editing.id, fullName: editing.full_name, agentCode: editing.agent_code ?? "", permissions: toStore } });
+      await updFn({ data: { userId: editing.id, fullName: editing.full_name, agentCode: editing.agent_code ?? "", yeastarExt: editing.yeastar_ext ?? "", permissions: toStore } });
       if (editing._roleChange) await setRoleFn({ data: { userId: editing.id, role: editing.role } });
       toast.success("Saved");
       setEditing(null);
@@ -205,6 +205,7 @@ function AdminUsers() {
               <div className="grid sm:grid-cols-3 gap-3">
                 <div className="space-y-2 sm:col-span-2"><Label>Full name</Label><Input value={editing.full_name} onChange={(e) => setEditing({ ...editing, full_name: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Agent code</Label><Input value={editing.agent_code ?? ""} onChange={(e) => setEditing({ ...editing, agent_code: e.target.value })} /></div>
+                <div className="space-y-2 sm:col-span-3"><Label>Yeastar extension</Label><Input value={editing.yeastar_ext ?? ""} onChange={(e) => setEditing({ ...editing, yeastar_ext: e.target.value })} placeholder="e.g. 1001" /><p className="text-xs text-muted-foreground">PBX extension number used to attribute calls to this agent.</p></div>
                 <div className="space-y-2 sm:col-span-3">
                   <Label>Role</Label>
                   <Select value={editing.role ?? "customer_care"} onValueChange={(v) => {
