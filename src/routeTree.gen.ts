@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppCallCenterRouteImport } from './routes/_app.call-center'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as AppOrdersIndexRouteImport } from './routes/_app.orders.index'
@@ -28,6 +29,7 @@ import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
 import { Route as AppAdminBranchesRouteImport } from './routes/_app.admin.branches'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
+import { Route as ApiPublicCdrProgressJobIdRouteImport } from './routes/api/public/cdr-progress.$jobId'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
@@ -56,6 +58,11 @@ const IndexRoute = IndexRouteImport.update({
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCallCenterRoute = AppCallCenterRouteImport.update({
+  id: '/call-center',
+  path: '/call-center',
   getParentRoute: () => AppRoute,
 } as any)
 const Char91DotwellKnownChar93OauthProtectedResourceRoute =
@@ -126,6 +133,12 @@ const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   path: '/.lovable/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCdrProgressJobIdRoute =
+  ApiPublicCdrProgressJobIdRouteImport.update({
+    id: '/api/public/cdr-progress/$jobId',
+    path: '/api/public/cdr-progress/$jobId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -134,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/call-center': typeof AppCallCenterRoute
   '/dashboard': typeof AppDashboardRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -146,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/orders/new': typeof AppOrdersNewRoute
   '/complaints/': typeof AppComplaintsIndexRoute
   '/orders/': typeof AppOrdersIndexRoute
+  '/api/public/cdr-progress/$jobId': typeof ApiPublicCdrProgressJobIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -154,6 +169,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/call-center': typeof AppCallCenterRoute
   '/dashboard': typeof AppDashboardRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -166,6 +182,7 @@ export interface FileRoutesByTo {
   '/orders/new': typeof AppOrdersNewRoute
   '/complaints': typeof AppComplaintsIndexRoute
   '/orders': typeof AppOrdersIndexRoute
+  '/api/public/cdr-progress/$jobId': typeof ApiPublicCdrProgressJobIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -176,6 +193,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/_app/call-center': typeof AppCallCenterRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -188,6 +206,7 @@ export interface FileRoutesById {
   '/_app/orders/new': typeof AppOrdersNewRoute
   '/_app/complaints/': typeof AppComplaintsIndexRoute
   '/_app/orders/': typeof AppOrdersIndexRoute
+  '/api/public/cdr-progress/$jobId': typeof ApiPublicCdrProgressJobIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -198,6 +217,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/call-center'
     | '/dashboard'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
@@ -210,6 +230,7 @@ export interface FileRouteTypes {
     | '/orders/new'
     | '/complaints/'
     | '/orders/'
+    | '/api/public/cdr-progress/$jobId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -218,6 +239,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/call-center'
     | '/dashboard'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
@@ -230,6 +252,7 @@ export interface FileRouteTypes {
     | '/orders/new'
     | '/complaints'
     | '/orders'
+    | '/api/public/cdr-progress/$jobId'
   id:
     | '__root__'
     | '/'
@@ -239,6 +262,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/_app/call-center'
     | '/_app/dashboard'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
@@ -251,6 +275,7 @@ export interface FileRouteTypes {
     | '/_app/orders/new'
     | '/_app/complaints/'
     | '/_app/orders/'
+    | '/api/public/cdr-progress/$jobId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -263,6 +288,7 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
+  ApiPublicCdrProgressJobIdRoute: typeof ApiPublicCdrProgressJobIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -307,6 +333,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/call-center': {
+      id: '/_app/call-center'
+      path: '/call-center'
+      fullPath: '/call-center'
+      preLoaderRoute: typeof AppCallCenterRouteImport
       parentRoute: typeof AppRoute
     }
     '/.well-known/oauth-protected-resource': {
@@ -400,10 +433,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DotlovableOauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/cdr-progress/$jobId': {
+      id: '/api/public/cdr-progress/$jobId'
+      path: '/api/public/cdr-progress/$jobId'
+      fullPath: '/api/public/cdr-progress/$jobId'
+      preLoaderRoute: typeof ApiPublicCdrProgressJobIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppCallCenterRoute: typeof AppCallCenterRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppAdminBranchesRoute: typeof AppAdminBranchesRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
@@ -417,6 +458,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppCallCenterRoute: AppCallCenterRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppAdminBranchesRoute: AppAdminBranchesRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
@@ -442,6 +484,7 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
+  ApiPublicCdrProgressJobIdRoute: ApiPublicCdrProgressJobIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

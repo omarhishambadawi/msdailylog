@@ -163,23 +163,62 @@ const statsInput = z.object({
   agentId: z.string().uuid().nullable().optional(),
 });
 
-// Per-isolate 60s cache of the raw CDR pull, keyed by "from|to". Multiple
-// dashboard hits for the same window share one fetch.
+const analyticsInput = statsInput.extend({
+  jobId: z.string().min(1).max(80).optional(),
+  direction: z.enum(["all", "Inbound", "Outbound", "Internal"]).default("all"),
+  status: z.enum(["all", "ANSWERED", "NO ANSWER", "BUSY", "FAILED", "VOICEMAIL"]).default("all"),
+  includeOrders: z.boolean().default(true),
+});
+
 const CDR_CACHE_TTL_MS = 60_000;
 const cdrCache = new Map<string, { at: number; promise: Promise<any> }>();
 
-async function getCdrCached(from: string, to: string) {
+async function getCdrCached(from: string, to: string, jobId?: string) {
   const key = `${from}|${to}`;
   const now = Date.now();
   const hit = cdrCache.get(key);
-  if (hit && now - hit.at < CDR_CACHE_TTL_MS) return hit.promise;
+  if (hit && now - hit.at < CDR_CACHE_TTL_MS) {
+    // Report progress if a job wants it
+    if (jobId) {
+      const p = await import("@/lib/yeastar/progress.server");
+      const promise = hit.promise;
+      promise.then((cdr) => {
+        p.updateJob(jobId, {
+          status: "aggregating", page: 1, totalPages: 1,
+          records: cdr.records.length, totalReported: cdr.totalReported,
+          message: `Cached ${cdr.records.length.toLocaleString()} records — aggregating…`,
+        });
+      });
+    }
+    return hit.promise;
+  }
   const { fetchCdrRange } = await import("@/lib/yeastar/cdr.server");
-  const promise = fetchCdrRange({ from, to }).catch((e) => {
+  const promise = fetchCdrRange({ from, to, jobId }).catch((e) => {
     cdrCache.delete(key);
     throw e;
   });
   cdrCache.set(key, { at: now, promise });
   return promise;
+}
+
+async function loadAgents(supabase: any) {
+  const [{ data: profiles }, { data: extRows }, { data: roles }] = await Promise.all([
+    supabase.from("profiles").select("id,full_name,agent_code,active"),
+    supabase.from("profiles").select("id,yeastar_ext"),
+    supabase.from("user_roles").select("user_id,role"),
+  ]);
+  const extMap = new Map<string, string | null>(((extRows as any[]) ?? []).map((r) => [r.id, r.yeastar_ext ?? null]));
+  const roleMap = new Map<string, string>(((roles as any[]) ?? []).map((r) => [r.user_id, r.role as string]));
+  return ((profiles as any[]) ?? [])
+    .filter((p) => p.active)
+    .map((p) => ({
+      id: p.id as string,
+      name: (p.full_name as string) ?? "Unknown",
+      team: roleMap.get(p.id) as "customer_care" | "telesales" | undefined,
+      ext: String(extMap.get(p.id) ?? p.agent_code ?? "").trim(),
+    }))
+    .filter((a) => a.team === "customer_care" || a.team === "telesales")
+    .filter((a) => a.ext.length > 0) as Array<{ id: string; name: string; team: "customer_care" | "telesales"; ext: string }>;
 }
 
 export const getAgentCallStats = createServerFn({ method: "POST" })
@@ -198,67 +237,90 @@ export const getAgentCallStats = createServerFn({ method: "POST" })
     if (!canDash) throw new Error("Forbidden: dashboard access required");
     const seesAll = !!canAll || !!isAdmin;
 
-    // Load operational agents (customer_care / telesales, active).
-    const { data: profiles } = await supabase
-      .from("profiles").select("id,full_name,agent_code,active");
-    const { data: extRows } = await supabase
-      .from("profiles").select("id,yeastar_ext");
-    const extMap = new Map<string, string | null>(
-      ((extRows as any[]) ?? []).map((r) => [r.id, r.yeastar_ext ?? null]),
-    );
-    const { data: roles } = await supabase.from("user_roles").select("user_id,role");
-    const roleMap = new Map<string, string>(
-      ((roles as any[]) ?? []).map((r) => [r.user_id, r.role as string]),
-    );
-
-    let agents = ((profiles as any[]) ?? [])
-      .filter((p) => p.active)
-      .map((p) => ({
-        id: p.id as string,
-        name: (p.full_name as string) ?? "Unknown",
-        team: roleMap.get(p.id) as "customer_care" | "telesales" | undefined,
-        ext: String(extMap.get(p.id) ?? p.agent_code ?? "").trim(),
-      }))
-      .filter((a) => a.team === "customer_care" || a.team === "telesales")
-      .filter((a) => a.ext.length > 0) as Array<{ id: string; name: string; team: "customer_care" | "telesales"; ext: string }>;
-
+    let agents = await loadAgents(supabase);
     if (data.team !== "all") agents = agents.filter((a) => a.team === data.team);
     if (!seesAll) agents = agents.filter((a) => a.id === userId);
     else if (data.agentId) agents = agents.filter((a) => a.id === data.agentId);
 
     if (agents.length === 0) {
       return {
-        ok: true as const,
-        configured: true as const,
-        empty: true as const,
+        ok: true as const, configured: true as const, empty: true as const,
         window: { from: data.from, to: data.to, team: data.team, agentId: data.agentId ?? null },
-        agents: [],
-        totals: null,
-        unmatched: null,
-        byDay: [],
-        cdr: null,
+        agents: [], totals: null, unmatched: null, byDay: [], cdr: null,
       };
     }
-
     const cdr = await getCdrCached(data.from, data.to);
     const { aggregateAgentStats } = await import("@/lib/yeastar/stats.server");
     const agg = aggregateAgentStats(cdr.records, agents, { includeInternal: false });
-
     return {
-      ok: true as const,
-      configured: true as const,
-      empty: false as const,
+      ok: true as const, configured: true as const, empty: false as const,
       window: { from: data.from, to: data.to, team: data.team, agentId: data.agentId ?? null },
-      cdr: {
-        path: cdr.path,
-        totalReported: cdr.totalReported,
-        fetched: cdr.records.length,
-        truncated: cdr.truncated,
-        elapsedMs: cdr.elapsedMs,
-      },
-      agents: agg.agents,
-      totals: agg.totals,
-      unmatched: agg.unmatched,
-      byDay: agg.byDay,
+      cdr: { path: cdr.path, totalReported: cdr.totalReported, fetched: cdr.records.length, truncated: cdr.truncated, elapsedMs: cdr.elapsedMs },
+      agents: agg.agents, totals: agg.totals, unmatched: agg.unmatched, byDay: agg.byDay,
     };
+  });
+
+/**
+ * Full Call Center Analytics — queue-aware, order-joined.
+ */
+export const getCallCenterAnalytics = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => analyticsInput.parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+    const { isConfigured } = await import("@/lib/yeastar/client.server");
+    if (!isConfigured()) return { ok: false as const, configured: false as const };
+
+    const [{ data: canView }, { data: canAll }, { data: isAdmin }] = await Promise.all([
+      supabase.rpc("has_permission", { _user_id: userId, _permission: "view_team_analytics" }),
+      supabase.rpc("has_permission", { _user_id: userId, _permission: "view_all_agents" }),
+      supabase.rpc("is_administrator", { _user_id: userId }),
+    ]);
+    if (!canView && !isAdmin) throw new Error("Forbidden: call analytics access required");
+    const seesAll = !!canAll || !!isAdmin;
+
+    const progress = data.jobId ? await import("@/lib/yeastar/progress.server") : null;
+    if (progress && data.jobId) progress.initJob(data.jobId);
+
+    let agents = await loadAgents(supabase);
+    if (data.team !== "all") agents = agents.filter((a) => a.team === data.team);
+    if (!seesAll) agents = agents.filter((a) => a.id === userId);
+    else if (data.agentId) agents = agents.filter((a) => a.id === data.agentId);
+
+    try {
+      const cdr = await getCdrCached(data.from, data.to, data.jobId);
+      if (progress && data.jobId) progress.updateJob(data.jobId, { status: "aggregating", message: "Computing analytics…", records: cdr.records.length });
+
+      // Apply direction/status client-side filters
+      let records = cdr.records as any[];
+      if (data.direction !== "all") records = records.filter((r) => r.call_type === data.direction);
+      if (data.status !== "all") records = records.filter((r) => r.disposition === data.status);
+
+      // Load orders in the same window, for telesales conversion
+      let orders: any[] = [];
+      if (data.includeOrders) {
+        const { data: ord } = await supabase
+          .from("orders")
+          .select("id,agent_id,order_date,status,order_type,invoice_value")
+          .gte("order_date", data.from)
+          .lte("order_date", data.to);
+        orders = (ord as any[]) ?? [];
+      }
+
+      const { aggregateAnalytics } = await import("@/lib/yeastar/stats.server");
+      const result = aggregateAnalytics(records, agents, orders, { includeInternal: false });
+
+      if (progress && data.jobId) progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
+
+      return {
+        ok: true as const, configured: true as const,
+        window: { from: data.from, to: data.to, team: data.team, agentId: data.agentId ?? null, direction: data.direction, status: data.status },
+        cdr: { path: cdr.path, totalReported: cdr.totalReported, fetched: cdr.records.length, filtered: records.length, truncated: cdr.truncated, elapsedMs: cdr.elapsedMs },
+        ...result,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (progress && data.jobId) progress.failJob(data.jobId, msg);
+      throw err;
+    }
   });
