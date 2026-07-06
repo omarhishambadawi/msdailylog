@@ -266,6 +266,7 @@ export type Database = {
           id: string
           permissions: string[]
           updated_at: string
+          yeastar_ext: string | null
         }
         Insert: {
           active?: boolean
@@ -275,6 +276,7 @@ export type Database = {
           id: string
           permissions?: string[]
           updated_at?: string
+          yeastar_ext?: string | null
         }
         Update: {
           active?: boolean
@@ -284,6 +286,7 @@ export type Database = {
           id?: string
           permissions?: string[]
           updated_at?: string
+          yeastar_ext?: string | null
         }
         Relationships: []
       }

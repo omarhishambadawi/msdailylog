@@ -80,12 +80,13 @@ export const adminSetRole = createServerFn({ method: "POST" })
 
 export const adminUpdateProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; fullName: string; agentCode?: string; permissions?: string[] }) =>
+  .inputValidator((d: { userId: string; fullName: string; agentCode?: string; yeastarExt?: string | null; permissions?: string[] }) =>
     z
       .object({
         userId: z.string().uuid(),
         fullName: z.string().min(1).max(120),
         agentCode: z.string().max(40).optional().nullable(),
+        yeastarExt: z.string().max(20).optional().nullable(),
         permissions: z.array(z.string()).optional(),
       })
       .parse(d),
@@ -95,6 +96,10 @@ export const adminUpdateProfile = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const patch: any = { full_name: data.fullName, agent_code: data.agentCode ?? null };
     if (data.permissions) patch.permissions = data.permissions;
+    if (data.yeastarExt !== undefined) {
+      const v = (data.yeastarExt ?? "").trim();
+      patch.yeastar_ext = v.length > 0 ? v : null;
+    }
     const { error } = await supabaseAdmin
       .from("profiles")
       .update(patch)
@@ -102,6 +107,7 @@ export const adminUpdateProfile = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 export const adminSetPassword = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -136,8 +142,8 @@ export const adminListUsers = createServerFn({ method: "GET" })
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profiles, error } = await supabaseAdmin
-      .from("profiles")
-      .select("id,full_name,agent_code,active,permissions,created_at")
+      .from("profiles" as any)
+      .select("id,full_name,agent_code,active,permissions,created_at,yeastar_ext")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     const { data: roles } = await supabaseAdmin.from("user_roles").select("user_id,role");

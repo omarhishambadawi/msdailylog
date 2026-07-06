@@ -1,8 +1,9 @@
 /**
  * Yeastar server functions.
  *
- * Diagnostics + mapping management require administrator role. Analytics
- * require an authenticated user; PBX data is never persisted.
+ * Config + auth diagnostics require administrator. Analytics require an
+ * authenticated user with `view_dashboard`; non-admins are auto-scoped to
+ * themselves. PBX data is never persisted.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -13,6 +14,8 @@ async function assertAdmin(ctx: { supabase: any; userId: string }) {
   if (error || !data) throw new Error("Forbidden: administrator access required");
 }
 
+// ---- Configuration / auth diagnostics --------------------------------------
+
 export const yeastarConfigDiagnostic = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -21,6 +24,8 @@ export const yeastarConfigDiagnostic = createServerFn({ method: "GET" })
       baseUrlLoaded: !!process.env.YEASTAR_BASE_URL,
       clientIdLoaded: !!process.env.YEASTAR_CLIENT_ID,
       clientSecretLoaded: !!process.env.YEASTAR_CLIENT_SECRET,
+      utcOffsetMinutes: Number(process.env.YEASTAR_UTC_OFFSET_MINUTES ?? 180),
+      datetimeFormat: process.env.YEASTAR_DATETIME_FORMAT ?? "yyyy/MM/dd HH:mm:ss",
       source: "process.env (Cloudflare Worker runtime)",
       at: new Date().toISOString(),
     };
@@ -43,141 +48,217 @@ export const yeastarAuthDiagnostic = createServerFn({ method: "POST" })
     }
   });
 
-// ---- Extension mapping ------------------------------------------------------
+// ---- CDR probe (admin only) ------------------------------------------------
 
-export const yeastarMappingList = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    await assertAdmin(context as any);
-    const { loadMappingRows } = await import("@/lib/yeastar/mapping.server");
-    const rows = await loadMappingRows(true);
-    return { rows };
-  });
-
-export const yeastarMappingDiagnostic = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    await assertAdmin(context as any);
-    const { resolveMappingContext } = await import("@/lib/yeastar/mapping.server");
-    try {
-      const ctx = await resolveMappingContext(true);
-      const byTeam = { customer_care: 0, telesales: 0 };
-      for (const r of ctx.byExtNum.values()) byTeam[r.team]++;
-      return {
-        ok: true as const,
-        mappedExtensions: ctx.byExtNum.size,
-        byTeam,
-        pbxResolved: ctx.extNumToId.size,
-        missingOnPbx: ctx.missingOnPbx,
-        unmappedFromPbx: ctx.unmappedFromPbx,
-        fetchedAt: ctx.fetchedAt,
-      };
-    } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
-
-const importSchema = z.object({
-  csv: z.string().min(1),
-  replace: z.boolean().default(true),
-});
-
-export const yeastarMappingImport = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d) => importSchema.parse(d))
-  .handler(async ({ context, data }) => {
-    await assertAdmin(context as any);
-    const { parseMappingCsv, resetMappingCache } = await import("@/lib/yeastar/mapping.server");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { rows, errors } = parseMappingCsv(data.csv);
-    if (rows.length === 0) return { ok: false as const, inserted: 0, errors, message: "No valid rows" };
-
-    // Deduplicate by ext_num (keep last).
-    const dedup = new Map<string, typeof rows[number]>();
-    for (const r of rows) dedup.set(r.ext_num, r);
-    const payload = [...dedup.values()].map((r) => ({
-      ext_num: r.ext_num,
-      agent_name: r.agent_name,
-      team: r.team,
-      agent_code: r.ext_num, // Extension Number IS the Agent Code
-      active: true,
-      updated_at: new Date().toISOString(),
-    }));
-
-    if (data.replace) {
-      const { error: delErr } = await supabaseAdmin.from("yeastar_extension_map").delete().neq("ext_num", "__none__");
-      if (delErr) return { ok: false as const, error: `clear failed: ${delErr.message}`, inserted: 0, errors };
-    }
-    const { error: upErr } = await supabaseAdmin
-      .from("yeastar_extension_map")
-      .upsert(payload, { onConflict: "ext_num" });
-    if (upErr) return { ok: false as const, error: `upsert failed: ${upErr.message}`, inserted: 0, errors };
-    resetMappingCache();
-    return { ok: true as const, inserted: payload.length, errors };
-  });
-
-// ---- Analytics --------------------------------------------------------------
-
-const analyticsInput = z.object({
+const cdrProbeInput = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  team: z.enum(["all", "customer_care", "telesales"]).default("all"),
-  communicationType: z.enum(["All", "Inbound", "Outbound"]).default("All"),
-  agentCode: z.string().optional(),
 });
 
-export const yeastarCallAnalytics = createServerFn({ method: "POST" })
+export const yeastarCdrProbe = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data) => analyticsInput.parse(data))
-  .handler(async ({ data }) => {
-    const { fetchCallStatistics } = await import("@/lib/yeastar/reports.server");
+  .inputValidator((d) => cdrProbeInput.parse(d))
+  .handler(async ({ context, data }) => {
+    await assertAdmin(context as any);
     const { isConfigured } = await import("@/lib/yeastar/client.server");
-    if (!isConfigured()) return { ok: false as const, configured: false as const, error: "Yeastar not configured" };
+    if (!isConfigured()) return { ok: false as const, configured: false as const };
     try {
-      const result = await fetchCallStatistics({
-        from: data.from, to: data.to,
-        team: data.team, communicationType: data.communicationType,
-      });
-      const filtered = data.agentCode
-        ? { ...result, rows: result.rows.filter((r) => (r.agent_code ?? r.ext_num) === data.agentCode) }
-        : result;
-      if (data.agentCode) {
-        const sum = filtered.rows.reduce(
-          (acc, r) => ({
-            total: acc.total + r.total,
-            answered: acc.answered + r.answered,
-            missed: acc.missed + r.missed,
-            inbound: acc.inbound + r.inbound,
-            outbound: acc.outbound + r.outbound,
-            talkTimeSec: acc.talkTimeSec + r.talkTimeSec,
-          }),
-          { total: 0, answered: 0, missed: 0, inbound: 0, outbound: 0, talkTimeSec: 0 },
-        );
-        filtered.totals = {
-          total: sum.total, answered: sum.answered, missed: sum.missed,
-          inbound: sum.inbound, outbound: sum.outbound,
-          answerRate: sum.total > 0 ? Math.round((sum.answered / sum.total) * 1000) / 10 : 0,
-          missedRate: sum.total > 0 ? Math.round((sum.missed / sum.total) * 1000) / 10 : 0,
-          avgTalkSec: sum.answered > 0 ? Math.round(sum.talkTimeSec / sum.answered) : 0,
-        };
-      }
-      return { ok: true as const, configured: true as const, ...filtered };
+      const { fetchCdrRange } = await import("@/lib/yeastar/cdr.server");
+      const res = await fetchCdrRange({ from: data.from, to: data.to });
+      return {
+        ok: true as const,
+        configured: true as const,
+        path: res.path,
+        totalReported: res.totalReported,
+        fetched: res.records.length,
+        truncated: res.truncated,
+        pagesFetched: res.pagesFetched,
+        elapsedMs: res.elapsedMs,
+        sample: res.records.slice(0, 5).map((r) => ({
+          time: r.time, timestamp: r.timestamp, call_type: r.call_type,
+          disposition: r.disposition, call_from_number: r.call_from_number,
+          call_to_number: r.call_to_number, talk_duration: r.talk_duration,
+        })),
+      };
     } catch (err) {
       return { ok: false as const, configured: true as const, error: err instanceof Error ? err.message : String(err) };
     }
   });
 
-export const yeastarDailyVolume = createServerFn({ method: "POST" })
+// ---- Agent mapping diagnostic (admin) --------------------------------------
+
+export const yeastarAgentMappingDiagnostic = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data) => analyticsInput.parse(data))
-  .handler(async ({ data }) => {
-    const { fetchDailyVolume } = await import("@/lib/yeastar/reports.server");
+  .inputValidator((d) => cdrProbeInput.parse(d))
+  .handler(async ({ context, data }) => {
+    await assertAdmin(context as any);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("id,full_name,agent_code,active");
+    // yeastar_ext isn't in generated types yet; separate select cast.
+    const { data: extRows } = await supabaseAdmin
+      .from("profiles" as any)
+      .select("id,yeastar_ext");
+    const extMap = new Map<string, string | null>(
+      ((extRows as any[]) ?? []).map((r) => [r.id, r.yeastar_ext ?? null]),
+    );
+    const { data: roles } = await supabaseAdmin.from("user_roles").select("user_id,role");
+    const roleMap = new Map(((roles as any[]) ?? []).map((r) => [r.user_id, r.role as string]));
+
+    const agents = ((profiles as any[]) ?? [])
+      .filter((p) => p.active)
+      .map((p) => ({ id: p.id, name: p.full_name, agent_code: p.agent_code ?? null, ext: extMap.get(p.id) ?? null, role: roleMap.get(p.id) ?? null }))
+      .filter((p) => p.role === "customer_care" || p.role === "telesales");
+
+    const missingExt = agents.filter((a) => !a.ext || !String(a.ext).trim());
+
     const { isConfigured } = await import("@/lib/yeastar/client.server");
-    if (!isConfigured()) return { ok: false as const, series: [] };
-    try {
-      const series = await fetchDailyVolume({ from: data.from, to: data.to, team: data.team, communicationType: data.communicationType });
-      return { ok: true as const, series };
-    } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err), series: [] as any[] };
+    let topUnmatched: Array<{ ext: string; count: number }> = [];
+    let cdrError: string | null = null;
+    if (isConfigured()) {
+      try {
+        const { fetchCdrRange } = await import("@/lib/yeastar/cdr.server");
+        const { records } = await fetchCdrRange({ from: data.from, to: data.to });
+        const knownExts = new Set(
+          agents
+            .map((a) => String(a.ext ?? a.agent_code ?? "").trim())
+            .filter(Boolean),
+        );
+        const counts = new Map<string, number>();
+        for (const r of records) {
+          const ext =
+            r.call_type === "Outbound" ? r.call_from_number ?? null
+            : r.call_type === "Inbound" ? r.call_to_number ?? null
+            : r.call_from_number ?? r.call_to_number ?? null;
+          if (!ext) continue;
+          if (knownExts.has(String(ext).trim())) continue;
+          counts.set(ext, (counts.get(ext) ?? 0) + 1);
+        }
+        topUnmatched = [...counts.entries()]
+          .map(([ext, count]) => ({ ext, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 25);
+      } catch (err) {
+        cdrError = err instanceof Error ? err.message : String(err);
+      }
     }
+
+    return {
+      ok: true as const,
+      agentCount: agents.length,
+      missingExt: missingExt.map((a) => ({ id: a.id, name: a.name, agent_code: a.agent_code })),
+      topUnmatched,
+      cdrError,
+    };
+  });
+
+// ---- Analytics (dashboard) -------------------------------------------------
+
+const statsInput = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  team: z.enum(["all", "customer_care", "telesales"]).default("all"),
+  agentId: z.string().uuid().nullable().optional(),
+});
+
+// Per-isolate 60s cache of the raw CDR pull, keyed by "from|to". Multiple
+// dashboard hits for the same window share one fetch.
+const CDR_CACHE_TTL_MS = 60_000;
+const cdrCache = new Map<string, { at: number; promise: Promise<any> }>();
+
+async function getCdrCached(from: string, to: string) {
+  const key = `${from}|${to}`;
+  const now = Date.now();
+  const hit = cdrCache.get(key);
+  if (hit && now - hit.at < CDR_CACHE_TTL_MS) return hit.promise;
+  const { fetchCdrRange } = await import("@/lib/yeastar/cdr.server");
+  const promise = fetchCdrRange({ from, to }).catch((e) => {
+    cdrCache.delete(key);
+    throw e;
+  });
+  cdrCache.set(key, { at: now, promise });
+  return promise;
+}
+
+export const getAgentCallStats = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => statsInput.parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+    const { isConfigured } = await import("@/lib/yeastar/client.server");
+    if (!isConfigured()) return { ok: false as const, configured: false as const };
+
+    const [{ data: canDash }, { data: canAll }, { data: isAdmin }] = await Promise.all([
+      supabase.rpc("has_permission", { _user_id: userId, _permission: "view_dashboard" }),
+      supabase.rpc("has_permission", { _user_id: userId, _permission: "view_all_agents" }),
+      supabase.rpc("is_administrator", { _user_id: userId }),
+    ]);
+    if (!canDash) throw new Error("Forbidden: dashboard access required");
+    const seesAll = !!canAll || !!isAdmin;
+
+    // Load operational agents (customer_care / telesales, active).
+    const { data: profiles } = await supabase
+      .from("profiles").select("id,full_name,agent_code,active");
+    const { data: extRows } = await supabase
+      .from("profiles").select("id,yeastar_ext");
+    const extMap = new Map<string, string | null>(
+      ((extRows as any[]) ?? []).map((r) => [r.id, r.yeastar_ext ?? null]),
+    );
+    const { data: roles } = await supabase.from("user_roles").select("user_id,role");
+    const roleMap = new Map<string, string>(
+      ((roles as any[]) ?? []).map((r) => [r.user_id, r.role as string]),
+    );
+
+    let agents = ((profiles as any[]) ?? [])
+      .filter((p) => p.active)
+      .map((p) => ({
+        id: p.id as string,
+        name: (p.full_name as string) ?? "Unknown",
+        team: roleMap.get(p.id) as "customer_care" | "telesales" | undefined,
+        ext: String(extMap.get(p.id) ?? p.agent_code ?? "").trim(),
+      }))
+      .filter((a) => a.team === "customer_care" || a.team === "telesales")
+      .filter((a) => a.ext.length > 0) as Array<{ id: string; name: string; team: "customer_care" | "telesales"; ext: string }>;
+
+    if (data.team !== "all") agents = agents.filter((a) => a.team === data.team);
+    if (!seesAll) agents = agents.filter((a) => a.id === userId);
+    else if (data.agentId) agents = agents.filter((a) => a.id === data.agentId);
+
+    if (agents.length === 0) {
+      return {
+        ok: true as const,
+        configured: true as const,
+        empty: true as const,
+        window: { from: data.from, to: data.to, team: data.team, agentId: data.agentId ?? null },
+        agents: [],
+        totals: null,
+        unmatched: null,
+        byDay: [],
+        cdr: null,
+      };
+    }
+
+    const cdr = await getCdrCached(data.from, data.to);
+    const { aggregateAgentStats } = await import("@/lib/yeastar/stats.server");
+    const agg = aggregateAgentStats(cdr.records, agents, { includeInternal: false });
+
+    return {
+      ok: true as const,
+      configured: true as const,
+      empty: false as const,
+      window: { from: data.from, to: data.to, team: data.team, agentId: data.agentId ?? null },
+      cdr: {
+        path: cdr.path,
+        totalReported: cdr.totalReported,
+        fetched: cdr.records.length,
+        truncated: cdr.truncated,
+        elapsedMs: cdr.elapsedMs,
+      },
+      agents: agg.agents,
+      totals: agg.totals,
+      unmatched: agg.unmatched,
+      byDay: agg.byDay,
+    };
   });
