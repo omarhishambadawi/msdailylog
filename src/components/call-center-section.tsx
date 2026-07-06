@@ -269,35 +269,6 @@ export function CallCenterSection({ from, to, team, agentId }: Props) {
             </CardContent>
           </Card>
 
-          {/* Unmatched extensions (admin only) */}
-          {isAdmin && unmatched && unmatched.extensions.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Unmatched extensions</CardTitle>
-                <div className="text-xs text-muted-foreground">
-                  {unmatched.records.toLocaleString()} calls didn't match any active Customer Care / Telesales agent (queues, admin lines, IVRs, or missing Yeastar extension in the profile).
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs text-muted-foreground">
-                      <th className="px-3 py-2">Extension</th>
-                      <th className="px-3 py-2 text-right">Calls</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unmatched.extensions.map((u) => (
-                      <tr key={u.ext} className="border-b last:border-0">
-                        <td className="px-3 py-2 font-mono text-xs">{u.ext}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{u.count}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          ) : null}
         </>
       )}
     </div>
