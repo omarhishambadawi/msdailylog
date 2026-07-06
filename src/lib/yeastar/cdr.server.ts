@@ -148,11 +148,12 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
   const inWindow = (r: CdrRecord) =>
     typeof r.timestamp === "number" && r.timestamp >= startEpoch && r.timestamp <= endEpoch;
 
-  // Fast path: /cdr/search with a PBX-formatted window.
   const startStr = fmtForPbx(startEpoch);
   const endStr = fmtForPbx(endEpoch);
-  console.log(`[yeastar cdr] search window "${startStr}".."${endStr}" (epoch ${startEpoch}..${endEpoch}, tz+${TZ_OFFSET_MIN}m)`);
+  console.log(`[yeastar cdr] window "${startStr}".."${endStr}" (epoch ${startEpoch}..${endEpoch}, tz+${TZ_OFFSET_MIN}m)`);
 
+  // Try /cdr/list with time filters first. If the PBX ignores them, the
+  // authoritative epoch filter below still trims the result correctly.
   let path: FetchCdrResult["path"] = "search";
   let records: CdrRecord[] = [];
   let totalReported: number | null = null;
@@ -160,23 +161,18 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
   let truncated = false;
   try {
     const r = await fetchAllPages(
-      "/openapi/v1.0/cdr/search",
+      "/openapi/v1.0/cdr/list",
       { start_time: startStr, end_time: endStr },
       pageSize, maxPages, opts.signal,
     );
     records = r.records; totalReported = r.totalReported; pages = r.pages; truncated = r.truncated;
   } catch (e: any) {
-    console.warn(`[yeastar cdr] /cdr/search failed (${e?.message ?? e}) — falling back to /cdr/list.`);
-  }
-
-  // Fallback: if search failed or returned nothing, sweep the full list and
-  // filter by epoch timestamp (authoritative, timezone-safe).
-  if (records.length === 0) {
-    console.warn("[yeastar cdr] using /cdr/list + timestamp filter fallback.");
+    console.warn(`[yeastar cdr] /cdr/list with time filter failed (${e?.message ?? e}) — retrying without filter.`);
     path = "list-fallback";
     const full = await fetchAllPages("/openapi/v1.0/cdr/list", {}, pageSize, maxPages, opts.signal);
     records = full.records; totalReported = full.totalReported; pages = full.pages; truncated = full.truncated;
   }
+
 
   // Authoritative timezone-correct filter by epoch timestamp.
   const filtered = records.filter(inWindow);
