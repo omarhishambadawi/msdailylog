@@ -114,13 +114,18 @@ async function fetchAllPages(
   for (; page <= maxPages; page++) {
     const { httpStatus, json, body } = await yeastarFetch<CdrPageResponse>(
       endpoint,
-      { ...baseQuery, page, page_size: pageSize, sort_by: "time", order_by: "asc" },
-      { signal },
+      {},
+      {
+        signal,
+        method: "POST",
+        body: { ...baseQuery, page, page_size: pageSize, sort_by: "time", order_by: "asc" },
+      },
     );
     if (httpStatus !== 200) throw new Error(`Yeastar CDR HTTP ${httpStatus}: ${body.slice(0, 200)}`);
     if (!json || json.errcode !== 0) {
       throw new Error(`Yeastar CDR errcode ${json?.errcode ?? "n/a"}: ${json?.errmsg ?? "unknown"}`);
     }
+
     const list = json.data ?? [];              // CORRECT field
     if (typeof json.total_number === "number") totalReported = json.total_number;
     records.push(...list);
