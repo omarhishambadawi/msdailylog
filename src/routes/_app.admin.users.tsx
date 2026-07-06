@@ -67,10 +67,30 @@ function AdminUsers() {
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   };
 
+  const permsEqual = (a: string[], b: string[]) => {
+    if (a.length !== b.length) return false;
+    const sa = new Set(a);
+    return b.every((k) => sa.has(k));
+  };
+
+  const openEdit = (u: any) => {
+    const stored: string[] = Array.isArray(u.permissions) ? u.permissions : [];
+    const usingDefaults = stored.length === 0;
+    const roleKey = (u.role ?? "customer_care") as any;
+    const effective = usingDefaults ? defaultPermsForRole(roleKey) : stored;
+    setEditing({ ...u, permissions: effective, _usingDefaults: usingDefaults, _originalStored: stored });
+  };
+
   const saveEdit = async () => {
     if (!editing) return;
     try {
-      await updFn({ data: { userId: editing.id, fullName: editing.full_name, agentCode: editing.agent_code ?? "", permissions: editing.permissions ?? [] } });
+      const roleKey = (editing.role ?? "customer_care") as any;
+      const currentPerms: string[] = editing.permissions ?? [];
+      // If the set equals role defaults, keep the user on auto-updating defaults (empty array).
+      const toStore = editing._usingDefaults || permsEqual(currentPerms, defaultPermsForRole(roleKey))
+        ? []
+        : currentPerms;
+      await updFn({ data: { userId: editing.id, fullName: editing.full_name, agentCode: editing.agent_code ?? "", permissions: toStore } });
       if (editing._roleChange) await setRoleFn({ data: { userId: editing.id, role: editing.role } });
       toast.success("Saved");
       setEditing(null);
@@ -81,8 +101,10 @@ function AdminUsers() {
   const togglePerm = (key: string, on: boolean) => {
     if (!editing) return;
     const cur: string[] = editing.permissions ?? [];
-    setEditing({ ...editing, permissions: on ? Array.from(new Set([...cur, key])) : cur.filter((p: string) => p !== key) });
+    const next = on ? Array.from(new Set([...cur, key])) : cur.filter((p: string) => p !== key);
+    setEditing({ ...editing, permissions: next, _usingDefaults: false });
   };
+
 
   const savePw = async () => {
     if (!pwUser) return;
@@ -150,7 +172,7 @@ function AdminUsers() {
                     <Switch checked={u.active} onCheckedChange={async (v) => { try { await setActiveFn({ data: { userId: u.id, active: v } }); reload(); } catch (e: any) { toast.error(e.message); } }} />
                   </TableCell>
                   <TableCell className="text-right space-x-1">
-                    <Button variant="ghost" size="sm" onClick={() => setEditing({ ...u })}><Pencil className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(u)}><Pencil className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="sm" onClick={() => setPwUser(u)}><KeyRound className="h-4 w-4" /></Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
@@ -185,7 +207,11 @@ function AdminUsers() {
                 <div className="space-y-2"><Label>Agent code</Label><Input value={editing.agent_code ?? ""} onChange={(e) => setEditing({ ...editing, agent_code: e.target.value })} /></div>
                 <div className="space-y-2 sm:col-span-3">
                   <Label>Role</Label>
-                  <Select value={editing.role ?? "customer_care"} onValueChange={(v) => setEditing({ ...editing, role: v, _roleChange: true })}>
+                  <Select value={editing.role ?? "customer_care"} onValueChange={(v) => {
+                    const next: any = { ...editing, role: v, _roleChange: true };
+                    if (editing._usingDefaults) next.permissions = defaultPermsForRole(v as any);
+                    setEditing(next);
+                  }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="customer_care">Customer Care</SelectItem>
@@ -198,8 +224,13 @@ function AdminUsers() {
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Permissions</Label>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditing({ ...editing, permissions: defaultPermsForRole((editing.role ?? "customer_care")) })}>Reset to role defaults</Button>
+                  <div className="flex items-center gap-2">
+                    <Label>Permissions</Label>
+                    <Badge variant={editing._usingDefaults ? "secondary" : "outline"} className="text-[10px]">
+                      {editing._usingDefaults ? "Using role defaults" : "Custom permissions"}
+                    </Badge>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditing({ ...editing, permissions: defaultPermsForRole((editing.role ?? "customer_care")), _usingDefaults: true })}>Reset to role defaults</Button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {PERMISSION_GROUPS.map((group) => {
@@ -222,7 +253,12 @@ function AdminUsers() {
                     );
                   })}
                 </div>
-                <p className="text-[11px] text-muted-foreground">Empty list = uses role defaults. Admins always have all permissions.</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {editing._usingDefaults
+                    ? "This user auto-tracks role defaults. Any change pins an exact custom set; saving a set identical to defaults keeps them on auto-updating defaults."
+                    : "Custom permission set. Click \"Reset to role defaults\" to return to auto-updating defaults. Admins always have all permissions."}
+                </p>
+
               </div>
               <DialogFooter><Button onClick={saveEdit}>Save changes</Button></DialogFooter>
             </div>
