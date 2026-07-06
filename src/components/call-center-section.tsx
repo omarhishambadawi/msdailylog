@@ -109,9 +109,6 @@ export function CallCenterSection({ from, to, team, agentId }: Props) {
             {cdrMeta.totalReported != null ? ` / ${cdrMeta.totalReported.toLocaleString()}` : ""}
           </Badge>
           <Badge variant="outline" className="font-normal">Path: {cdrMeta.path}</Badge>
-          {unmatched && unmatched.records > 0 ? (
-            <Badge variant="outline" className="font-normal">Unmatched: {unmatched.records.toLocaleString()}</Badge>
-          ) : null}
           {cdrMeta.truncated ? (
             <Badge variant="destructive" className="font-normal gap-1">
               <AlertTriangle className="h-3 w-3" />
