@@ -53,11 +53,13 @@ function AppLayout() {
   const canComplaints = hasPerm(role, profile?.permissions as any, "view_complaints");
   const canUsers = hasPerm(role, profile?.permissions as any, "manage_users");
   const canAdminBranches = hasPerm(role, profile?.permissions as any, "admin_access");
+  const canCallCenter = hasPerm(role, profile?.permissions as any, "view_team_analytics") || hasPerm(role, profile?.permissions as any, "view_dashboard");
   const nav = [
     ...(canDashboard ? [{ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] : []),
     ...(canOrders ? [{ to: "/orders", label: "Orders", icon: ListOrdered }] : []),
     ...(canCreate ? [{ to: "/orders/new", label: "New Order", icon: Plus }] : []),
     ...(canComplaints ? [{ to: "/complaints", label: "Complaints", icon: MessageSquareWarning }] : []),
+    ...(canCallCenter ? [{ to: "/call-center", label: "Call Center", icon: Headphones }] : []),
     ...(canUsers ? [{ to: "/admin/users", label: "Users", icon: Users }] : []),
     ...(canAdminBranches ? [{ to: "/admin/branches", label: "Branches", icon: MapPin }] : []),
     ...(isAdministrator(role) ? [{ to: "/admin/yeastar", label: "Yeastar", icon: PhoneCall }] : []),
