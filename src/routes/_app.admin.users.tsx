@@ -67,10 +67,30 @@ function AdminUsers() {
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   };
 
+  const permsEqual = (a: string[], b: string[]) => {
+    if (a.length !== b.length) return false;
+    const sa = new Set(a);
+    return b.every((k) => sa.has(k));
+  };
+
+  const openEdit = (u: any) => {
+    const stored: string[] = Array.isArray(u.permissions) ? u.permissions : [];
+    const usingDefaults = stored.length === 0;
+    const roleKey = (u.role ?? "customer_care") as any;
+    const effective = usingDefaults ? defaultPermsForRole(roleKey) : stored;
+    setEditing({ ...u, permissions: effective, _usingDefaults: usingDefaults, _originalStored: stored });
+  };
+
   const saveEdit = async () => {
     if (!editing) return;
     try {
-      await updFn({ data: { userId: editing.id, fullName: editing.full_name, agentCode: editing.agent_code ?? "", permissions: editing.permissions ?? [] } });
+      const roleKey = (editing.role ?? "customer_care") as any;
+      const currentPerms: string[] = editing.permissions ?? [];
+      // If the set equals role defaults, keep the user on auto-updating defaults (empty array).
+      const toStore = editing._usingDefaults || permsEqual(currentPerms, defaultPermsForRole(roleKey))
+        ? []
+        : currentPerms;
+      await updFn({ data: { userId: editing.id, fullName: editing.full_name, agentCode: editing.agent_code ?? "", permissions: toStore } });
       if (editing._roleChange) await setRoleFn({ data: { userId: editing.id, role: editing.role } });
       toast.success("Saved");
       setEditing(null);
@@ -81,8 +101,10 @@ function AdminUsers() {
   const togglePerm = (key: string, on: boolean) => {
     if (!editing) return;
     const cur: string[] = editing.permissions ?? [];
-    setEditing({ ...editing, permissions: on ? Array.from(new Set([...cur, key])) : cur.filter((p: string) => p !== key) });
+    const next = on ? Array.from(new Set([...cur, key])) : cur.filter((p: string) => p !== key);
+    setEditing({ ...editing, permissions: next, _usingDefaults: false });
   };
+
 
   const savePw = async () => {
     if (!pwUser) return;
