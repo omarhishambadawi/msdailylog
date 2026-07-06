@@ -12,18 +12,23 @@ import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — MilaServ Daily Log" }] }),
+  validateSearch: (s: Record<string, unknown>) => ({
+    next: typeof s.next === "string" && s.next.startsWith("/") && !s.next.startsWith("//") ? s.next : undefined,
+  }),
   component: AuthPage,
 });
 
 function AuthPage() {
   const { session, loading, role, profile } = useAuth();
   const navigate = useNavigate();
+  const { next } = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   if (!loading && session) {
-    if (hasPerm(role, profile?.permissions, "view_dashboard")) navigate({ to: "/dashboard", replace: true });
+    if (next) { window.location.assign(next); }
+    else if (hasPerm(role, profile?.permissions, "view_dashboard")) navigate({ to: "/dashboard", replace: true });
     else if (hasPerm(role, profile?.permissions, "view_orders")) navigate({ to: "/orders", replace: true });
     else navigate({ to: "/", replace: true });
   }
@@ -35,7 +40,8 @@ function AuthPage() {
     setBusy(false);
     if (error) { toast.error(error.message); return; }
     toast.success("Signed in");
-    navigate({ to: "/", replace: true });
+    if (next) window.location.assign(next);
+    else navigate({ to: "/", replace: true });
   };
 
   const onForgot = async () => {
