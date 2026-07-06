@@ -1,65 +1,64 @@
-## Yeastar Analytics — Rebuild on Call Reports API
+# Call Center Analytics Module
 
-Replace raw CDR ingestion with the PBX's official **Call Reports** endpoint (`/openapi/v1.0/call_report/list`), scoped to the two extension groups **Customer_Care_Emp.** and **Telesales_Emp.**, and drive it entirely from the Dashboard's existing Date / Team / Agent filters.
+Move all Yeastar/PBX analytics out of the main Dashboard into a new standalone route `/call-center` with its own nav entry. Dashboard keeps Orders/Sales/Complaints/Business KPIs only.
 
-### 1. Server layer (new modules)
+## 1. Navigation & Route
+- New route `src/routes/_app.call-center.tsx` (permission-gated: `view_team_analytics` or admin).
+- Add "Call Center" item to the app sidebar/nav.
+- Remove the Yeastar `CallCenterSection` from `src/routes/_app.dashboard.tsx`.
 
-- `src/lib/yeastar/groups.server.ts`
-  - `resolveExtensionGroupIds()` — one call to `/extensiongroup/search` (or `/list`), matches group names `Customer_Care_Emp.` / `Telesales_Emp.`, returns `{ customerCare: id, telesales: id, extensions: { [groupId]: [{ext_id, ext_num, name}] } }`. Cached in-memory for 10 minutes (small, safe, avoids repeated lookups).
-- `src/lib/yeastar/reports.server.ts`
-  - `fetchExtCallStatistics({ from, to, team, communicationType })` — calls `GET /openapi/v1.0/call_report/list` with:
-    - `type=extcallstatistics`
-    - `ext_id_list=<group-id(s)>` (one, the other, or both — no client-side filtering)
-    - `start_time` / `end_time` formatted per PBX display format (ISO `YYYY-MM-DD HH:mm:ss` with 00:00:00 / 23:59:59)
-    - `communication_type` = `Inbound` | `Outbound` | `InOutbound` (default)
-  - Returns typed per-extension rows: `{ ext_num, ext_name, group, total, answered, missed, inbound, outbound, answer_rate }`.
-  - Handles paging (page_size 100).
-- `src/lib/yeastar/reports-daily.server.ts`
-  - For the Daily Call Volume chart, calls `type=extcallactivity` per day in the range (or a single call if the range fits one aggregation window), so the dashboard can plot per-day totals without downloading CDRs.
-- `src/lib/yeastar.functions.ts` — replace CDR probe with three server functions (admin still required for diagnostics, but analytics fetch is available to any authenticated user with `view_dashboard`):
-  - `yeastarGroupsDiagnostic()` — verifies both groups resolve and lists their extension counts.
-  - `yeastarCallAnalytics({ from, to, team, agentId?, communicationType })` — the main dashboard query. Team maps to group id(s); `agentId` maps to the platform agent's `agent_code` → PBX extension number and filters the returned rows.
-  - `yeastarDailyVolume({ from, to, team, communicationType })` — series for the daily chart.
-- Delete `src/lib/yeastar/cdr.server.ts` and its diagnostic wrapper; remove the CDR probe card.
+## 2. Data Pipeline (performance)
+Rework `src/lib/yeastar/cdr.server.ts` + new server functions:
+- **Progressive fetch**: split into 3 server fns
+  1. `getCallKpis({from,to,team?,agent?,direction?,status?})` — fetches CDRs, returns KPI totals only (fast).
+  2. `getCallSeries(...)` — returns daily/weekly/monthly + hourly aggregates.
+  3. `getCallTables(...)` — per-agent, per-team, unmatched, raw sample.
+- Cache raw CDR pages in `yeastar_cdr_cache` table keyed by `(from,to)` for 5 min TTL so repeat views are instant.
+- **Progress reporting**: new server route `GET /api/cdr-progress?jobId=…` returning `{page, totalPages, records, percent, status}`. `fetchCdrRange` writes progress into an in-memory + `yeastar_cdr_jobs` row. UI polls every 500ms and shows `██████░░ 62% — page 14/22`.
+- Client uses TanStack Query with staggered `enabled` flags: KPIs → charts → tables.
 
-### 2. Dashboard integration
+## 3. Queue-Aware Missed Call Logic
+CDR `call_type=Inbound` for a queue produces multiple records or a single record with `agent_list`/`dst_list`. Correct rules:
+- **Global missed** = group CDRs by `call_id`/`uid` (or linkedid). If ANY row in the group has `disposition=ANSWERED`, group is answered — not missed.
+- **Global abandoned** = caller hung up before any agent picked up (all rows NO ANSWER + short ring, or disposition=`ABANDONED` if PBX provides it).
+- **Per-agent missed** = row where THAT agent's extension was rung and disposition=NO ANSWER, even if another agent answered a sibling row.
+Implement in `stats.server.ts`:
+- Add `groupByCall(records)` helper.
+- Recompute totals from groups, per-agent from raw rows.
 
-- Add a **Call Center Performance** section to `src/routes/_app.dashboard.tsx` that reads the existing `from`, `to`, `teamFilter`, `agentFilter` state and adds a small `communicationType` toggle (All / Inbound / Outbound) local to that section only (per spec, no separate date/team/agent filters).
-- Fetches via `useQuery` keyed on all filters, so it re-runs whenever the Dashboard filters change.
-- Renders:
-  - **KPI row** (7 cards using existing `DashKpiCard`): Total, Answered, Missed, Inbound, Outbound, Answer Rate %, Missed Rate %.
-  - **Charts**: Calls by Team (bar), Calls by Agent (bar), Inbound vs Outbound (donut), Answered vs Missed (donut), Daily Call Volume (line).
-  - **Agents table**: Agent Name · Team · Total · Answered · Missed · Inbound · Outbound · Answer Rate.
-- Only Customer Care + Telesales agents appear; mapping uses `profiles.agent_code` ↔ `ext_num` (already the convention).
+## 4. KPI Cards (all from real CDR)
+Total, Answered, Missed (global), Abandoned, Failed, Busy, Inbound, Outbound, Internal, AnswerRate, MissedRate, AbandonRate, AvgTalk, AHT (talk+hold+wrap fallback=talk+ring), AvgRing, AvgDuration, TotalTalk, Longest, Shortest, ActiveAgents, CallsPerAgent.
 
-### 3. Admin page
+## 5. Charts (Recharts)
+Daily/Weekly/Monthly toggle for: Calls/Day, Answer Rate, Missed Rate, Abandon Rate, AHT, Talk, Ring, Inbound-vs-Outbound. Hourly: bar + heatmap (day×hour), Peak Hours, Answer Rate by hour. Comparisons: Team (CC vs Telesales), Top/Bottom agents, Conversion trend.
 
-- Rewrite `src/routes/_app.admin.yeastar.tsx` to keep Configuration + Authentication cards, replace the CDR probe with a **Call Reports probe** that runs `yeastarGroupsDiagnostic` and a preview of `yeastarCallAnalytics` for yesterday.
+## 6. Agent & Team Tables
+Sortable/searchable/filterable tables with all requested columns. Top/Bottom performer highlight cards above.
 
-### 4. Performance guarantees
+## 7. Missed / Abandoned / Failed / Busy separate sections with own trend lines.
 
-- Group ID lookup: 1 request, cached 10 min.
-- Analytics fetch: 1 request per selected team (max 2), scoped by `ext_id_list` + date + `communication_type` — PBX does the aggregation, no local filtering of raw CDR.
-- Daily volume: 1 request using `extcallactivity`.
-- Total: ≤ 4 PBX requests per dashboard load, well under Worker limits.
+## 8. Conversion (Telesales only)
+Join `orders` with telesales agents by `agent_id`:
+- Overall / Cash / Wasfaty / Per-Agent / Per-Day / Monthly Conversion = orders ÷ answered × 100.
+- Revenue per answered call, per order, avg orders/call, completed/cancelled/pending counts.
+- No conversion rendered for customer_care.
 
-### 5. Filter contract
+## 9. Filters (single toolbar, applied to all queries)
+Date presets (Today, Yesterday, 7d, 30d, MTD, Prev Month, Custom) + Team + Agent + Direction + Status. State kept in route search params so links are shareable.
 
-| Dashboard filter    | Sent to PBX as                                                        |
-|---------------------|-----------------------------------------------------------------------|
-| Date range          | `start_time` / `end_time` (PBX format, 00:00:00 → 23:59:59)          |
-| Team = All          | `ext_id_list = <ccId>,<tsId>`                                         |
-| Team = Customer Care| `ext_id_list = <ccId>`                                                |
-| Team = Telesales    | `ext_id_list = <tsId>`                                                |
-| Agent               | Filter returned rows by extension number → `agent_code`               |
-| Communication Type  | `communication_type` = `Inbound` \| `Outbound` \| `InOutbound`        |
+## 10. Export
+Client-side: CSV + XLSX via `xlsx`, PDF via `jspdf` + `jspdf-autotable`. Export current filtered dataset (KPIs, per-agent, per-day, per-hour).
 
-### Technical notes
+## 11. UX
+Skeletons per section, progress bar for CDR fetch, empty states, non-blocking error toasts, responsive grid.
 
-- Endpoint: `GET {base}/openapi/v1.0/call_report/list?access_token=…&type=extcallstatistics&ext_id_list=…&start_time=…&end_time=…&communication_type=…`.
-- Response uses `ext_call_statistics_list` array with per-extension counters (`total`, `answered`, `no_answered`, `inbound_calls`, `outbound_calls`, etc.); the module maps this to a normalized shape.
-- Extension groups resolved via `/openapi/v1.0/extensiongroup/search` (name match) once per isolate, cached 10 min.
-- No new tables, no new secrets. Uses the existing `yeastarFetch` client — token cache and single-flight auth remain unchanged.
-- Removes: `src/lib/yeastar/cdr.server.ts`, the CDR probe UI, `yeastarCdrDiagnostic`.
+## Technical notes
+- Files added: `src/routes/_app.call-center.tsx`, `src/components/call-center/*` (KpiGrid, DailyCharts, HourlyHeatmap, AgentTable, TeamCompare, ConversionPanel, MissedBreakdown, FiltersBar, ProgressBar, ExportMenu), `src/lib/yeastar/groups.server.ts`, `src/lib/yeastar/progress.server.ts`, `src/lib/call-center.functions.ts`.
+- Files edited: `src/lib/yeastar/cdr.server.ts` (progress hook + cache), `src/lib/yeastar/stats.server.ts` (queue grouping, conversion), `src/routes/_app.dashboard.tsx` (remove PBX section), sidebar/nav.
+- New tables (migration): `yeastar_cdr_cache(range_key text pk, payload jsonb, fetched_at)`, `yeastar_cdr_jobs(job_id uuid pk, from_date, to_date, page, total_pages, records, status, updated_at)` with GRANTs + RLS (authenticated read own, service_role all).
+- New deps: `xlsx`, `jspdf`, `jspdf-autotable`.
 
-Confirm and I'll implement.
+## Confirm before I start
+1. **Queue detection field** — does your PBX populate `linkedid`, `call_id`, or `uid` consistently on grouped queue rings? I'll default to `linkedid ?? call_id ?? uid` and fall back to `(call_from_number, floor(timestamp/60))` if all are absent.
+2. **Order↔agent join** — use `orders.agent_id = profiles.id` where `profiles.yeastar_ext` matches the CDR extension. OK?
+3. **Abandoned source** — Yeastar P-Series exposes abandoned via the Queue Panel API, not `/cdr/list`. I'll approximate abandoned as `Inbound group with disposition=NO ANSWER AND ring_duration < 5s AND no agent answered`. Acceptable, or should I also pull `/queuepanel` data?

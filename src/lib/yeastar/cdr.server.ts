@@ -68,6 +68,7 @@ export interface FetchCdrOptions {
   pageSize?: number;        // default 10,000 (Yeastar max)
   maxPages?: number;        // safety ceiling, default 200
   signal?: AbortSignal;
+  jobId?: string;           // when set, progress is reported via progress.server.ts
 }
 
 export interface FetchCdrResult {
@@ -107,10 +108,12 @@ async function fetchAllPages(
   pageSize: number,
   maxPages: number,
   signal?: AbortSignal,
+  jobId?: string,
 ): Promise<{ records: CdrRecord[]; totalReported: number | null; pages: number; truncated: boolean }> {
   const records: CdrRecord[] = [];
   let totalReported: number | null = null;
   let page = 1;
+  const progress = jobId ? await import("./progress.server") : null;
   for (; page <= maxPages; page++) {
     const { httpStatus, json, body } = await yeastarFetch<CdrPageResponse>(
       endpoint,
@@ -126,6 +129,16 @@ async function fetchAllPages(
     const list = json.data ?? [];              // CORRECT field
     if (typeof json.total_number === "number") totalReported = json.total_number;
     records.push(...list);
+    const totalPages = totalReported != null ? Math.max(1, Math.ceil(totalReported / pageSize)) : null;
+    if (progress && jobId) {
+      progress.updateJob(jobId, {
+        status: "fetching", page, totalPages, records: records.length,
+        totalReported,
+        message: totalPages
+          ? `Fetching page ${page} of ${totalPages}…`
+          : `Fetching page ${page}…`,
+      });
+    }
     console.log(`[yeastar cdr] ${endpoint} page=${page} got=${list.length} total=${totalReported ?? "?"} acc=${records.length}`);
     if (list.length < pageSize) break;
     if (totalReported !== null && records.length >= totalReported) break;
@@ -157,13 +170,13 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
     const r = await fetchAllPages(
       "/openapi/v1.0/cdr/search",
       { start_time: startEpoch, end_time: endEpoch },
-      pageSize, maxPages, opts.signal,
+      pageSize, maxPages, opts.signal, opts.jobId,
     );
     records = r.records; totalReported = r.totalReported; pages = r.pages; truncated = r.truncated;
   } catch (e: any) {
     console.warn(`[yeastar cdr] /cdr/search failed (${e?.message ?? e}) — falling back to /cdr/list.`);
     path = "list-fallback";
-    const full = await fetchAllPages("/openapi/v1.0/cdr/list", {}, pageSize, maxPages, opts.signal);
+    const full = await fetchAllPages("/openapi/v1.0/cdr/list", {}, pageSize, maxPages, opts.signal, opts.jobId);
     records = full.records; totalReported = full.totalReported; pages = full.pages; truncated = full.truncated;
   }
 
