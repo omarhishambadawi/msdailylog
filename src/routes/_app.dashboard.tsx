@@ -17,6 +17,7 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { hasPerm } from "@/lib/permissions";
 import { SaudiSalesMap } from "@/components/saudi-sales-map";
 import { CallCenterSection } from "@/components/call-center-section";
+import { fetchAllPaginated } from "@/lib/supabase-paginate";
 
 
 
@@ -78,21 +79,29 @@ function Dashboard() {
   const { data } = useQuery({
     queryKey: ["dashboard", from, to, effectiveAgent, effectiveTeam, isAdmin, user?.id],
     queryFn: async () => {
-      let qb = supabase.from("orders")
-        .select("id,order_date,team,agent_id,branch_no,invoice_value,status,order_type,delivery_type,call_center_verified")
-        .gte("order_date", from).lte("order_date", to);
-      if (effectiveAgent !== "all") qb = qb.eq("agent_id", effectiveAgent);
-      if (effectiveTeam !== "all") qb = qb.eq("team", effectiveTeam as "customer_care" | "telesales");
+      const buildOrders = () => {
+        let qb = supabase.from("orders")
+          .select("id,order_date,team,agent_id,branch_no,invoice_value,status,order_type,delivery_type,call_center_verified")
+          .gte("order_date", from).lte("order_date", to)
+          .order("order_date", { ascending: false });
+        if (effectiveAgent !== "all") qb = qb.eq("agent_id", effectiveAgent);
+        if (effectiveTeam !== "all") qb = qb.eq("team", effectiveTeam as "customer_care" | "telesales");
+        return qb;
+      };
 
-      let cb = supabase.from("complaints" as any).select("id,complaint_date,branch_no,status,agent_id")
-        .gte("complaint_date", from).lte("complaint_date", to);
-      if (effectiveAgent !== "all") cb = cb.eq("agent_id", effectiveAgent);
+      const buildComplaints = () => {
+        let cb = supabase.from("complaints" as any).select("id,complaint_date,branch_no,status,agent_id")
+          .gte("complaint_date", from).lte("complaint_date", to)
+          .order("complaint_date", { ascending: false });
+        if (effectiveAgent !== "all") cb = cb.eq("agent_id", effectiveAgent);
+        return cb;
+      };
 
-      const [{ data: orders }, { data: branches }, { data: profiles }, { data: complaints }] = await Promise.all([
-        qb,
+      const [orders, { data: branches }, { data: profiles }, complaints] = await Promise.all([
+        fetchAllPaginated<any>(buildOrders),
         supabase.from("branches").select("branch_no,city"),
         supabase.from("profiles").select("id,full_name"),
-        cb,
+        fetchAllPaginated<any>(buildComplaints),
       ]);
       const cityMap = new Map((branches ?? []).map((b: any) => [b.branch_no, b.city]));
       const nameMap = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name]));

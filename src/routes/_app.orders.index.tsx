@@ -118,22 +118,25 @@ function OrdersList() {
   const { data, isLoading } = useQuery({
     queryKey: ["orders", from, to, team, agent, status, mineOnly, user?.id, term],
     queryFn: async () => {
-      let qb = supabase.from("orders").select("*");
-      if (!searching || !term) {
-        qb = qb.gte("order_date", from).lte("order_date", to);
-      }
-      qb = qb.order("order_date", { ascending: false }).order("created_at", { ascending: false }).limit(2000);
-      if (team !== "all") qb = qb.eq("team", team as "customer_care" | "telesales");
-      if (status !== "all") qb = qb.eq("status", status);
-      if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
-      if (isAdmin && agent !== "all") qb = qb.eq("agent_id", agent);
+      const buildOrders = () => {
+        let qb = supabase.from("orders").select("*");
+        if (!searching || !term) {
+          qb = qb.gte("order_date", from).lte("order_date", to);
+        }
+        qb = qb.order("order_date", { ascending: false }).order("created_at", { ascending: false });
+        if (team !== "all") qb = qb.eq("team", team as "customer_care" | "telesales");
+        if (status !== "all") qb = qb.eq("status", status);
+        if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
+        if (isAdmin && agent !== "all") qb = qb.eq("agent_id", agent);
+        return qb;
+      };
 
-      const [{ data: orders, error }, { data: profiles }, { data: branches }] = await Promise.all([
-        qb,
+      const { fetchAllPaginated } = await import("@/lib/supabase-paginate");
+      const [orders, { data: profiles }, { data: branches }] = await Promise.all([
+        fetchAllPaginated<any>(buildOrders),
         supabase.from("profiles").select("id,full_name,agent_code"),
         supabase.from("branches").select("branch_no,city"),
       ]);
-      if (error) throw error;
       const nm = new Map((profiles ?? []).map((p: any) => [p.id, p]));
       const bm = new Map((branches ?? []).map((b: any) => [b.branch_no, b.city]));
       const mapped = (orders ?? []).map((o: any) => ({
