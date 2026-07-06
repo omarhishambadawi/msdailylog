@@ -483,18 +483,8 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Call Center Performance — Yeastar Call Reports */}
-      <div>
-        <SectionTitle title="Call center performance" />
-        <div className="mt-3">
-          <CallCenterSection
-            from={from}
-            to={to}
-            team={(effectiveTeam as "all" | "customer_care" | "telesales")}
-            agentId={effectiveAgent}
-          />
-        </div>
-      </div>
+      {/* Call center analytics moved to /call-center */}
+
 
 
 
