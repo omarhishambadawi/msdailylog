@@ -135,8 +135,10 @@ async function fetchAllPages(
 
 export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResult> {
   const started = Date.now();
-  const pageSize = opts.pageSize ?? 10_000;
-  const maxPages = opts.maxPages ?? 200;
+  // Yeastar P-Series caps page_size at 100 for CDR endpoints; larger values
+  // trigger errcode 40002 PARAMETER ERROR. Keep the default safe.
+  const pageSize = opts.pageSize ?? 100;
+  const maxPages = opts.maxPages ?? 500;
   const { startEpoch, endEpoch } = dayBounds(opts.from, opts.to);
   const inWindow = (r: CdrRecord) =>
     typeof r.timestamp === "number" && r.timestamp >= startEpoch && r.timestamp <= endEpoch;
@@ -147,17 +149,25 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
   console.log(`[yeastar cdr] search window "${startStr}".."${endStr}" (epoch ${startEpoch}..${endEpoch}, tz+${TZ_OFFSET_MIN}m)`);
 
   let path: FetchCdrResult["path"] = "search";
-  let { records, totalReported, pages, truncated } = await fetchAllPages(
-    "/openapi/v1.0/cdr/search",
-    { start_time: startStr, end_time: endStr },
-    pageSize, maxPages, opts.signal,
-  );
+  let records: CdrRecord[] = [];
+  let totalReported: number | null = null;
+  let pages = 0;
+  let truncated = false;
+  try {
+    const r = await fetchAllPages(
+      "/openapi/v1.0/cdr/search",
+      { start_time: startStr, end_time: endStr },
+      pageSize, maxPages, opts.signal,
+    );
+    records = r.records; totalReported = r.totalReported; pages = r.pages; truncated = r.truncated;
+  } catch (e: any) {
+    console.warn(`[yeastar cdr] /cdr/search failed (${e?.message ?? e}) — falling back to /cdr/list.`);
+  }
 
-  // Fallback: if search returned nothing, the PBX date format almost certainly
-  // differs from DATETIME_FORMAT. Sweep the full list and filter by timestamp.
+  // Fallback: if search failed or returned nothing, sweep the full list and
+  // filter by epoch timestamp (authoritative, timezone-safe).
   if (records.length === 0) {
-    console.warn("[yeastar cdr] /cdr/search returned 0 rows — falling back to full /cdr/list + timestamp filter " +
-      "(check YEASTAR_DATETIME_FORMAT against your PBX date display format).");
+    console.warn("[yeastar cdr] using /cdr/list + timestamp filter fallback.");
     path = "list-fallback";
     const full = await fetchAllPages("/openapi/v1.0/cdr/list", {}, pageSize, maxPages, opts.signal);
     records = full.records; totalReported = full.totalReported; pages = full.pages; truncated = full.truncated;
