@@ -207,7 +207,11 @@ function AdminUsers() {
                 <div className="space-y-2"><Label>Agent code</Label><Input value={editing.agent_code ?? ""} onChange={(e) => setEditing({ ...editing, agent_code: e.target.value })} /></div>
                 <div className="space-y-2 sm:col-span-3">
                   <Label>Role</Label>
-                  <Select value={editing.role ?? "customer_care"} onValueChange={(v) => setEditing({ ...editing, role: v, _roleChange: true })}>
+                  <Select value={editing.role ?? "customer_care"} onValueChange={(v) => {
+                    const next: any = { ...editing, role: v, _roleChange: true };
+                    if (editing._usingDefaults) next.permissions = defaultPermsForRole(v as any);
+                    setEditing(next);
+                  }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="customer_care">Customer Care</SelectItem>
@@ -220,8 +224,13 @@ function AdminUsers() {
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Permissions</Label>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditing({ ...editing, permissions: defaultPermsForRole((editing.role ?? "customer_care")) })}>Reset to role defaults</Button>
+                  <div className="flex items-center gap-2">
+                    <Label>Permissions</Label>
+                    <Badge variant={editing._usingDefaults ? "secondary" : "outline"} className="text-[10px]">
+                      {editing._usingDefaults ? "Using role defaults" : "Custom permissions"}
+                    </Badge>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditing({ ...editing, permissions: defaultPermsForRole((editing.role ?? "customer_care")), _usingDefaults: true })}>Reset to role defaults</Button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {PERMISSION_GROUPS.map((group) => {
@@ -244,7 +253,12 @@ function AdminUsers() {
                     );
                   })}
                 </div>
-                <p className="text-[11px] text-muted-foreground">Empty list = uses role defaults. Admins always have all permissions.</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {editing._usingDefaults
+                    ? "This user auto-tracks role defaults. Any change pins an exact custom set; saving a set identical to defaults keeps them on auto-updating defaults."
+                    : "Custom permission set. Click \"Reset to role defaults\" to return to auto-updating defaults. Admins always have all permissions."}
+                </p>
+
               </div>
               <DialogFooter><Button onClick={saveEdit}>Save changes</Button></DialogFooter>
             </div>
