@@ -137,20 +137,17 @@ async function fetchAllPages(
 
 export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResult> {
   const started = Date.now();
-  // Yeastar P-Series caps page_size at 100 for CDR endpoints; larger values
-  // trigger errcode 40002 PARAMETER ERROR. Keep the default safe.
-  const pageSize = opts.pageSize ?? 100;
-  const maxPages = opts.maxPages ?? 500;
+  // v1.0 /cdr/list and /cdr/search accept page_size up to 10,000.
+  const pageSize = opts.pageSize ?? 10_000;
+  const maxPages = opts.maxPages ?? 200;
   const { startEpoch, endEpoch } = dayBounds(opts.from, opts.to);
   const inWindow = (r: CdrRecord) =>
     typeof r.timestamp === "number" && r.timestamp >= startEpoch && r.timestamp <= endEpoch;
 
-  const startStr = fmtForPbx(startEpoch);
-  const endStr = fmtForPbx(endEpoch);
-  console.log(`[yeastar cdr] window "${startStr}".."${endStr}" (epoch ${startEpoch}..${endEpoch}, tz+${TZ_OFFSET_MIN}m)`);
+  console.log(`[yeastar cdr] window epoch ${startEpoch}..${endEpoch} (tz+${TZ_OFFSET_MIN}m)`);
 
-  // Try /cdr/list with time filters first. If the PBX ignores them, the
-  // authoritative epoch filter below still trims the result correctly.
+  // /cdr/search accepts start_time/end_time as Unix timestamps (seconds).
+  // Falls back to /cdr/list (no server-side date filter) if search errors.
   let path: FetchCdrResult["path"] = "search";
   let records: CdrRecord[] = [];
   let totalReported: number | null = null;
@@ -158,17 +155,19 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
   let truncated = false;
   try {
     const r = await fetchAllPages(
-      "/openapi/v1.0/cdr/list",
-      { start_time: startStr, end_time: endStr },
+      "/openapi/v1.0/cdr/search",
+      { start_time: startEpoch, end_time: endEpoch },
       pageSize, maxPages, opts.signal,
     );
     records = r.records; totalReported = r.totalReported; pages = r.pages; truncated = r.truncated;
   } catch (e: any) {
-    console.warn(`[yeastar cdr] /cdr/list with time filter failed (${e?.message ?? e}) — retrying without filter.`);
+    console.warn(`[yeastar cdr] /cdr/search failed (${e?.message ?? e}) — falling back to /cdr/list.`);
     path = "list-fallback";
     const full = await fetchAllPages("/openapi/v1.0/cdr/list", {}, pageSize, maxPages, opts.signal);
     records = full.records; totalReported = full.totalReported; pages = full.pages; truncated = full.truncated;
   }
+
+
 
 
   // Authoritative timezone-correct filter by epoch timestamp.
