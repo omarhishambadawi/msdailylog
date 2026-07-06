@@ -38,15 +38,18 @@ function ComplaintsList() {
   const { data, isLoading } = useQuery({
     queryKey: ["complaints", status, mineOnly, user?.id],
     queryFn: async () => {
-      let qb = supabase.from("complaints" as any).select("*").order("created_at", { ascending: false }).limit(2000);
-      if (status !== "all") qb = qb.eq("status", status);
-      if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
-      const [{ data: rows, error }, { data: profiles }, { data: branches }] = await Promise.all([
-        qb,
+      const { fetchAllPaginated } = await import("@/lib/supabase-paginate");
+      const buildComplaints = () => {
+        let qb = supabase.from("complaints" as any).select("*").order("created_at", { ascending: false });
+        if (status !== "all") qb = qb.eq("status", status);
+        if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
+        return qb;
+      };
+      const [rows, { data: profiles }, { data: branches }] = await Promise.all([
+        fetchAllPaginated<any>(buildComplaints),
         supabase.from("profiles").select("id,full_name"),
         supabase.from("branches").select("branch_no,city"),
       ]);
-      if (error) throw error;
       const nm = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name]));
       const bm = new Map((branches ?? []).map((b: any) => [b.branch_no, b.city]));
       return ((rows as any[]) ?? []).map((r: any) => ({ ...r, agent_name: nm.get(r.agent_id) ?? "—", city: bm.get(r.branch_no) ?? "" }));
