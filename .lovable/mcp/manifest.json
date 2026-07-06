@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "sdk_version": "0.20.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://gwnxlpophyvgafctrbkx.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "milaserv-daily-log-mcp",
+      "version": "0.1.0",
+      "title": "MilaServ Daily Log"
+    },
+    "tools": [
+      {
+        "name": "whoami",
+        "title": "Who am I",
+        "description": "Return the signed-in user's profile (name, agent code, role, permissions).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_orders",
+        "title": "List orders",
+        "description": "List orders visible to the signed-in user, filtered by optional date range, team, status, or free-text search. Respects row-level security.",
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "from": {
+              "description": "Start date (YYYY-MM-DD) for order_date.",
+              "type": "string"
+            },
+            "to": {
+              "description": "End date (YYYY-MM-DD) for order_date.",
+              "type": "string"
+            },
+            "team": {
+              "description": "Filter by team.",
+              "type": "string",
+              "enum": [
+                "customer_care",
+                "telesales"
+              ]
+            },
+            "status": {
+              "description": "Filter by status (e.g. pending, confirmed, cancelled).",
+              "type": "string"
+            },
+            "search": {
+              "description": "Match customer name, phone, invoice_no, or display_no.",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Max rows (default 50).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_order",
+        "title": "Get order",
+        "description": "Fetch a single order by its UUID (respects row-level security).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Order UUID."
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_complaints",
+        "title": "List complaints",
+        "description": "List complaints visible to the signed-in user, filtered by optional date range, status, category, or free-text search.",
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "from": {
+              "description": "Start date (YYYY-MM-DD) for complaint_date.",
+              "type": "string"
+            },
+            "to": {
+              "description": "End date (YYYY-MM-DD) for complaint_date.",
+              "type": "string"
+            },
+            "status": {
+              "description": "Filter by status (e.g. open, resolved).",
+              "type": "string"
+            },
+            "category": {
+              "description": "Filter by category.",
+              "type": "string"
+            },
+            "search": {
+              "description": "Match customer name, phone, description, or display_no.",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Max rows (default 50).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "orders_summary",
+        "title": "Orders summary",
+        "description": "Aggregate the signed-in user's visible orders in a date range: totals, count by team, count by status, and total invoice value.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "Start date (YYYY-MM-DD, inclusive)."
+            },
+            "to": {
+              "type": "string",
+              "description": "End date (YYYY-MM-DD, inclusive)."
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ]
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
