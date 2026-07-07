@@ -32,6 +32,42 @@ export type Database = {
         }
         Relationships: []
       }
+      cdr_progress: {
+        Row: {
+          error: string | null
+          job_id: string
+          message: string
+          page: number
+          records: number
+          status: string
+          total_pages: number | null
+          total_reported: number | null
+          updated_at: string
+        }
+        Insert: {
+          error?: string | null
+          job_id: string
+          message?: string
+          page?: number
+          records?: number
+          status?: string
+          total_pages?: number | null
+          total_reported?: number | null
+          updated_at?: string
+        }
+        Update: {
+          error?: string | null
+          job_id?: string
+          message?: string
+          page?: number
+          records?: number
+          status?: string
+          total_pages?: number | null
+          total_reported?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       complaint_activity: {
         Row: {
           action: string

@@ -1,37 +1,26 @@
 /**
- * Yeastar CDR (Call Detail Records) retrieval — CORRECTED.
+ * Yeastar CDR (Call Detail Records) retrieval.
  *
- * Key corrections vs. the previous version (all verified against the official
- * Yeastar P-Series OpenAPI docs):
- *   1. The CDR list/search response array is `data`, NOT `cdr_list`. The old
- *      code read `json.cdr_list`, so it ALWAYS returned an empty record set.
- *   2. `/cdr/list` does NOT accept start_time/end_time — those params were
- *      silently ignored. Date filtering is done via `/cdr/search`, whose
- *      start_time/end_time MUST match the PBX's configured display format,
- *      otherwise it returns ZERO records. We therefore:
- *        - pre-filter with `/cdr/search` (fast path), formatted as the PBX
- *          expects (default `yyyy/MM/dd HH:mm:ss`, overridable), AND
- *        - authoritatively post-filter every record by its epoch `timestamp`,
- *          so results are correct even if the string format is off, AND
- *        - fall back to a full `/cdr/list` sweep if search returns nothing,
- *          logging a clear warning about the likely format mismatch.
+ * Notes:
+ *   1. The CDR list/search response array is `data` (NOT `cdr_list`).
+ *   2. `/cdr/search` accepts `start_time`/`end_time` as Unix timestamps
+ *      (seconds). We pre-filter with `/cdr/search` and authoritatively
+ *      post-filter every record by its epoch `timestamp`. If `/cdr/search`
+ *      fails or returns zero rows for the window we fall back to a full
+ *      `/cdr/list` sweep and rely on the epoch post-filter.
  *   3. Real CDR fields are mapped: `timestamp`, `disposition`, `call_type`,
  *      `duration`, `ring_duration`, `talk_duration`, `call_from_number`,
  *      `call_to_number`, etc.
  *   4. Pagination retrieves ALL records (page_size up to 10,000) until
- *      total_number is reached, with a high safety ceiling and explicit
- *      logging if the ceiling is ever hit.
- *   5. Timezone handling is explicit: day boundaries are computed in the
- *      business timezone (default UTC+3, Asia/Riyadh — no DST) so buckets line
- *      up with the dashboard's date filters.
+ *      total_number is reached, with a high safety ceiling.
+ *   5. Day boundaries are computed in the business timezone (default UTC+3,
+ *      Asia/Riyadh — no DST) so buckets line up with dashboard filters.
  */
 import { yeastarFetch } from "./client.server";
 
 // Business timezone offset for day-boundary math. Asia/Riyadh = UTC+3, no DST.
-// Override via env if the PBX / business runs in a different zone.
 const TZ_OFFSET_MIN = Number(process.env.YEASTAR_UTC_OFFSET_MINUTES ?? 180);
-// PBX display format for /cdr/search. P-Series Cloud default is yyyy/MM/dd HH:mm:ss.
-const DATETIME_FORMAT = process.env.YEASTAR_DATETIME_FORMAT ?? "yyyy/MM/dd HH:mm:ss";
+
 
 export interface CdrRecord {
   id?: number;
@@ -105,15 +94,6 @@ function dayBounds(from: string, to: string): { startEpoch: number; endEpoch: nu
   return { startEpoch, endEpoch };
 }
 
-/** Format an epoch-seconds instant into the PBX display string, in business tz. */
-function fmtForPbx(epochSec: number): string {
-  const d = new Date(epochSec * 1000 + TZ_OFFSET_MIN * 60_000);
-  const Y = d.getUTCFullYear(), M = pad(d.getUTCMonth() + 1), D = pad(d.getUTCDate());
-  const h = pad(d.getUTCHours()), m = pad(d.getUTCMinutes()), s = pad(d.getUTCSeconds());
-  // Only yyyy/MM/dd HH:mm:ss and MM/dd/yyyy HH:mm:ss are supported here; extend if needed.
-  if (DATETIME_FORMAT.startsWith("MM/dd")) return `${M}/${D}/${Y} ${h}:${m}:${s}`;
-  return `${Y}/${M}/${D} ${h}:${m}:${s}`;
-}
 
 async function fetchAllPages(
   endpoint: string,
@@ -144,7 +124,7 @@ async function fetchAllPages(
     records.push(...list);
     const totalPages = totalReported != null ? Math.max(1, Math.ceil(totalReported / pageSize)) : null;
     if (progress && jobId) {
-      progress.updateJob(jobId, {
+      await progress.updateJob(jobId, {
         status: "fetching", page, totalPages, records: records.length,
         totalReported,
         message: totalPages
@@ -152,6 +132,7 @@ async function fetchAllPages(
           : `Fetching page ${page}…`,
       });
     }
+
     console.log(`[yeastar cdr] ${endpoint} page=${page} got=${list.length} total=${totalReported ?? "?"} acc=${records.length}`);
     if (list.length < pageSize) break;
     if (totalReported !== null && records.length >= totalReported) break;

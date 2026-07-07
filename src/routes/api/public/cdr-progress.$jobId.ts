@@ -5,7 +5,7 @@ export const Route = createFileRoute("/api/public/cdr-progress/$jobId")({
     handlers: {
       GET: async ({ params }) => {
         const { getJob } = await import("@/lib/yeastar/progress.server");
-        const j = getJob(params.jobId);
+        const j = await getJob(params.jobId);
         if (!j) {
           return new Response(
             JSON.stringify({ status: "unknown", message: "No job found" }),

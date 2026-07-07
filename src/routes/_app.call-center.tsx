@@ -13,7 +13,7 @@ import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
   LineChart, Line, Legend, PieChart, Pie, Cell,
 } from "recharts";
-import * as XLSX from "xlsx";
+// xlsx is lazy-loaded inside the export handler to keep it out of the initial route chunk.
 import {
   Download, ShieldAlert, PhoneOff, AlertTriangle, Printer, Star, PhoneIncoming, PhoneOutgoing, Clock, Users,
 } from "lucide-react";
@@ -169,8 +169,9 @@ function CallCenterPage() {
     return rows.filter((r) => r.name.toLowerCase().includes(s) || r.ext.toLowerCase().includes(s));
   }, [rows, search]);
 
-  const doExport = () => {
+  const doExport = async () => {
     if (!ok || !totals) return;
+    const XLSX = await import("xlsx");
     const kpiSheet = [
       { Metric: "Total calls", Value: totals.total },
       { Metric: "Answered", Value: totals.answered },
@@ -196,6 +197,7 @@ function CallCenterPage() {
     }
     XLSX.writeFile(wb, `call-center-${from}_${to}.xlsx`);
   };
+
 
   return (
     <div className="space-y-6 print:space-y-3">

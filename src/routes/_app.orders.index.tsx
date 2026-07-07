@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Check, ChevronLeft, ChevronRight, Copy, Download, Eye, Pencil, Plus, Search } from "lucide-react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import * as XLSX from "xlsx";
+// xlsx is lazy-loaded inside the export handler to keep it out of the initial route chunk.
 import { STATUSES, STATUS_STYLES, TEAMS, CURRENCY, fmtSAR, formatOrderNo } from "@/lib/branches";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -210,8 +210,9 @@ function OrdersList() {
     qc.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
-  const exportXlsx = () => {
+  const exportXlsx = async () => {
     if (!hasPerm(role, profile?.permissions as any, "export_reports")) { toast.error("You don't have permission to export reports"); return; }
+    const XLSX = await import("xlsx");
     const xrows = rows.map((o: any) => ({
       "Order #": formatOrderNo(o.team, o.display_no),
       Date: o.order_date,
@@ -235,6 +236,7 @@ function OrdersList() {
     XLSX.utils.book_append_sheet(wb, ws, "Orders");
     XLSX.writeFile(wb, `orders_${from}_${to}.xlsx`);
   };
+
 
   // Reset to first page when filters change
   const onFilterChange = (fn: () => void) => { fn(); setPage(0); };

@@ -241,24 +241,9 @@ function hourOf(ts: number | undefined, tzOffsetMin: number): number {
   return d.getUTCHours();
 }
 
-/** Legacy adaptor kept for the old dashboard component (if referenced). */
-export function aggregateAgentStats(
-  records: CdrRecord[],
-  agents: AgentRef[],
-  opts: { tzOffsetMin?: number } = {},
-) {
-  const r = aggregateAnalytics(records, agents, [], opts);
-  return {
-    agents: r.agents,
-    totals: {
-      total: r.totals.total, inbound: r.totals.inbound, outbound: r.totals.outbound,
-      answered: r.totals.answered, missed: r.totals.missed,
-      talkSeconds: r.totals.talkSeconds, answerRate: r.totals.answerRate,
-    },
-    unmatched: r.unmatched,
-    byDay: r.byDay.map((d) => ({ date: d.date, total: d.total, answered: d.answered, missed: d.missed })),
-  };
-}
+// Note: the legacy `aggregateAgentStats` adaptor was removed (Prompt 1, item 1).
+// All callers now use `aggregateAnalytics` directly.
+
 
 interface Classified {
   rows: CdrRecord[];

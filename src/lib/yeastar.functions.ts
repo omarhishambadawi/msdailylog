@@ -179,24 +179,38 @@ const analyticsInput = statsInput.extend({
 });
 
 const CDR_CACHE_TTL_MS = 60_000;
+const CDR_CACHE_MAX = 20;
 const cdrCache = new Map<string, { at: number; promise: Promise<any> }>();
 
+function evictCdrCache() {
+  const now = Date.now();
+  // TTL sweep
+  for (const [k, v] of cdrCache) {
+    if (now - v.at > CDR_CACHE_TTL_MS) cdrCache.delete(k);
+  }
+  // Size cap: drop oldest entries (Map preserves insertion order)
+  while (cdrCache.size > CDR_CACHE_MAX) {
+    const oldest = cdrCache.keys().next().value;
+    if (oldest === undefined) break;
+    cdrCache.delete(oldest);
+  }
+}
+
 async function getCdrCached(from: string, to: string, jobId?: string) {
+  evictCdrCache();
   const key = `${from}|${to}`;
   const now = Date.now();
   const hit = cdrCache.get(key);
   if (hit && now - hit.at < CDR_CACHE_TTL_MS) {
-    // Report progress if a job wants it
     if (jobId) {
       const p = await import("@/lib/yeastar/progress.server");
-      const promise = hit.promise;
-      promise.then((cdr) => {
+      hit.promise.then((cdr) => {
         p.updateJob(jobId, {
           status: "aggregating", page: 1, totalPages: 1,
           records: cdr.records.length, totalReported: cdr.totalReported,
           message: `Cached ${cdr.records.length.toLocaleString()} records — aggregating…`,
-        });
-      });
+        }).catch(() => {});
+      }).catch(() => {});
     }
     return hit.promise;
   }
@@ -206,6 +220,7 @@ async function getCdrCached(from: string, to: string, jobId?: string) {
     throw e;
   });
   cdrCache.set(key, { at: now, promise });
+  if (cdrCache.size > CDR_CACHE_MAX) evictCdrCache();
   return promise;
 }
 
@@ -235,44 +250,10 @@ async function loadAgents(_supabase: any) {
     .filter((a) => a.ext.length > 0) as Array<{ id: string; name: string; team: "customer_care" | "telesales"; ext: string }>;
 }
 
-export const getAgentCallStats = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d) => statsInput.parse(d))
-  .handler(async ({ context, data }) => {
-    const { supabase, userId } = context as { supabase: any; userId: string };
-    const { isConfigured } = await import("@/lib/yeastar/client.server");
-    if (!isConfigured()) return { ok: false as const, configured: false as const };
+// Note: legacy `getAgentCallStats` was removed (Prompt 1, item 1). Callers
+// use `getCallCenterAnalytics` below which is the queue-aware, order-joined
+// analytics engine.
 
-    const [{ data: canDash }, { data: canAll }, { data: isAdmin }] = await Promise.all([
-      supabase.rpc("has_permission", { _user_id: userId, _permission: "view_dashboard" }),
-      supabase.rpc("has_permission", { _user_id: userId, _permission: "view_all_agents" }),
-      supabase.rpc("is_administrator", { _user_id: userId }),
-    ]);
-    if (!canDash) throw new Error("Forbidden: dashboard access required");
-    const seesAll = !!canAll || !!isAdmin;
-
-    let agents = await loadAgents(supabase);
-    if (data.team !== "all") agents = agents.filter((a) => a.team === data.team);
-    if (!seesAll) agents = agents.filter((a) => a.id === userId);
-    else if (data.agentId) agents = agents.filter((a) => a.id === data.agentId);
-
-    if (agents.length === 0) {
-      return {
-        ok: true as const, configured: true as const, empty: true as const,
-        window: { from: data.from, to: data.to, team: data.team, agentId: data.agentId ?? null },
-        agents: [], totals: null, unmatched: null, byDay: [], cdr: null,
-      };
-    }
-    const cdr = await getCdrCached(data.from, data.to);
-    const { aggregateAgentStats } = await import("@/lib/yeastar/stats.server");
-    const agg = aggregateAgentStats(cdr.records, agents);
-    return {
-      ok: true as const, configured: true as const, empty: false as const,
-      window: { from: data.from, to: data.to, team: data.team, agentId: data.agentId ?? null },
-      cdr: { path: cdr.path, totalReported: cdr.totalReported, fetched: cdr.records.length, truncated: cdr.truncated, elapsedMs: cdr.elapsedMs },
-      agents: agg.agents, totals: agg.totals, unmatched: agg.unmatched, byDay: agg.byDay,
-    };
-  });
 
 /**
  * Full Call Center Analytics — queue-aware, order-joined.
@@ -294,16 +275,17 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
     const seesAll = !!canAll || !!isAdmin;
 
     const progress = data.jobId ? await import("@/lib/yeastar/progress.server") : null;
-    if (progress && data.jobId) progress.initJob(data.jobId);
+    if (progress && data.jobId) await progress.initJob(data.jobId);
 
     let agents = await loadAgents(supabase);
+
     if (data.team !== "all") agents = agents.filter((a) => a.team === data.team);
     if (!seesAll) agents = agents.filter((a) => a.id === userId);
     else if (data.agentId) agents = agents.filter((a) => a.id === data.agentId);
 
     try {
       const cdr = await getCdrCached(data.from, data.to, data.jobId);
-      if (progress && data.jobId) progress.updateJob(data.jobId, { status: "aggregating", message: "Computing analytics…", records: cdr.records.length });
+      if (progress && data.jobId) await progress.updateJob(data.jobId, { status: "aggregating", message: "Computing analytics…", records: cdr.records.length });
 
       // [C2] Do NOT pre-filter raw rows by direction/status here — that would
       // strip ANSWERED legs and misclassify grouped queue calls. Filters are
@@ -327,7 +309,7 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
         status: data.status,
       });
 
-      if (progress && data.jobId) progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
+      if (progress && data.jobId) await progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
 
       return {
         ok: true as const, configured: true as const,
@@ -338,7 +320,7 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (progress && data.jobId) progress.failJob(data.jobId, msg);
+      if (progress && data.jobId) await progress.failJob(data.jobId, msg);
       throw err;
     }
   });
