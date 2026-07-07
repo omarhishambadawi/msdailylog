@@ -21,15 +21,17 @@ export default defineTool({
     );
     const userId = ctx.getUserId();
     const [{ data: profile }, { data: roleRow }] = await Promise.all([
-      supabase.from("profiles").select("id, full_name, agent_code, active, permissions").eq("id", userId!).maybeSingle(),
+      supabase.rpc("get_my_profile" as any),
       supabase.from("user_roles").select("role").eq("user_id", userId!).maybeSingle(),
     ]);
+
     const result = {
       user_id: userId,
       email: ctx.getUserEmail(),
       role: roleRow?.role ?? null,
-      profile: profile ?? null,
+      profile: (Array.isArray(profile) ? profile[0] : profile) ?? null,
     };
+
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       structuredContent: result,

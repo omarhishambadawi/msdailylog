@@ -43,12 +43,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadProfile = async (uid: string) => {
     const [{ data: p }, { data: r }] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,agent_code,active,permissions").eq("id", uid).maybeSingle(),
+      // Uses SECURITY DEFINER RPC so sensitive columns (permissions,
+      // yeastar_ext) remain hidden from broad authenticated SELECT while
+      // still readable for the caller's own row.
+      supabase.rpc("get_my_profile" as any),
       supabase.from("user_roles").select("role").eq("user_id", uid).maybeSingle(),
     ]);
-    setProfile(p as Profile | null);
+    setProfile((Array.isArray(p) ? p[0] : p) as Profile | null);
     setRole((r?.role as AppRole) ?? null);
   };
+
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {

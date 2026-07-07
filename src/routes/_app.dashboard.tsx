@@ -168,10 +168,10 @@ function Dashboard() {
       let verifAgentRows = Object.entries(verifByAgent).map(([agentId, r]) => ({
         agentId, ...r, rate: r.total > 0 ? (r.verified / r.total) * 100 : 0,
       })).sort((a, b) => b.verified - a.verified);
-      // Privacy: non-admin agents only see their own row in the CC Invoices tracking table
-      if (!canViewAllAgents && user?.id) {
-        verifAgentRows = verifAgentRows.filter((r) => r.agentId === user.id);
-      }
+      // Privacy scoping is enforced by RLS ([H4]): non-privileged agents
+      // only receive their own order rows from the database, so a client-
+      // side filter here would be redundant.
+
 
       const totalVerified = verifiedRows(rangeOrders).length;
       const totalNonVerified = rangeOrders.length - totalVerified;
