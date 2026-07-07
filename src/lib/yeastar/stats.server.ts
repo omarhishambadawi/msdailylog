@@ -227,8 +227,21 @@ export function aggregateAnalytics(
   const byExt = new Map<string, AgentRef>();
   for (const a of agents) if (a.ext) byExt.set(String(a.ext).trim(), a);
 
-  // Drop Internal rows entirely, up front.
-  const filteredRecords = records.filter((r) => r.call_type === "Inbound" || r.call_type === "Outbound");
+  // Drop Internal / ext-to-ext rows entirely, up front.
+  const nonInternal = records.filter(
+    (r) => (r.call_type === "Inbound" || r.call_type === "Outbound") && !looksInternal(r),
+  );
+
+  // Row-level dedup: identical (timestamp, from, to, disposition, talk) rows
+  // sometimes appear when the PBX re-emits a leg on hang-up. Collapse them.
+  const seen = new Set<string>();
+  const filteredRecords: CdrRecord[] = [];
+  for (const r of nonInternal) {
+    const fp = `${r.timestamp ?? ""}|${r.call_from_number ?? ""}|${r.call_to_number ?? ""}|${r.disposition ?? ""}|${r.talk_duration ?? ""}|${r.ring_duration ?? ""}`;
+    if (seen.has(fp)) continue;
+    seen.add(fp);
+    filteredRecords.push(r);
+  }
 
   // ---- Group by call ----
   const groups = new Map<string, CdrRecord[]>();
