@@ -143,16 +143,41 @@ export interface OrderRef {
 }
 
 const ABANDON_THRESHOLD_SEC = 5;
+const QUEUE_LEG_WINDOW_SEC = 120; // legs within 2 min sharing from/to are one call
 
 const isAnswered = (d?: string) => d === "ANSWERED";
 const isNoAnswer = (d?: string) => d === "NO ANSWER";
 const num = (v: any) => Number(v ?? 0);
 
+/**
+ * Group multi-leg queue calls into one call.
+ * Prefer PBX-provided call identifiers; only fall back to a from/to/time
+ * fingerprint when NONE is present. NEVER fall back to per-row IDs
+ * (`uid`, `new_id`, `id`), which are unique per CDR row and defeat grouping.
+ */
 function groupKey(r: CdrRecord): string {
-  return String(
-    (r as any).linkedid ?? r.call_id ?? r.uid ?? r.new_id ?? r.id ??
-    `${r.call_from_number ?? ""}-${r.call_to_number ?? ""}-${r.timestamp ?? ""}`,
-  );
+  const anyR = r as any;
+  const cid = anyR.call_id ?? anyR.linkedid ?? anyR.linked_id ?? anyR.pin_code;
+  if (cid) return `id:${String(cid)}`;
+  const from = String(r.call_from_number ?? "").trim();
+  const to = String(r.call_to_number ?? "").trim();
+  const bucket = typeof r.timestamp === "number" ? Math.floor(r.timestamp / QUEUE_LEG_WINDOW_SEC) : 0;
+  return `fp:${from}|${to}|${bucket}`;
+}
+
+function ringOf(r: CdrRecord): number {
+  const anyR = r as any;
+  return Math.max(num(r.ring_duration), num(anyR.agent_ring_time), num(anyR.wait_time));
+}
+
+/** True if a row looks like an internal ext-to-ext call regardless of `call_type`. */
+function looksInternal(r: CdrRecord): boolean {
+  if (r.call_type === "Internal") return true;
+  const from = String(r.call_from_number ?? "").trim();
+  const to = String(r.call_to_number ?? "").trim();
+  // Both endpoints are short internal extension numbers (≤4 digits)
+  if (from && to && /^\d{1,4}$/.test(from) && /^\d{1,4}$/.test(to)) return true;
+  return false;
 }
 
 function agentExtFor(r: CdrRecord): string | null {
