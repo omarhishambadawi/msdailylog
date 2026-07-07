@@ -143,16 +143,41 @@ export interface OrderRef {
 }
 
 const ABANDON_THRESHOLD_SEC = 5;
+const QUEUE_LEG_WINDOW_SEC = 120; // legs within 2 min sharing from/to are one call
 
 const isAnswered = (d?: string) => d === "ANSWERED";
 const isNoAnswer = (d?: string) => d === "NO ANSWER";
 const num = (v: any) => Number(v ?? 0);
 
+/**
+ * Group multi-leg queue calls into one call.
+ * Prefer PBX-provided call identifiers; only fall back to a from/to/time
+ * fingerprint when NONE is present. NEVER fall back to per-row IDs
+ * (`uid`, `new_id`, `id`), which are unique per CDR row and defeat grouping.
+ */
 function groupKey(r: CdrRecord): string {
-  return String(
-    (r as any).linkedid ?? r.call_id ?? r.uid ?? r.new_id ?? r.id ??
-    `${r.call_from_number ?? ""}-${r.call_to_number ?? ""}-${r.timestamp ?? ""}`,
-  );
+  const anyR = r as any;
+  const cid = anyR.call_id ?? anyR.linkedid ?? anyR.linked_id ?? anyR.pin_code;
+  if (cid) return `id:${String(cid)}`;
+  const from = String(r.call_from_number ?? "").trim();
+  const to = String(r.call_to_number ?? "").trim();
+  const bucket = typeof r.timestamp === "number" ? Math.floor(r.timestamp / QUEUE_LEG_WINDOW_SEC) : 0;
+  return `fp:${from}|${to}|${bucket}`;
+}
+
+function ringOf(r: CdrRecord): number {
+  const anyR = r as any;
+  return Math.max(num(r.ring_duration), num(anyR.agent_ring_time), num(anyR.wait_time));
+}
+
+/** True if a row looks like an internal ext-to-ext call regardless of `call_type`. */
+function looksInternal(r: CdrRecord): boolean {
+  if (r.call_type === "Internal") return true;
+  const from = String(r.call_from_number ?? "").trim();
+  const to = String(r.call_to_number ?? "").trim();
+  // Both endpoints are short internal extension numbers (≤4 digits)
+  if (from && to && /^\d{1,4}$/.test(from) && /^\d{1,4}$/.test(to)) return true;
+  return false;
 }
 
 function agentExtFor(r: CdrRecord): string | null {
@@ -202,8 +227,21 @@ export function aggregateAnalytics(
   const byExt = new Map<string, AgentRef>();
   for (const a of agents) if (a.ext) byExt.set(String(a.ext).trim(), a);
 
-  // Drop Internal rows entirely, up front.
-  const filteredRecords = records.filter((r) => r.call_type === "Inbound" || r.call_type === "Outbound");
+  // Drop Internal / ext-to-ext rows entirely, up front.
+  const nonInternal = records.filter(
+    (r) => (r.call_type === "Inbound" || r.call_type === "Outbound") && !looksInternal(r),
+  );
+
+  // Row-level dedup: identical (timestamp, from, to, disposition, talk) rows
+  // sometimes appear when the PBX re-emits a leg on hang-up. Collapse them.
+  const seen = new Set<string>();
+  const filteredRecords: CdrRecord[] = [];
+  for (const r of nonInternal) {
+    const fp = `${r.timestamp ?? ""}|${r.call_from_number ?? ""}|${r.call_to_number ?? ""}|${r.disposition ?? ""}|${r.talk_duration ?? ""}|${r.ring_duration ?? ""}`;
+    if (seen.has(fp)) continue;
+    seen.add(fp);
+    filteredRecords.push(r);
+  }
 
   // ---- Group by call ----
   const groups = new Map<string, CdrRecord[]>();
@@ -233,7 +271,7 @@ export function aggregateAnalytics(
     const anyAnswered = rows.some((r) => isAnswered(r.disposition));
     const primary = rows.find((r) => isAnswered(r.disposition)) ?? rows[rows.length - 1];
     const talk = num(primary.talk_duration);
-    const ring = Math.max(...rows.map((r) => num(r.ring_duration)));
+    const ring = Math.max(0, ...rows.map(ringOf));
     const handling = talk + ring;
 
     totals.total++;
