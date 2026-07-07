@@ -11,7 +11,7 @@ import logo from "@/assets/milaserv-logo.png.asset.json";
 import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/auth")({
-  head: () => ({ meta: [{ title: "Sign in — MilaServ Daily Log" }] }),
+  head: () => ({ meta: [{ title: "Sign in — MilaServ Portal" }] }),
   validateSearch: (s: Record<string, unknown>) => ({
     next: typeof s.next === "string" && s.next.startsWith("/") && !s.next.startsWith("//") ? s.next : undefined,
   }),
@@ -58,8 +58,8 @@ function AuthPage() {
       <Card className="w-full max-w-md shadow-xl border-border/60">
         <CardHeader className="text-center space-y-1 pb-4">
           <img src={logo.url} alt="MilaServ" className="mx-auto h-16 w-16 object-contain -mb-1" />
-          <CardTitle className="text-2xl leading-tight">MilaServ Daily Log</CardTitle>
-          <CardDescription className="pt-1">Sign in to log and manage your daily orders</CardDescription>
+          <CardTitle className="text-2xl leading-tight">MilaServ Portal</CardTitle>
+          <CardDescription className="pt-1">Sign in to access orders, complaints & call center analytics</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">

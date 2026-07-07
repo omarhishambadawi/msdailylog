@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const RoleEnum = z.enum(["owner", "admin", "customer_care", "telesales", "auditor"]);
+const RoleEnum = z.enum(["owner", "admin", "customer_care", "telesales", "call_center", "auditor"]);
 
 async function assertAdmin(supabase: any, userId: string) {
   // Owner and admin have identical administrative privileges.
@@ -22,7 +22,7 @@ async function assertAdmin(supabase: any, userId: string) {
 
 export const adminCreateUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string; password: string; fullName: string; agentCode?: string; role: "owner" | "admin" | "customer_care" | "telesales" | "auditor" }) =>
+  .inputValidator((d: { email: string; password: string; fullName: string; agentCode?: string; role: "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor" }) =>
     z
       .object({
         email: z.string().email(),
@@ -64,7 +64,7 @@ export const adminSetActive = createServerFn({ method: "POST" })
 
 export const adminSetRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; role: "owner" | "admin" | "customer_care" | "telesales" | "auditor" }) =>
+  .inputValidator((d: { userId: string; role: "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor" }) =>
     z.object({ userId: z.string().uuid(), role: RoleEnum }).parse(d),
   )
   .handler(async ({ data, context }) => {

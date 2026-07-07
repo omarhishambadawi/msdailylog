@@ -43,7 +43,7 @@ function AdminUsers() {
   });
 
   const [openNew, setOpenNew] = useState(false);
-  const [nf, setNf] = useState({ email: "", password: "", fullName: "", agentCode: "", role: "customer_care" as "admin" | "customer_care" | "telesales" | "auditor" });
+  const [nf, setNf] = useState({ email: "", password: "", fullName: "", agentCode: "", role: "customer_care" as "admin" | "customer_care" | "telesales" | "call_center" | "auditor" });
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
   const [pwUser, setPwUser] = useState<any | null>(null);
@@ -141,6 +141,7 @@ function AdminUsers() {
                     <SelectContent>
                       <SelectItem value="customer_care">Customer Care</SelectItem>
                       <SelectItem value="telesales">Telesales</SelectItem>
+                      <SelectItem value="call_center">Call Center</SelectItem>
                       <SelectItem value="auditor">Auditor (read-only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
@@ -217,6 +218,7 @@ function AdminUsers() {
                     <SelectContent>
                       <SelectItem value="customer_care">Customer Care</SelectItem>
                       <SelectItem value="telesales">Telesales</SelectItem>
+                      <SelectItem value="call_center">Call Center</SelectItem>
                       <SelectItem value="auditor">Auditor (read-only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>

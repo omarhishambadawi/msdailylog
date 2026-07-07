@@ -19,7 +19,7 @@ import {
 
 export const Route = createFileRoute("/_app/admin/yeastar")({
   component: YeastarAdmin,
-  head: () => ({ meta: [{ title: "Yeastar Diagnostics · MilaServ" }] }),
+  head: () => ({ meta: [{ title: "Yeastar Diagnostics · MilaServ Portal" }] }),
 });
 
 function Pill({ ok, label }: { ok: boolean; label: string }) {

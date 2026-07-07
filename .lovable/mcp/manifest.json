@@ -13,7 +13,7 @@
     "server": {
       "name": "milaserv-daily-log-mcp",
       "version": "0.1.0",
-      "title": "MilaServ Daily Log"
+      "title": "MilaServ Portal"
     },
     "tools": [
       {

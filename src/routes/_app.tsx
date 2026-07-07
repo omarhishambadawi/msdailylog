@@ -53,7 +53,7 @@ function AppLayout() {
   const canComplaints = hasPerm(role, profile?.permissions as any, "view_complaints");
   const canUsers = hasPerm(role, profile?.permissions as any, "manage_users");
   const canAdminBranches = hasPerm(role, profile?.permissions as any, "admin_access");
-  const canCallCenter = hasPerm(role, profile?.permissions as any, "view_team_analytics") || hasPerm(role, profile?.permissions as any, "view_dashboard");
+  const canCallCenter = hasPerm(role, profile?.permissions as any, "view_call_center") || hasPerm(role, profile?.permissions as any, "view_team_analytics");
   const nav = [
     ...(canDashboard ? [{ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] : []),
     ...(canOrders ? [{ to: "/orders", label: "Orders", icon: ListOrdered }] : []),
@@ -74,7 +74,7 @@ function AppLayout() {
         {!collapsed && (
           <div className="min-w-0">
             <div className="text-base font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
-            <div className="text-[11px] text-muted-foreground font-medium">Daily Log</div>
+            <div className="text-[11px] text-muted-foreground font-medium">Portal</div>
           </div>
         )}
       </div>
@@ -152,7 +152,7 @@ function AppLayout() {
           <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={() => setCollapsed((v) => !v)} aria-label="Toggle sidebar">
             <Menu className="h-5 w-5" />
           </Button>
-          <div className="text-sm font-medium text-muted-foreground truncate flex-1">MilaServ · Daily Log</div>
+          <div className="text-sm font-medium text-muted-foreground truncate flex-1">MilaServ Portal</div>
           <NotificationBell />
         </div>
         <div className="p-3 sm:p-4 lg:p-6 xl:px-8 w-full">

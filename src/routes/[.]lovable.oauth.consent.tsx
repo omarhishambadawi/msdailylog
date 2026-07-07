@@ -93,7 +93,7 @@ function Consent() {
           )}
           <CardTitle>Connect {clientName}</CardTitle>
           <CardDescription>
-            {clientName} is requesting access to MilaServ Daily Log as you. It will be able
+            {clientName} is requesting access to MilaServ Portal as you. It will be able
             to read your orders, complaints, and profile using the same permissions you have.
           </CardDescription>
         </CardHeader>

@@ -3,7 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { hasPerm } from "@/lib/permissions";
 
-export type AppRole = "owner" | "admin" | "customer_care" | "telesales" | "auditor";
+export type AppRole = "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor";
 
 /**
  * Centralized administrator check. Owner and admin have identical

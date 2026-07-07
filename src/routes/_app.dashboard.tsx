@@ -22,7 +22,7 @@ import { fetchAllPaginated } from "@/lib/supabase-paginate";
 
 
 export const Route = createFileRoute("/_app/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard — MilaServ Daily Log" }] }),
+  head: () => ({ meta: [{ title: "Dashboard — MilaServ Portal" }] }),
   component: Dashboard,
 });
 
@@ -709,7 +709,7 @@ function exportDashboard(
   const wb = XLSX.utils.book_new();
   const teamLbl = ctx.teamLabel === "customer_care" ? "Customer Care" : ctx.teamLabel === "telesales" ? "Telesales" : "All Teams";
   const summary = [
-    ["MilaServ Daily Log — Dashboard Export"],
+    ["MilaServ Portal — Dashboard Export"],
     ["Period", `${ctx.from} to ${ctx.to}`],
     ["Team", teamLbl],
     ["Agent", ctx.agentLabel ?? "All agents"],
