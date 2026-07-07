@@ -271,7 +271,7 @@ export function aggregateAnalytics(
     const anyAnswered = rows.some((r) => isAnswered(r.disposition));
     const primary = rows.find((r) => isAnswered(r.disposition)) ?? rows[rows.length - 1];
     const talk = num(primary.talk_duration);
-    const ring = Math.max(...rows.map((r) => num(r.ring_duration)));
+    const ring = Math.max(0, ...rows.map(ringOf));
     const handling = talk + ring;
 
     totals.total++;
