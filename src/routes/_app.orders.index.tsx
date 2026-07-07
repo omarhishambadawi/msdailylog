@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, isAdministrator } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,21 @@ type OrdersFilterCache = {
 };
 let ordersFilterCache: OrdersFilterCache | null = null;
 
+/** Build an .or() filter string for PostgREST across searchable columns. */
+function buildSearchOr(term: string): string {
+  // PostgREST .or() needs values with commas escaped; we already normalised
+  // out `,` / `%` / `*` / `.` / `(` / `)` in normalizeSearchTerm().
+  const t = `%${term}%`;
+  return [
+    `customer_name.ilike.${t}`,
+    `customer_phone.ilike.${t}`,
+    `invoice_no.ilike.${t}`,
+    `display_no.ilike.${t}`,
+    `branch_no.ilike.${t}`,
+    `notes.ilike.${t}`,
+  ].join(",");
+}
+
 function OrdersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -83,14 +98,21 @@ function OrdersList() {
     if (typeof window !== "undefined") window.sessionStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(n));
   };
 
+  // Debounce the search input so we don't fire a query per keystroke.
+  const [debouncedQ, setDebouncedQ] = useState(q);
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQ(q), 300);
+    return () => window.clearTimeout(t);
+  }, [q]);
+
   // Persist filter state on every render so returning from edit restores it.
   ordersFilterCache = {
     range: range?.from ? { from: range.from.toISOString(), to: range.to?.toISOString() } : undefined,
     q, team, agent, status, mineOnly, page,
   };
 
-  const searching = q.trim().length > 0;
-  const term = normalizeSearchTerm(q);
+  const term = normalizeSearchTerm(debouncedQ);
+  const searching = term.length > 0;
 
   // Agents list for admin filter, with role for team-based dependency
   const { data: agentOpts } = useQuery({
@@ -114,73 +136,102 @@ function OrdersList() {
     return base.filter((a: any) => a.role === team);
   }, [agentOpts, team]);
 
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["orders", from, to, team, agent, status, mineOnly, user?.id, term],
+  // Small directory lookups for name + city enrichment (small tables).
+  const { data: directory } = useQuery({
+    queryKey: ["orders-directory"],
     queryFn: async () => {
-      const buildOrders = () => {
-        let qb = supabase.from("orders").select("*");
-        if (!searching || !term) {
-          qb = qb.gte("order_date", from).lte("order_date", to);
-        }
-        qb = qb.order("order_date", { ascending: false }).order("created_at", { ascending: false });
-        if (team !== "all") qb = qb.eq("team", team as "customer_care" | "telesales");
-        if (status !== "all") qb = qb.eq("status", status);
-        if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
-        if (isAdmin && agent !== "all") qb = qb.eq("agent_id", agent);
-        return qb;
-      };
-
-      const { fetchAllPaginated } = await import("@/lib/supabase-paginate");
-      const [orders, { data: profiles }, { data: branches }] = await Promise.all([
-        fetchAllPaginated<any>(buildOrders),
+      const [{ data: profiles }, { data: branches }] = await Promise.all([
         supabase.from("profiles").select("id,full_name,agent_code"),
         supabase.from("branches").select("branch_no,city"),
       ]);
-      const nm = new Map((profiles ?? []).map((p: any) => [p.id, p]));
-      const bm = new Map((branches ?? []).map((b: any) => [b.branch_no, b.city]));
-      const mapped = (orders ?? []).map((o: any) => ({
-        ...o,
-        agent_name: nm.get(o.agent_id)?.full_name ?? "—",
-        agent_code: nm.get(o.agent_id)?.agent_code ?? "",
-        city: bm.get(o.branch_no) ?? "",
-      }));
-      if (!searching || !term) return mapped;
-      const needle = term.toLowerCase();
-      return mapped.filter((o: any) => [
-        formatOrderNo(o.team, o.display_no),
-        o.display_no,
-        o.invoice_no,
-        o.customer_name,
-        o.customer_phone,
-        o.branch_no,
-        o.city,
-        o.notes,
-        o.agent_name,
-      ].filter(Boolean).some((v) => String(v).toLowerCase().includes(needle)));
+      return {
+        names: new Map((profiles ?? []).map((p: any) => [p.id, p])),
+        cities: new Map((branches ?? []).map((b: any) => [b.branch_no, b.city])),
+      };
     },
   });
 
-  const rows = data ?? [];
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const currentPage = Math.min(page, totalPages - 1);
-  const pageRows = rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
-  const rangeStart = rows.length === 0 ? 0 : currentPage * pageSize + 1;
-  const rangeEnd = Math.min(rows.length, (currentPage + 1) * pageSize);
+  const filterKey = [from, to, team, agent, status, mineOnly, term, user?.id] as const;
 
-  const summary = useMemo(() => {
-    const num = (v: any) => Number(v ?? 0);
-    const cash = rows.filter((o: any) => o.order_type === "Cash");
-    const was = rows.filter((o: any) => o.order_type === "Wasfaty");
-    const completed = (xs: any[]) => xs.filter((o: any) => o.status === "Completed");
-    const sum = (xs: any[]) => xs.reduce((s, o) => s + num(o.invoice_value), 0);
-    return {
-      cashSales: sum(cash), cashCompletedSales: sum(completed(cash)), cashCount: cash.length, cashCompletedCount: completed(cash).length,
-      wasSales: sum(was), wasCompletedSales: sum(completed(was)), wasCount: was.length, wasCompletedCount: completed(was).length,
-      totalSales: sum(rows), totalCompletedSales: sum(completed(rows)),
-      totalCount: rows.length, completedCount: completed(rows).length,
-    };
-  }, [rows]);
+  // Apply the shared filter set to a PostgREST query builder.
+  const applyFilters = (qb: any) => {
+    if (!searching) qb = qb.gte("order_date", from).lte("order_date", to);
+    if (team !== "all") qb = qb.eq("team", team as "customer_care" | "telesales");
+    if (status !== "all") qb = qb.eq("status", status);
+    if (mineOnly && user?.id) qb = qb.eq("agent_id", user.id);
+    if (isAdmin && agent !== "all") qb = qb.eq("agent_id", agent);
+    if (searching) qb = qb.or(buildSearchOr(term));
+    return qb;
+  };
+
+  // Paginated page fetch (server-side range + count).
+  const { data: pageData, isLoading, isFetching } = useQuery({
+    queryKey: ["orders-page", ...filterKey, page, pageSize],
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const offset = page * pageSize;
+      let qb = supabase.from("orders").select("*", { count: "exact" });
+      qb = applyFilters(qb);
+      qb = qb.order("order_date", { ascending: false }).order("created_at", { ascending: false });
+      qb = qb.range(offset, offset + pageSize - 1);
+      const { data, count, error } = await qb;
+      if (error) throw error;
+      return { rows: (data ?? []) as any[], total: count ?? 0 };
+    },
+  });
+
+  // KPI totals across the entire filtered set (server-side aggregation).
+  const { data: kpi } = useQuery({
+    queryKey: ["orders-kpi", ...filterKey],
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("orders_kpi_summary" as any, {
+        _from: from,
+        _to: to,
+        _team: team,
+        _agent: isAdmin && agent !== "all" ? agent : null,
+        _status: status,
+        _mine: mineOnly && !!user?.id,
+        _q: searching ? term : null,
+      });
+      if (error) throw error;
+      return (data ?? {}) as Record<string, number>;
+    },
+  });
+
+  const enrichedRows = useMemo(() => {
+    const rowsRaw = pageData?.rows ?? [];
+    const names = directory?.names;
+    const cities = directory?.cities;
+    return rowsRaw.map((o: any) => ({
+      ...o,
+      agent_name: names?.get(o.agent_id)?.full_name ?? "—",
+      agent_code: names?.get(o.agent_id)?.agent_code ?? "",
+      city: cities?.get(o.branch_no) ?? "",
+    }));
+  }, [pageData, directory]);
+
+  const total = pageData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, totalPages - 1);
+  const rangeStart = total === 0 ? 0 : currentPage * pageSize + 1;
+  const rangeEnd = Math.min(total, (currentPage + 1) * pageSize);
+  const pageRows = enrichedRows;
+
+  const summary = {
+    cashSales: Number(kpi?.cash_sales ?? 0),
+    cashCompletedSales: Number(kpi?.cash_completed_sales ?? 0),
+    cashCount: Number(kpi?.cash_count ?? 0),
+    cashCompletedCount: Number(kpi?.cash_completed_count ?? 0),
+    wasSales: Number(kpi?.was_sales ?? 0),
+    wasCompletedSales: Number(kpi?.was_completed_sales ?? 0),
+    wasCount: Number(kpi?.was_count ?? 0),
+    wasCompletedCount: Number(kpi?.was_completed_count ?? 0),
+    totalSales: Number(kpi?.total_sales ?? 0),
+    totalCompletedSales: Number(kpi?.total_completed_sales ?? 0),
+    totalCount: Number(kpi?.total_count ?? 0),
+    completedCount: Number(kpi?.completed_count ?? 0),
+  };
 
   const dateLabel = useMemo(() => {
     if (!range?.from) return "Pick a date";
@@ -193,37 +244,53 @@ function OrdersList() {
 
   const updateStatus = async (order: any, newStatus: string) => {
     if (!canEditOrder(order)) { toast.error("You don't have permission to edit this order"); return; }
-    const orderId = order.id;
-    const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
+    const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", order.id);
     if (error) { toast.error(error.message); return; }
     toast.success("Status updated");
-    qc.invalidateQueries({ queryKey: ["orders"] });
+    qc.invalidateQueries({ queryKey: ["orders-page"] });
+    qc.invalidateQueries({ queryKey: ["orders-kpi"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
   const toggleVerified = async (order: any, value: boolean) => {
     if (!canVerifyOrder(order)) { toast.error("You don't have permission to verify this order"); return; }
-    const orderId = order.id;
-    const { error } = await supabase.from("orders").update({ call_center_verified: value } as any).eq("id", orderId);
+    const { error } = await supabase.from("orders").update({ call_center_verified: value } as any).eq("id", order.id);
     if (error) { toast.error(error.message); return; }
-    qc.invalidateQueries({ queryKey: ["orders"] });
+    qc.invalidateQueries({ queryKey: ["orders-page"] });
+    qc.invalidateQueries({ queryKey: ["orders-kpi"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
   const exportXlsx = async () => {
     if (!hasPerm(role, profile?.permissions as any, "export_reports")) { toast.error("You don't have permission to export reports"); return; }
+    toast.info("Preparing export…");
+    // Fetch every row that matches the current filter, in batches, respecting RLS.
+    const BATCH = 1000;
+    const all: any[] = [];
+    for (let start = 0; ; start += BATCH) {
+      let qb = supabase.from("orders").select("*");
+      qb = applyFilters(qb);
+      qb = qb.order("order_date", { ascending: false }).order("created_at", { ascending: false });
+      qb = qb.range(start, start + BATCH - 1);
+      const { data, error } = await qb;
+      if (error) { toast.error(error.message); return; }
+      all.push(...(data ?? []));
+      if (!data || data.length < BATCH) break;
+    }
+    const names = directory?.names;
+    const cities = directory?.cities;
     const XLSX = await import("xlsx");
-    const xrows = rows.map((o: any) => ({
+    const xrows = all.map((o: any) => ({
       "Order #": formatOrderNo(o.team, o.display_no),
       Date: o.order_date,
       Team: o.team === "telesales" ? "Telesales" : "Customer Care",
-      Agent: o.agent_name,
-      "Agent Code": o.agent_code,
+      Agent: names?.get(o.agent_id)?.full_name ?? "",
+      "Agent Code": names?.get(o.agent_id)?.agent_code ?? "",
       "Customer Name": o.customer_name,
       "Customer Phone": o.customer_phone,
       "Order Type": o.order_type,
       "Branch No.": o.branch_no,
-      City: o.city,
+      City: cities?.get(o.branch_no) ?? "",
       "Delivery & Pickup": o.delivery_type,
       "Invoice No.": o.invoice_no,
       [`Order Value (${CURRENCY})`]: o.invoice_value,
@@ -245,13 +312,15 @@ function OrdersList() {
     return <div className="text-center py-16"><Eye className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to Orders.</p></div>;
   }
 
+
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">Orders</h1>
           <p className="text-xs sm:text-sm text-muted-foreground truncate">
-            <span className="font-medium text-foreground">{rows.length}</span> {mineOnly ? "of your" : ""} orders · {searching ? "search results" : dateLabel}
+            <span className="font-medium text-foreground">{total}</span> {mineOnly ? "of your" : ""} orders · {searching ? "search results" : dateLabel}
           </p>
         </div>
         <div className="flex gap-2 items-center shrink-0">
@@ -475,9 +544,10 @@ function OrdersList() {
 
           <div className="sticky bottom-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 flex flex-wrap items-center justify-between gap-3 p-3 border-t text-sm">
             <div className="text-muted-foreground">
-              {rows.length === 0
+              {total === 0
                 ? "No orders"
-                : <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{rows.length}</span> orders</>}
+                : <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{total}</span> orders</>}
+
             </div>
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-xs text-muted-foreground hidden sm:inline">Rows per page</span>
