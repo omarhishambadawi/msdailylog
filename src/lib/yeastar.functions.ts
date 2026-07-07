@@ -74,10 +74,18 @@ export const yeastarCdrProbe = createServerFn({ method: "POST" })
         truncated: res.truncated,
         pagesFetched: res.pagesFetched,
         elapsedMs: res.elapsedMs,
-        sample: res.records.slice(0, 5).map((r) => ({
+        sample: res.records.slice(0, 8).map((r) => ({
           time: r.time, timestamp: r.timestamp, call_type: r.call_type,
           disposition: r.disposition, call_from_number: r.call_from_number,
-          call_to_number: r.call_to_number, talk_duration: r.talk_duration,
+          call_to_number: r.call_to_number,
+          talk_duration: r.talk_duration, ring_duration: r.ring_duration,
+          duration: r.duration,
+          // ID fields for grouping diagnosis
+          id: (r as any).id, uid: (r as any).uid, new_id: (r as any).new_id,
+          call_id: (r as any).call_id, linkedid: (r as any).linkedid,
+          linked_id: (r as any).linked_id, pin_code: (r as any).pin_code,
+          agent_ring_time: (r as any).agent_ring_time,
+          wait_time: (r as any).wait_time,
         })),
       };
     } catch (err) {
