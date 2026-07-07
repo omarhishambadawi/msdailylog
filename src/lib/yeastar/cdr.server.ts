@@ -38,6 +38,8 @@ export interface CdrRecord {
   new_id?: string;
   uid?: string;
   call_id?: string;
+  linkedid?: string;
+  linked_id?: string;
   time?: string;            // PBX-local display time, e.g. "2026/07/01 10:40:07"
   timestamp?: number;       // epoch seconds (UTC) — authoritative for filtering
   call_from?: string;
@@ -49,11 +51,21 @@ export interface CdrRecord {
   disposition?: "ANSWERED" | "NO ANSWER" | "BUSY" | "FAILED" | "VOICEMAIL" | string;
   call_type?: "Inbound" | "Outbound" | "Internal" | string;
   duration?: number;        // total seconds
-  ring_duration?: number;   // seconds until answered
+  ring_duration?: number;   // agent ring seconds (until answered / hangup)
   talk_duration?: number;   // seconds talking
+  wait_time?: number;       // queue wait seconds before agent ring (H5)
+  agent_ring_time?: number; // synonym for ring on some firmwares
   did_number?: string;
+  /** Connected/answering extension on the ANSWERED leg — used for C1 attribution. */
+  dst?: string;
+  dst_num?: string;
+  dst_number?: string;
+  answer_by?: string;
+  answered_by?: string;
+  agent_number?: string;
   [k: string]: any;
 }
+
 
 interface CdrPageResponse {
   errcode: number;
