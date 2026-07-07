@@ -305,10 +305,10 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
       const cdr = await getCdrCached(data.from, data.to, data.jobId);
       if (progress && data.jobId) progress.updateJob(data.jobId, { status: "aggregating", message: "Computing analytics…", records: cdr.records.length });
 
-      // Apply direction/status client-side filters
-      let records = cdr.records as any[];
-      if (data.direction !== "all") records = records.filter((r) => r.call_type === data.direction);
-      if (data.status !== "all") records = records.filter((r) => r.disposition === data.status);
+      // [C2] Do NOT pre-filter raw rows by direction/status here — that would
+      // strip ANSWERED legs and misclassify grouped queue calls. Filters are
+      // applied inside aggregateAnalytics AFTER grouping + classification.
+      const records = cdr.records as any[];
 
       // Load orders in the same window, for telesales conversion
       let orders: any[] = [];
@@ -322,16 +322,20 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
       }
 
       const { aggregateAnalytics } = await import("@/lib/yeastar/stats.server");
-      const result = aggregateAnalytics(records, agents, orders);
+      const result = aggregateAnalytics(records, agents, orders, {
+        direction: data.direction,
+        status: data.status,
+      });
 
       if (progress && data.jobId) progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
 
       return {
         ok: true as const, configured: true as const,
         window: { from: data.from, to: data.to, team: data.team, agentId: data.agentId ?? null, direction: data.direction, status: data.status },
-        cdr: { path: cdr.path, totalReported: cdr.totalReported, fetched: cdr.records.length, filtered: records.length, truncated: cdr.truncated, elapsedMs: cdr.elapsedMs },
+        cdr: { path: cdr.path, totalReported: cdr.totalReported, fetched: cdr.records.length, filtered: result.totals.total, truncated: cdr.truncated, elapsedMs: cdr.elapsedMs },
         ...result,
       };
+
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (progress && data.jobId) progress.failJob(data.jobId, msg);

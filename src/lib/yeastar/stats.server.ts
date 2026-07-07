@@ -2,25 +2,39 @@
  * Yeastar CDR aggregation — queue-aware, Internal excluded.
  *
  * A queue call can hit multiple agents in sequence. Each attempt is its
- * own CDR row. We group rows by (linkedid || call_id || uid || new_id)
- * and treat the group as ONE call:
+ * own CDR row. We group rows by (call_id || linkedid || linked_id) and
+ * treat the group as ONE call. If the PBX omits a correlation id we
+ * fall back to a *sliding* fingerprint: a leg joins the previous group
+ * with the same from/to whose last leg was within QUEUE_LEG_WINDOW_SEC
+ * (so boundary-straddling legs don't split and unrelated calls in the
+ * same window don't merge). — H1 fix.
  *
- *   Global (platform) counters:
- *     - direction is majority (rows in a queue call share direction)
- *     - INTERNAL calls are dropped from every counter, chart & percentage
+ * Direction is taken from the first leg; all legs in a queue call share
+ * the same direction, so this is not a majority calculation.
+ *
+ *   Global (platform) counters (Internal excluded):
  *     - Answered = ANY row in the group has disposition = ANSWERED
- *     - Missed   = Inbound group, no row answered, max ring >= 5s
+ *     - Missed   = Inbound group, no row answered, max WAIT >= 5s
  *                  (queue auto-forward flows end with an ANSWERED row and
  *                  are therefore NOT counted as Missed at platform level)
- *     - Abandoned= Inbound group, no row answered, max ring <  5s
+ *     - Abandoned= Inbound group, no row answered, max WAIT <  5s
+ *                  (wait, not ring — H5 fix)
  *     - Outbound "No Answer" = Outbound group with no ANSWERED row
  *                  (kept for per-agent stats — NEVER rolled into Missed)
  *
  *   Per-agent counters use RAW rows so per-agent missed reflects the
  *   agent's own unanswered ring even when the queue later forwarded
- *   the call to someone else.
+ *   the call to someone else. Per-agent `missed` is inbound-only (M1).
+ *
+ *   Talk seconds sum across ALL answered legs in a group (M2), not just
+ *   the first, so transferred calls report full talk time.
+ *
+ *   Waiting Time separates queue WAIT from agent RING (H5):
+ *     - `waitSeconds` / `avgWaitSec` — inbound, answered + abandoned
+ *     - `ringSeconds` / `avgRingAnsweredSec` — answered only
  */
 import type { CdrRecord } from "./cdr.server";
+import { STATUSES, ORDER_TYPES } from "@/lib/branches";
 
 export interface AgentRef {
   id: string;
@@ -38,7 +52,7 @@ export interface AgentCallStats {
   inbound: number;
   outbound: number;
   answered: number;
-  missed: number;               // per-agent NO ANSWER (any direction)
+  missed: number;               // per-agent NO ANSWER — INBOUND ONLY (M1)
   noAnswerOutbound: number;     // per-agent outbound calls customer did not pick up
   busy: number;
   failed: number;
@@ -64,12 +78,14 @@ export interface CallTotals {
   busy: number;
   failed: number;
   voicemail: number;
-  talkSeconds: number;
-  ringSeconds: number;
+  talkSeconds: number;           // SUM of answered-leg talk across all groups (M2)
+  ringSeconds: number;           // ring on answered groups (agent ring only)
+  waitSeconds: number;           // queue wait, answered + abandoned inbound (H5)
   handlingSeconds: number;
   longestSec: number;
   avgTalkSec: number;            // avg talk on answered groups
-  avgWaitSec: number;            // avg ring on answered groups (renamed from avgRing)
+  avgWaitSec: number;            // avg wait across inbound answered + abandoned (H5)
+  avgRingAnsweredSec: number;    // avg agent-ring on answered groups
   answerRate: number;
   missedRate: number;
   abandonRate: number;
@@ -93,6 +109,7 @@ export interface DayBucket {
   outbound: number;
   talkSeconds: number;
   ringSeconds: number;
+  waitSeconds: number;
   handlingSeconds: number;
 }
 
@@ -142,47 +159,74 @@ export interface OrderRef {
   invoice_value: number | null;
 }
 
+export interface AggregateOptions {
+  tzOffsetMin?: number;
+  /** Filter grouped calls by direction (applied AFTER classification — C2). */
+  direction?: "all" | "Inbound" | "Outbound";
+  /** Filter grouped calls by group disposition (applied AFTER classification — C2). */
+  status?: "all" | "ANSWERED" | "NO ANSWER" | "BUSY" | "FAILED" | "VOICEMAIL";
+}
+
 const ABANDON_THRESHOLD_SEC = 5;
-const QUEUE_LEG_WINDOW_SEC = 120; // legs within 2 min sharing from/to are one call
+const QUEUE_LEG_WINDOW_SEC = 120; // sliding window for fingerprint fallback
 
 const isAnswered = (d?: string) => d === "ANSWERED";
 const isNoAnswer = (d?: string) => d === "NO ANSWER";
 const num = (v: any) => Number(v ?? 0);
 
 /**
- * Group multi-leg queue calls into one call.
- * Prefer PBX-provided call identifiers; only fall back to a from/to/time
- * fingerprint when NONE is present. NEVER fall back to per-row IDs
- * (`uid`, `new_id`, `id`), which are unique per CDR row and defeat grouping.
+ * Deterministic PBX correlation id, if the payload provides one (H1).
+ * `pin_code` is intentionally NOT used — it is an account/queue PIN, not a
+ * call id, and would merge unrelated calls.
  */
-function groupKey(r: CdrRecord): string {
+function correlationId(r: CdrRecord): string | null {
   const anyR = r as any;
-  const cid = anyR.call_id ?? anyR.linkedid ?? anyR.linked_id ?? anyR.pin_code;
-  if (cid) return `id:${String(cid)}`;
-  const from = String(r.call_from_number ?? "").trim();
-  const to = String(r.call_to_number ?? "").trim();
-  const bucket = typeof r.timestamp === "number" ? Math.floor(r.timestamp / QUEUE_LEG_WINDOW_SEC) : 0;
-  return `fp:${from}|${to}|${bucket}`;
+  const id = anyR.call_id ?? anyR.linkedid ?? anyR.linked_id;
+  return id ? String(id) : null;
 }
 
 function ringOf(r: CdrRecord): number {
   const anyR = r as any;
-  return Math.max(num(r.ring_duration), num(anyR.agent_ring_time), num(anyR.wait_time));
+  // Agent ring only. NOT max()ed with queue wait_time (H5).
+  return Math.max(num(r.ring_duration), num(anyR.agent_ring_time));
 }
 
-/** True if a row looks like an internal ext-to-ext call regardless of `call_type`. */
+function waitOf(r: CdrRecord): number {
+  const anyR = r as any;
+  // Queue wait. Some payloads only expose ring_duration for the answered
+  // agent leg — fall back to ring_duration when wait_time is absent so
+  // abandon/wait metrics don't collapse to zero on non-queue PBX flows.
+  const w = num(anyR.wait_time);
+  return w > 0 ? w : num(r.ring_duration);
+}
+
+/**
+ * True if a row is ext-to-ext / Internal.
+ * Tighter than before (M6): trust `call_type === "Internal"` and skip the
+ * broad "both endpoints ≤4 digits" heuristic that could drop short-code
+ * inbound / short-DID traffic.
+ */
 function looksInternal(r: CdrRecord): boolean {
-  if (r.call_type === "Internal") return true;
-  const from = String(r.call_from_number ?? "").trim();
-  const to = String(r.call_to_number ?? "").trim();
-  // Both endpoints are short internal extension numbers (≤4 digits)
-  if (from && to && /^\d{1,4}$/.test(from) && /^\d{1,4}$/.test(to)) return true;
-  return false;
+  return r.call_type === "Internal";
 }
 
+/**
+ * Which extension identifies the answering AGENT for this row?
+ *   - Outbound → the caller extension is the agent (`call_from_number`).
+ *   - Inbound ANSWERED → the connected extension (`dst` / `dst_num` /
+ *     `answer_by`), falling back to `call_to_number` for direct-dial
+ *     (non-queue) inbound. Queue calls have the DID/hotline in
+ *     `call_to_number`, so using it directly hides the answering agent (C1).
+ *   - Inbound UNANSWERED → the ringed extension (`dst` / `call_to_number`).
+ */
 function agentExtFor(r: CdrRecord): string | null {
+  const anyR = r as any;
   if (r.call_type === "Outbound") return r.call_from_number ?? null;
-  if (r.call_type === "Inbound") return r.call_to_number ?? null;
+  if (r.call_type === "Inbound") {
+    const answering = anyR.dst ?? anyR.dst_num ?? anyR.dst_number ?? anyR.answer_by ?? anyR.answered_by ?? anyR.agent_number;
+    if (answering) return String(answering);
+    return r.call_to_number ?? null;
+  }
   return null; // Internal ignored
 }
 
@@ -216,13 +260,77 @@ export function aggregateAgentStats(
   };
 }
 
+interface Classified {
+  rows: CdrRecord[];
+  direction: "Inbound" | "Outbound";
+  anyAnswered: boolean;
+  talk: number;                  // sum across answered legs (M2)
+  ring: number;                  // max agent ring
+  wait: number;                  // max queue wait
+  handling: number;
+  primary: CdrRecord;
+  kind: "answered" | "missed" | "abandoned" | "noAnswerOutbound" | "busy" | "failed" | "voicemail" | "other";
+  ts: number | undefined;
+}
+
+function classify(rows: CdrRecord[]): Classified | null {
+  const direction = rows[0].call_type as "Inbound" | "Outbound" | undefined;
+  if (direction !== "Inbound" && direction !== "Outbound") return null;
+
+  const answeredLegs = rows.filter((r) => isAnswered(r.disposition));
+  const anyAnswered = answeredLegs.length > 0;
+  const primary = answeredLegs[answeredLegs.length - 1] ?? rows[rows.length - 1];
+
+  // M2: sum talk across all answered legs (dedupe identical leg fingerprint
+  // to avoid transfer double-counting when the PBX re-emits a leg).
+  const seenLeg = new Set<string>();
+  let talk = 0;
+  for (const r of answeredLegs) {
+    const fp = `${r.timestamp ?? ""}|${r.call_from_number ?? ""}|${r.call_to_number ?? ""}|${r.talk_duration ?? ""}`;
+    if (seenLeg.has(fp)) continue;
+    seenLeg.add(fp);
+    talk += num(r.talk_duration);
+  }
+  const ring = Math.max(0, ...rows.map(ringOf));
+  const wait = Math.max(0, ...rows.map(waitOf));
+  const handling = talk + ring;
+
+  let kind: Classified["kind"] = "other";
+  if (anyAnswered) kind = "answered";
+  else {
+    const dispSet = new Set(rows.map((r) => r.disposition));
+    if (dispSet.has("BUSY")) kind = "busy";
+    else if (dispSet.has("FAILED")) kind = "failed";
+    else if (dispSet.has("VOICEMAIL")) kind = "voicemail";
+    else if (direction === "Inbound") {
+      // H5: threshold on WAIT, not ring
+      kind = wait < ABANDON_THRESHOLD_SEC ? "abandoned" : "missed";
+    } else {
+      kind = "noAnswerOutbound";
+    }
+  }
+
+  return { rows, direction, anyAnswered, talk, ring, wait, handling, primary, kind, ts: primary.timestamp };
+}
+
+/** Does this classified group pass a status-filter selection? */
+function matchesStatus(c: Classified, status: AggregateOptions["status"]): boolean {
+  if (!status || status === "all") return true;
+  if (status === "ANSWERED") return c.anyAnswered;
+  if (status === "NO ANSWER") return !c.anyAnswered && (c.kind === "missed" || c.kind === "abandoned" || c.kind === "noAnswerOutbound");
+  const dispSet = new Set(c.rows.map((r) => r.disposition));
+  return dispSet.has(status);
+}
+
 export function aggregateAnalytics(
   records: CdrRecord[],
   agents: AgentRef[],
   orders: OrderRef[],
-  opts: { tzOffsetMin?: number } = {},
+  opts: AggregateOptions = {},
 ): AnalyticsResult {
   const tz = opts.tzOffsetMin ?? Number(process.env.YEASTAR_UTC_OFFSET_MINUTES ?? 180);
+  const direction = opts.direction ?? "all";
+  const status = opts.status ?? "all";
 
   const byExt = new Map<string, AgentRef>();
   for (const a of agents) if (a.ext) byExt.set(String(a.ext).trim(), a);
@@ -232,101 +340,149 @@ export function aggregateAnalytics(
     (r) => (r.call_type === "Inbound" || r.call_type === "Outbound") && !looksInternal(r),
   );
 
-  // Row-level dedup: identical (timestamp, from, to, disposition, talk) rows
-  // sometimes appear when the PBX re-emits a leg on hang-up. Collapse them.
+  // Row-level dedup: prefer a PBX row id; only fall back to a content
+  // fingerprint when none is present. Content dedup includes disposition
+  // so distinct NO ANSWER legs of a queue call aren't collapsed. (M7)
   const seen = new Set<string>();
   const filteredRecords: CdrRecord[] = [];
   for (const r of nonInternal) {
-    const fp = `${r.timestamp ?? ""}|${r.call_from_number ?? ""}|${r.call_to_number ?? ""}|${r.disposition ?? ""}|${r.talk_duration ?? ""}|${r.ring_duration ?? ""}`;
+    const anyR = r as any;
+    const rowId = anyR.uid ?? anyR.new_id ?? anyR.id;
+    const fp = rowId != null
+      ? `id:${rowId}`
+      : `${r.timestamp ?? ""}|${r.call_from_number ?? ""}|${r.call_to_number ?? ""}|${r.disposition ?? ""}|${r.talk_duration ?? ""}|${r.ring_duration ?? ""}`;
     if (seen.has(fp)) continue;
     seen.add(fp);
     filteredRecords.push(r);
   }
 
-  // ---- Group by call ----
-  const groups = new Map<string, CdrRecord[]>();
+  // ---- Group by call (H1) --------------------------------------------------
+  // 1) By correlation id when the payload has one.
+  // 2) Otherwise: sliding fingerprint over sorted-by-timestamp rows.
+  const groupsById = new Map<string, CdrRecord[]>();
+  const withoutId: CdrRecord[] = [];
   for (const r of filteredRecords) {
-    const k = groupKey(r);
-    const arr = groups.get(k);
-    if (arr) arr.push(r); else groups.set(k, [r]);
+    const cid = correlationId(r);
+    if (cid) {
+      const arr = groupsById.get(cid);
+      if (arr) arr.push(r); else groupsById.set(cid, [r]);
+    } else {
+      withoutId.push(r);
+    }
   }
+  withoutId.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+  const groupsByFp: Record<string, CdrRecord[]> = {};
+  const lastTsByFp = new Map<string, number>();
+  const activeGroupKeyByFp = new Map<string, string>();
+  let fpCounter = 0;
+  for (const r of withoutId) {
+    const fp = `${String(r.call_from_number ?? "").trim()}|${String(r.call_to_number ?? "").trim()}`;
+    const ts = typeof r.timestamp === "number" ? r.timestamp : 0;
+    const lastTs = lastTsByFp.get(fp);
+    const activeKey = activeGroupKeyByFp.get(fp);
+    if (activeKey && lastTs !== undefined && ts - lastTs <= QUEUE_LEG_WINDOW_SEC) {
+      groupsByFp[activeKey].push(r);
+    } else {
+      const key = `fp:${fp}:${++fpCounter}`;
+      groupsByFp[key] = [r];
+      activeGroupKeyByFp.set(fp, key);
+    }
+    lastTsByFp.set(fp, ts);
+  }
+
+  const allGroups: CdrRecord[][] = [
+    ...groupsById.values(),
+    ...Object.values(groupsByFp),
+  ];
+
+  // Classify every group.
+  const classified: Classified[] = [];
+  for (const rows of allGroups) {
+    const c = classify(rows);
+    if (c) classified.push(c);
+  }
+
+  // C2: apply direction/status filters at the CALL level, post-classification.
+  const filteredGroups = classified.filter((c) => {
+    if (direction !== "all" && c.direction !== direction) return false;
+    if (!matchesStatus(c, status)) return false;
+    return true;
+  });
 
   const totals: CallTotals = {
     total: 0, inbound: 0, outbound: 0,
     answered: 0, missed: 0, abandoned: 0, noAnswerOutbound: 0,
     busy: 0, failed: 0, voicemail: 0,
-    talkSeconds: 0, ringSeconds: 0, handlingSeconds: 0,
+    talkSeconds: 0, ringSeconds: 0, waitSeconds: 0, handlingSeconds: 0,
     longestSec: 0,
-    avgTalkSec: 0, avgWaitSec: 0,
+    avgTalkSec: 0, avgWaitSec: 0, avgRingAnsweredSec: 0,
     answerRate: 0, missedRate: 0, abandonRate: 0,
   };
 
   const dayMap = new Map<string, DayBucket>();
   const hourMap = new Map<number, HourBucket>();
+  // H5: wait counted over inbound answered + abandoned
+  let inboundWaitCount = 0;
 
-  for (const [, rows] of groups) {
-    const direction = rows[0].call_type ?? "Unknown";
-    if (direction !== "Inbound" && direction !== "Outbound") continue;
-
-    const anyAnswered = rows.some((r) => isAnswered(r.disposition));
-    const primary = rows.find((r) => isAnswered(r.disposition)) ?? rows[rows.length - 1];
-    const talk = num(primary.talk_duration);
-    const ring = Math.max(0, ...rows.map(ringOf));
-    const handling = talk + ring;
-
+  for (const c of filteredGroups) {
     totals.total++;
-    if (direction === "Inbound") totals.inbound++;
+    if (c.direction === "Inbound") totals.inbound++;
     else totals.outbound++;
 
-    if (anyAnswered) {
+    if (c.kind === "answered") {
       totals.answered++;
-      totals.talkSeconds += talk;
-      totals.ringSeconds += ring;
-      totals.handlingSeconds += handling;
-      if (handling > totals.longestSec) totals.longestSec = handling;
-    } else {
-      const dispSet = new Set(rows.map((r) => r.disposition));
-      if (dispSet.has("BUSY")) totals.busy++;
-      else if (dispSet.has("FAILED")) totals.failed++;
-      else if (dispSet.has("VOICEMAIL")) totals.voicemail++;
-      else if (direction === "Inbound") {
-        if (ring < ABANDON_THRESHOLD_SEC) totals.abandoned++;
-        else totals.missed++;
-      } else {
-        // Outbound customer didn't pick up — NOT platform missed
-        totals.noAnswerOutbound++;
+      totals.talkSeconds += c.talk;
+      totals.ringSeconds += c.ring;
+      totals.handlingSeconds += c.handling;
+      if (c.handling > totals.longestSec) totals.longestSec = c.handling;
+      if (c.direction === "Inbound") {
+        totals.waitSeconds += c.wait;
+        inboundWaitCount++;
       }
-    }
+    } else if (c.kind === "missed") {
+      totals.missed++;
+      totals.waitSeconds += c.wait;
+      inboundWaitCount++;
+    } else if (c.kind === "abandoned") {
+      totals.abandoned++;
+      totals.waitSeconds += c.wait;
+      inboundWaitCount++;
+    } else if (c.kind === "noAnswerOutbound") totals.noAnswerOutbound++;
+    else if (c.kind === "busy") totals.busy++;
+    else if (c.kind === "failed") totals.failed++;
+    else if (c.kind === "voicemail") totals.voicemail++;
 
-    // Buckets — Inbound + Outbound only
-    const ts = primary.timestamp;
-    const dk = dayKey(ts, tz);
-    const hr = hourOf(ts, tz);
-    const day = dayMap.get(dk) ?? { date: dk, total: 0, answered: 0, missed: 0, abandoned: 0, inbound: 0, outbound: 0, talkSeconds: 0, ringSeconds: 0, handlingSeconds: 0 };
+    // Buckets — inbound + outbound only
+    const dk = dayKey(c.ts, tz);
+    const hr = hourOf(c.ts, tz);
+    const day = dayMap.get(dk) ?? { date: dk, total: 0, answered: 0, missed: 0, abandoned: 0, inbound: 0, outbound: 0, talkSeconds: 0, ringSeconds: 0, waitSeconds: 0, handlingSeconds: 0 };
     day.total++;
-    if (direction === "Inbound") day.inbound++;
-    else day.outbound++;
-    if (anyAnswered) {
-      day.answered++; day.talkSeconds += talk; day.ringSeconds += ring; day.handlingSeconds += handling;
-    } else if (direction === "Inbound") {
-      if (ring < ABANDON_THRESHOLD_SEC) day.abandoned++; else day.missed++;
-    }
+    if (c.direction === "Inbound") day.inbound++; else day.outbound++;
+    if (c.kind === "answered") {
+      day.answered++; day.talkSeconds += c.talk; day.ringSeconds += c.ring; day.handlingSeconds += c.handling;
+      if (c.direction === "Inbound") day.waitSeconds += c.wait;
+    } else if (c.kind === "abandoned") { day.abandoned++; day.waitSeconds += c.wait; }
+    else if (c.kind === "missed") { day.missed++; day.waitSeconds += c.wait; }
     dayMap.set(dk, day);
 
     const hb = hourMap.get(hr) ?? { hour: hr, total: 0, answered: 0, inbound: 0, outbound: 0 };
     hb.total++;
-    if (anyAnswered) hb.answered++;
-    if (direction === "Inbound") hb.inbound++; else hb.outbound++;
+    if (c.kind === "answered") hb.answered++;
+    if (c.direction === "Inbound") hb.inbound++; else hb.outbound++;
     hourMap.set(hr, hb);
   }
 
   totals.avgTalkSec = totals.answered ? totals.talkSeconds / totals.answered : 0;
-  totals.avgWaitSec = totals.answered ? totals.ringSeconds / totals.answered : 0;
+  totals.avgRingAnsweredSec = totals.answered ? totals.ringSeconds / totals.answered : 0;
+  totals.avgWaitSec = inboundWaitCount ? totals.waitSeconds / inboundWaitCount : 0;
   totals.answerRate = totals.total ? (totals.answered / totals.total) * 100 : 0;
   totals.missedRate = totals.inbound ? (totals.missed / totals.inbound) * 100 : 0;
   totals.abandonRate = totals.inbound ? (totals.abandoned / totals.inbound) * 100 : 0;
 
-  // ---- Per-agent (from raw rows, Internal already stripped) ----
+  // ---- Per-agent (raw rows, but only from groups that passed filters) ------
+  const keepRowSet = new WeakSet<CdrRecord>();
+  for (const c of filteredGroups) for (const r of c.rows) keepRowSet.add(r);
+
   const blank = (a: AgentRef): AgentCallStats => ({
     agentId: a.id, name: a.name, ext: a.ext, team: a.team,
     total: 0, inbound: 0, outbound: 0,
@@ -340,6 +496,7 @@ export function aggregateAnalytics(
   let unmatchedRecords = 0;
 
   for (const r of filteredRecords) {
+    if (!keepRowSet.has(r)) continue;
     const ext = agentExtFor(r);
     const agent = ext ? byExt.get(String(ext).trim()) : undefined;
     if (!agent) {
@@ -363,8 +520,10 @@ export function aggregateAnalytics(
       s.handlingSeconds += handling;
       if (handling > s.longestSec) s.longestSec = handling;
     } else if (isNoAnswer(r.disposition)) {
-      s.missed++;
-      if (r.call_type === "Outbound") s.noAnswerOutbound++;
+      // M1: only inbound NO ANSWER counts as `missed` per-agent.
+      // Outbound NO ANSWER is exposed exclusively via `noAnswerOutbound`.
+      if (r.call_type === "Inbound") s.missed++;
+      else if (r.call_type === "Outbound") s.noAnswerOutbound++;
     } else if (r.disposition === "BUSY") s.busy++;
     else if (r.disposition === "FAILED") s.failed++;
     else if (r.disposition === "VOICEMAIL") s.voicemail++;
@@ -378,7 +537,8 @@ export function aggregateAnalytics(
     answerRate: s.total ? (s.answered / s.total) * 100 : 0,
   })).sort((a, b) => b.total - a.total);
 
-  // ---- Team compare ----
+  // ---- Team compare -------------------------------------------------------
+  // Per M1, team `missed` is inbound-missed only (per-agent already scoped).
   const teams: Record<"customer_care" | "telesales", TeamCompareRow> = {
     customer_care: { team: "customer_care", calls: 0, answered: 0, missed: 0, inbound: 0, outbound: 0, talkSeconds: 0, handlingSeconds: 0, answerRate: 0, missedRate: 0 },
     telesales:    { team: "telesales",    calls: 0, answered: 0, missed: 0, inbound: 0, outbound: 0, talkSeconds: 0, handlingSeconds: 0, answerRate: 0, missedRate: 0 },
@@ -391,23 +551,29 @@ export function aggregateAnalytics(
   }
   for (const t of Object.values(teams)) {
     t.answerRate = t.calls ? (t.answered / t.calls) * 100 : 0;
-    t.missedRate = t.calls ? (t.missed / t.calls) * 100 : 0;
+    // missedRate = inbound-missed / inbound (M1)
+    t.missedRate = t.inbound ? (t.missed / t.inbound) * 100 : 0;
   }
 
-  // ---- Conversion (telesales only) ----
-  // Formula: completed telesales orders / answered telesales calls * 100
+  // ---- Conversion (telesales only) ----------------------------------------
   const telesalesAgents = agentRows.filter((a) => a.team === "telesales");
   const teleAgentIds = new Set(telesalesAgents.map((a) => a.agentId));
   const teleOrders = orders.filter((o) => teleAgentIds.has(o.agent_id));
 
+  const S_COMPLETED = STATUSES[1]; // "Completed"
+  const S_CANCELLED = STATUSES[2]; // "Cancelled"
+  const S_PENDING   = STATUSES[0]; // "Pending"
+  const T_CASH      = ORDER_TYPES[0];
+  const T_WASFATY   = ORDER_TYPES[1];
+
   const overall = {
     answered: telesalesAgents.reduce((s, a) => s + a.answered, 0),
     orders: teleOrders.length,
-    completed: teleOrders.filter((o) => o.status === "Completed").length,
-    cancelled: teleOrders.filter((o) => o.status === "Cancelled").length,
-    pending: teleOrders.filter((o) => o.status === "Pending").length,
-    cash: teleOrders.filter((o) => o.order_type === "Cash").length,
-    wasfaty: teleOrders.filter((o) => o.order_type === "Wasfaty").length,
+    completed: teleOrders.filter((o) => o.status === S_COMPLETED).length,
+    cancelled: teleOrders.filter((o) => o.status === S_CANCELLED).length,
+    pending: teleOrders.filter((o) => o.status === S_PENDING).length,
+    cash: teleOrders.filter((o) => o.order_type === T_CASH).length,
+    wasfaty: teleOrders.filter((o) => o.order_type === T_WASFATY).length,
     revenue: teleOrders.reduce((s, o) => s + num(o.invoice_value), 0),
     conversionRate: 0,
     revenuePerCall: 0,
@@ -419,34 +585,48 @@ export function aggregateAnalytics(
 
   const perAgentConv: ConversionRow[] = telesalesAgents.map((a) => {
     const os = orders.filter((o) => o.agent_id === a.agentId);
-    const completed = os.filter((o) => o.status === "Completed").length;
-    const row: ConversionRow = {
+    const completed = os.filter((o) => o.status === S_COMPLETED).length;
+    const rev = os.reduce((s, o) => s + num(o.invoice_value), 0);
+    return {
       agentId: a.agentId, name: a.name, ext: a.ext,
       answered: a.answered,
       ordersTotal: os.length,
       ordersCompleted: completed,
-      ordersCancelled: os.filter((o) => o.status === "Cancelled").length,
-      ordersPending: os.filter((o) => o.status === "Pending").length,
-      ordersCash: os.filter((o) => o.order_type === "Cash").length,
-      ordersWasfaty: os.filter((o) => o.order_type === "Wasfaty").length,
-      revenue: os.reduce((s, o) => s + num(o.invoice_value), 0),
+      ordersCancelled: os.filter((o) => o.status === S_CANCELLED).length,
+      ordersPending: os.filter((o) => o.status === S_PENDING).length,
+      ordersCash: os.filter((o) => o.order_type === T_CASH).length,
+      ordersWasfaty: os.filter((o) => o.order_type === T_WASFATY).length,
+      revenue: rev,
       conversionRate: a.answered ? (completed / a.answered) * 100 : 0,
-      revenuePerCall: a.answered ? os.reduce((s, o) => s + num(o.invoice_value), 0) / a.answered : 0,
-      revenuePerOrder: os.length ? os.reduce((s, o) => s + num(o.invoice_value), 0) / os.length : 0,
+      revenuePerCall: a.answered ? rev / a.answered : 0,
+      revenuePerOrder: os.length ? rev / os.length : 0,
     };
-    return row;
   }).sort((a, b) => b.conversionRate - a.conversionRate);
 
-  // per-day conversion (telesales)
+  // ---- Per-day telesales conversion (M3) ----------------------------------
+  // Count answered telesales legs per day directly, not via a global share.
+  const teleAnsweredByDay = new Map<string, number>();
+  for (const c of filteredGroups) {
+    if (!c.anyAnswered) continue;
+    // Count only ANSWERED legs whose ringed extension belongs to a
+    // telesales agent — a queue call can hit both teams; only credit tele.
+    for (const r of c.rows.filter((r) => isAnswered(r.disposition))) {
+      const ext = agentExtFor(r);
+      const agent = ext ? byExt.get(String(ext).trim()) : undefined;
+      if (agent && agent.team === "telesales") {
+        const dk = dayKey(r.timestamp, tz);
+        teleAnsweredByDay.set(dk, (teleAnsweredByDay.get(dk) ?? 0) + 1);
+        break; // one answered credit per call
+      }
+    }
+  }
   const dayCompleted = new Map<string, number>();
   for (const o of teleOrders) {
-    if (o.status !== "Completed") continue;
+    if (o.status !== S_COMPLETED) continue;
     dayCompleted.set(o.order_date, (dayCompleted.get(o.order_date) ?? 0) + 1);
   }
-  // answered by telesales per day: pro-rate day.answered by tele share
-  const teleShare = totals.answered ? teams.telesales.answered / Math.max(1, totals.answered) : 0;
   const perDay = [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date)).map((d) => {
-    const answered = Math.round(d.answered * teleShare);
+    const answered = teleAnsweredByDay.get(d.date) ?? 0;
     const completed = dayCompleted.get(d.date) ?? 0;
     return { date: d.date, answered, completed, rate: answered ? (completed / answered) * 100 : 0 };
   });

@@ -38,6 +38,8 @@ export interface CdrRecord {
   new_id?: string;
   uid?: string;
   call_id?: string;
+  linkedid?: string;
+  linked_id?: string;
   time?: string;            // PBX-local display time, e.g. "2026/07/01 10:40:07"
   timestamp?: number;       // epoch seconds (UTC) — authoritative for filtering
   call_from?: string;
@@ -49,11 +51,21 @@ export interface CdrRecord {
   disposition?: "ANSWERED" | "NO ANSWER" | "BUSY" | "FAILED" | "VOICEMAIL" | string;
   call_type?: "Inbound" | "Outbound" | "Internal" | string;
   duration?: number;        // total seconds
-  ring_duration?: number;   // seconds until answered
+  ring_duration?: number;   // agent ring seconds (until answered / hangup)
   talk_duration?: number;   // seconds talking
+  wait_time?: number;       // queue wait seconds before agent ring (H5)
+  agent_ring_time?: number; // synonym for ring on some firmwares
   did_number?: string;
+  /** Connected/answering extension on the ANSWERED leg — used for C1 attribution. */
+  dst?: string;
+  dst_num?: string;
+  dst_number?: string;
+  answer_by?: string;
+  answered_by?: string;
+  agent_number?: string;
   [k: string]: any;
 }
+
 
 interface CdrPageResponse {
   errcode: number;
@@ -75,12 +87,13 @@ export interface FetchCdrResult {
   records: CdrRecord[];
   totalReported: number | null;
   pagesFetched: number;
-  path: "search" | "list-fallback";
+  path: "search" | "list-fallback" | "search-empty-list-fallback";
   startEpoch: number;
   endEpoch: number;
   elapsedMs: number;
   truncated: boolean;       // true if the safety ceiling was hit
 }
+
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
@@ -160,7 +173,10 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
   console.log(`[yeastar cdr] window epoch ${startEpoch}..${endEpoch} (tz+${TZ_OFFSET_MIN}m)`);
 
   // /cdr/search accepts start_time/end_time as Unix timestamps (seconds).
-  // Falls back to /cdr/list (no server-side date filter) if search errors.
+  // Falls back to /cdr/list (no server-side date filter) if search errors
+  // OR returns zero records for a non-trivial window (H2 — silent zero-data
+  // blackout: some PBX firmwares reject the epoch form and return 0 rows
+  // instead of an error).
   let path: FetchCdrResult["path"] = "search";
   let records: CdrRecord[] = [];
   let totalReported: number | null = null;
@@ -173,6 +189,12 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
       pageSize, maxPages, opts.signal, opts.jobId,
     );
     records = r.records; totalReported = r.totalReported; pages = r.pages; truncated = r.truncated;
+    if (records.length === 0) {
+      console.warn("[yeastar cdr] /cdr/search returned 0 records — falling back to /cdr/list (H2 empty-fallback).");
+      path = "search-empty-list-fallback";
+      const full = await fetchAllPages("/openapi/v1.0/cdr/list", {}, pageSize, maxPages, opts.signal, opts.jobId);
+      records = full.records; totalReported = full.totalReported; pages = full.pages; truncated = full.truncated;
+    }
   } catch (e: any) {
     console.warn(`[yeastar cdr] /cdr/search failed (${e?.message ?? e}) — falling back to /cdr/list.`);
     path = "list-fallback";
@@ -180,12 +202,10 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
     records = full.records; totalReported = full.totalReported; pages = full.pages; truncated = full.truncated;
   }
 
-
-
-
   // Authoritative timezone-correct filter by epoch timestamp.
   const filtered = records.filter(inWindow);
   console.log(`[yeastar cdr] path=${path} fetched=${records.length} inWindow=${filtered.length}`);
+
 
   return {
     records: filtered,
