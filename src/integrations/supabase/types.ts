@@ -290,6 +290,44 @@ export type Database = {
         }
         Relationships: []
       }
+      satisfaction_surveys: {
+        Row: {
+          agent_id: string | null
+          call_id: string | null
+          comment: string | null
+          created_at: string
+          id: string
+          rating: number
+          submitted_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          call_id?: string | null
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating: number
+          submitted_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          call_id?: string | null
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating?: number
+          submitted_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "satisfaction_surveys_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -406,7 +444,13 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "customer_care" | "telesales" | "auditor" | "owner"
+      app_role:
+        | "admin"
+        | "customer_care"
+        | "telesales"
+        | "auditor"
+        | "owner"
+        | "call_center"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -534,7 +578,14 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "customer_care", "telesales", "auditor", "owner"],
+      app_role: [
+        "admin",
+        "customer_care",
+        "telesales",
+        "auditor",
+        "owner",
+        "call_center",
+      ],
     },
   },
 } as const

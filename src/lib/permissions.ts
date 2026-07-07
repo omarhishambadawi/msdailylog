@@ -28,6 +28,7 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   { key: "view_dashboard", label: "View Dashboard", group: "Dashboard" },
   { key: "view_team_analytics", label: "View Team Analytics", group: "Dashboard" },
   { key: "view_all_agents", label: "View All Agents", group: "Dashboard" },
+  { key: "view_call_center", label: "View Call Center Analytics", group: "Dashboard" },
   { key: "export_reports", label: "Export Reports", group: "Dashboard" },
   // Invoice Verification
   { key: "verify_own_orders", label: "Verify Own Orders", group: "Invoice Verification" },
@@ -48,6 +49,7 @@ const AUDITOR_PERMS: PermKey[] = [
   "view_dashboard",
   "view_team_analytics",
   "view_all_agents",
+  "view_call_center",
   "view_invoice_analytics",
   "view_reports",
   "export_reports",
@@ -69,6 +71,12 @@ const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin" | "owner">, PermKey[]>
     "verify_own_orders", "view_invoice_analytics",
     "export_reports",
   ],
+  call_center: [
+    "view_orders",
+    "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
+    "view_dashboard", "view_team_analytics", "view_call_center",
+    "view_invoice_analytics", "export_reports",
+  ],
   auditor: AUDITOR_SAFE_READ_PERMS,
 };
 
@@ -85,6 +93,11 @@ const ROLE_DEFAULTS: Record<AppRole, PermKey[]> = {
     "view_orders", "create_orders", "edit_orders",
     "view_dashboard",
     "verify_own_orders",
+  ],
+  call_center: [
+    "view_orders",
+    "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
+    "view_dashboard", "view_team_analytics", "view_call_center",
   ],
   auditor: AUDITOR_PERMS,
 };

@@ -165,7 +165,7 @@ const statsInput = z.object({
 
 const analyticsInput = statsInput.extend({
   jobId: z.string().min(1).max(80).optional(),
-  direction: z.enum(["all", "Inbound", "Outbound", "Internal"]).default("all"),
+  direction: z.enum(["all", "Inbound", "Outbound"]).default("all"),
   status: z.enum(["all", "ANSWERED", "NO ANSWER", "BUSY", "FAILED", "VOICEMAIL"]).default("all"),
   includeOrders: z.boolean().default(true),
 });
@@ -251,7 +251,7 @@ export const getAgentCallStats = createServerFn({ method: "POST" })
     }
     const cdr = await getCdrCached(data.from, data.to);
     const { aggregateAgentStats } = await import("@/lib/yeastar/stats.server");
-    const agg = aggregateAgentStats(cdr.records, agents, { includeInternal: false });
+    const agg = aggregateAgentStats(cdr.records, agents);
     return {
       ok: true as const, configured: true as const, empty: false as const,
       window: { from: data.from, to: data.to, team: data.team, agentId: data.agentId ?? null },
@@ -308,7 +308,7 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
       }
 
       const { aggregateAnalytics } = await import("@/lib/yeastar/stats.server");
-      const result = aggregateAnalytics(records, agents, orders, { includeInternal: false });
+      const result = aggregateAnalytics(records, agents, orders);
 
       if (progress && data.jobId) progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
 
