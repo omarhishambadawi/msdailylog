@@ -75,12 +75,13 @@ export interface FetchCdrResult {
   records: CdrRecord[];
   totalReported: number | null;
   pagesFetched: number;
-  path: "search" | "list-fallback";
+  path: "search" | "list-fallback" | "search-empty-list-fallback";
   startEpoch: number;
   endEpoch: number;
   elapsedMs: number;
   truncated: boolean;       // true if the safety ceiling was hit
 }
+
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
@@ -160,7 +161,10 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
   console.log(`[yeastar cdr] window epoch ${startEpoch}..${endEpoch} (tz+${TZ_OFFSET_MIN}m)`);
 
   // /cdr/search accepts start_time/end_time as Unix timestamps (seconds).
-  // Falls back to /cdr/list (no server-side date filter) if search errors.
+  // Falls back to /cdr/list (no server-side date filter) if search errors
+  // OR returns zero records for a non-trivial window (H2 — silent zero-data
+  // blackout: some PBX firmwares reject the epoch form and return 0 rows
+  // instead of an error).
   let path: FetchCdrResult["path"] = "search";
   let records: CdrRecord[] = [];
   let totalReported: number | null = null;
@@ -173,6 +177,12 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
       pageSize, maxPages, opts.signal, opts.jobId,
     );
     records = r.records; totalReported = r.totalReported; pages = r.pages; truncated = r.truncated;
+    if (records.length === 0) {
+      console.warn("[yeastar cdr] /cdr/search returned 0 records — falling back to /cdr/list (H2 empty-fallback).");
+      path = "search-empty-list-fallback";
+      const full = await fetchAllPages("/openapi/v1.0/cdr/list", {}, pageSize, maxPages, opts.signal, opts.jobId);
+      records = full.records; totalReported = full.totalReported; pages = full.pages; truncated = full.truncated;
+    }
   } catch (e: any) {
     console.warn(`[yeastar cdr] /cdr/search failed (${e?.message ?? e}) — falling back to /cdr/list.`);
     path = "list-fallback";
@@ -180,12 +190,10 @@ export async function fetchCdrRange(opts: FetchCdrOptions): Promise<FetchCdrResu
     records = full.records; totalReported = full.totalReported; pages = full.pages; truncated = full.truncated;
   }
 
-
-
-
   // Authoritative timezone-correct filter by epoch timestamp.
   const filtered = records.filter(inWindow);
   console.log(`[yeastar cdr] path=${path} fetched=${records.length} inWindow=${filtered.length}`);
+
 
   return {
     records: filtered,
