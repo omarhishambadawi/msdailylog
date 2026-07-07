@@ -398,7 +398,7 @@ function CallCenterPage() {
                     <th className="px-3 py-2 text-right">Answer %</th>
                     <th className="px-3 py-2 text-right">Talk</th>
                     <th className="px-3 py-2 text-right">Avg talk</th>
-                    <th className="px-3 py-2 text-right">Avg wait</th>
+                    <th className="px-3 py-2 text-right">Avg ring (answered)</th>
                     <th className="px-3 py-2 text-right">Longest</th>
                   </tr>
                 </thead>
