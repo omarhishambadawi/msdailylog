@@ -417,6 +417,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_my_profile: {
+        Args: never
+        Returns: {
+          active: boolean
+          agent_code: string | null
+          created_at: string
+          full_name: string
+          id: string
+          permissions: string[]
+          updated_at: string
+          yeastar_ext: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       has_permission: {
         Args: { _permission: string; _user_id: string }
         Returns: boolean
