@@ -285,7 +285,7 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
 
     try {
       const cdr = await getCdrCached(data.from, data.to, data.jobId);
-      if (progress && data.jobId) progress.updateJob(data.jobId, { status: "aggregating", message: "Computing analytics…", records: cdr.records.length });
+      if (progress && data.jobId) await progress.updateJob(data.jobId, { status: "aggregating", message: "Computing analytics…", records: cdr.records.length });
 
       // [C2] Do NOT pre-filter raw rows by direction/status here — that would
       // strip ANSWERED legs and misclassify grouped queue calls. Filters are
@@ -309,7 +309,7 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
         status: data.status,
       });
 
-      if (progress && data.jobId) progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
+      if (progress && data.jobId) await progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
 
       return {
         ok: true as const, configured: true as const,
@@ -320,7 +320,7 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (progress && data.jobId) progress.failJob(data.jobId, msg);
+      if (progress && data.jobId) await progress.failJob(data.jobId, msg);
       throw err;
     }
   });
