@@ -497,6 +497,18 @@ export type Database = {
         }
         Returns: undefined
       }
+      orders_kpi_summary: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _q?: string
+          _status?: string
+          _team?: string
+          _to: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       app_role:
