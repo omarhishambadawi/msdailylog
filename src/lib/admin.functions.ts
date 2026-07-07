@@ -36,15 +36,27 @@ export const adminCreateUser = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // [H3] Do NOT pass role via user_metadata — the handle_new_user trigger
+    // ignores it and always writes the default (customer_care). Elevated
+    // roles are granted server-side, after creation, via user_roles.
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
       password: data.password,
       email_confirm: true,
-      user_metadata: { full_name: data.fullName, agent_code: data.agentCode, role: data.role },
+      user_metadata: { full_name: data.fullName, agent_code: data.agentCode },
     });
     if (error) throw new Error(error.message);
-    return { id: created.user?.id };
+    const newUserId = created.user?.id;
+    if (newUserId && data.role !== "customer_care") {
+      await supabaseAdmin.from("user_roles").delete().eq("user_id", newUserId);
+      const { error: roleErr } = await supabaseAdmin
+        .from("user_roles")
+        .insert({ user_id: newUserId, role: data.role });
+      if (roleErr) throw new Error(roleErr.message);
+    }
+    return { id: newUserId };
   });
+
 
 export const adminSetActive = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

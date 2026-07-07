@@ -209,12 +209,18 @@ async function getCdrCached(from: string, to: string, jobId?: string) {
   return promise;
 }
 
-async function loadAgents(supabase: any) {
+async function loadAgents(_supabase: any) {
+  // yeastar_ext and roles are read via the service-role client because
+  // authenticated SELECT on profiles no longer exposes sensitive columns
+  // ([H4]). This function is only reachable after a call-center permission
+  // check upstream, so an admin read here is appropriate.
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const [{ data: profiles }, { data: extRows }, { data: roles }] = await Promise.all([
-    supabase.from("profiles").select("id,full_name,agent_code,active"),
-    supabase.from("profiles").select("id,yeastar_ext"),
-    supabase.from("user_roles").select("user_id,role"),
+    supabaseAdmin.from("profiles").select("id,full_name,agent_code,active"),
+    supabaseAdmin.from("profiles" as any).select("id,yeastar_ext"),
+    supabaseAdmin.from("user_roles").select("user_id,role"),
   ]);
+
   const extMap = new Map<string, string | null>(((extRows as any[]) ?? []).map((r) => [r.id, r.yeastar_ext ?? null]));
   const roleMap = new Map<string, string>(((roles as any[]) ?? []).map((r) => [r.user_id, r.role as string]));
   return ((profiles as any[]) ?? [])
