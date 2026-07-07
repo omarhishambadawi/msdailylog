@@ -320,7 +320,7 @@ function OrdersList() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">Orders</h1>
           <p className="text-xs sm:text-sm text-muted-foreground truncate">
-            <span className="font-medium text-foreground">{rows.length}</span> {mineOnly ? "of your" : ""} orders · {searching ? "search results" : dateLabel}
+            <span className="font-medium text-foreground">{total}</span> {mineOnly ? "of your" : ""} orders · {searching ? "search results" : dateLabel}
           </p>
         </div>
         <div className="flex gap-2 items-center shrink-0">
@@ -544,9 +544,10 @@ function OrdersList() {
 
           <div className="sticky bottom-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 flex flex-wrap items-center justify-between gap-3 p-3 border-t text-sm">
             <div className="text-muted-foreground">
-              {rows.length === 0
+              {total === 0
                 ? "No orders"
-                : <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{rows.length}</span> orders</>}
+                : <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{total}</span> orders</>}
+
             </div>
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-xs text-muted-foreground hidden sm:inline">Rows per page</span>
