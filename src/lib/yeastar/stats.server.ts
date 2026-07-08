@@ -522,6 +522,33 @@ export function aggregateAnalytics(
     answerRate: s.total ? (s.answered / s.total) * 100 : 0,
   })).sort((a, b) => b.total - a.total);
 
+  // ---- Reconcile platform totals to match Yeastar exactly ----------------
+  // Yeastar's authoritative KPIs are per-extension row aggregates. Overwrite
+  // direction / answered / talk totals from the agent rollup so the platform
+  // KPIs mirror the PBX per-extension screen. Queue-only metrics (missed,
+  // abandoned, wait) keep their classified values because they don't appear
+  // in the per-extension screen.
+  {
+    const agInbound = agentRows.reduce((s, a) => s + a.inbound, 0);
+    const agOutbound = agentRows.reduce((s, a) => s + a.outbound, 0);
+    const agAnswered = agentRows.reduce((s, a) => s + a.answered, 0);
+    const agTalk = agentRows.reduce((s, a) => s + a.talkSeconds, 0);
+    const agRing = agentRows.reduce((s, a) => s + a.ringSeconds, 0);
+    const agLongest = agentRows.reduce((m, a) => Math.max(m, a.longestSec), 0);
+    totals.inbound = agInbound;
+    totals.outbound = agOutbound;
+    totals.total = agInbound + agOutbound;
+    totals.answered = agAnswered;
+    totals.talkSeconds = agTalk;
+    totals.ringSeconds = agRing;
+    totals.longestSec = agLongest;
+    totals.avgTalkSec = agAnswered ? agTalk / agAnswered : 0;
+    totals.avgRingAnsweredSec = agAnswered ? agRing / agAnswered : 0;
+    totals.answerRate = totals.total ? (totals.answered / totals.total) * 100 : 0;
+    totals.missedRate = totals.inbound ? (totals.missed / totals.inbound) * 100 : 0;
+    totals.abandonRate = totals.inbound ? (totals.abandoned / totals.inbound) * 100 : 0;
+  }
+
   // ---- Team compare -------------------------------------------------------
   // Per M1, team `missed` is inbound-missed only (per-agent already scoped).
   const teams: Record<"customer_care" | "telesales", TeamCompareRow> = {

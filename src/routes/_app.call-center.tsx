@@ -11,17 +11,16 @@ import { format, startOfMonth } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
-  LineChart, Line, Legend, PieChart, Pie, Cell,
+  LineChart, Line, Legend,
 } from "recharts";
 // xlsx is lazy-loaded inside the export handler to keep it out of the initial route chunk.
 import {
-  Download, ShieldAlert, PhoneOff, AlertTriangle, Printer, Star, PhoneIncoming, PhoneOutgoing, Clock, Users,
+  Download, ShieldAlert, PhoneOff, AlertTriangle, Printer, PhoneIncoming, PhoneOutgoing, Clock, Users, TrendingUp,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { hasPerm } from "@/lib/permissions";
 import { getCallCenterAnalytics } from "@/lib/yeastar.functions";
-import { getSurveyAnalytics } from "@/lib/surveys.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -107,14 +106,8 @@ function CallCenterPage() {
     placeholderData: keepPreviousData,
   });
 
-  // Survey query — separate, lightweight
-  const surveyFn = useServerFn(getSurveyAnalytics);
-  const sq = useQuery({
-    queryKey: ["cc-surveys", from, to, agentId],
-    queryFn: () => surveyFn({ data: { from, to, agentId: canAll && agentId !== "all" ? agentId : null } }),
-    staleTime: 5 * 60_000,
-    placeholderData: keepPreviousData,
-  });
+  // Survey removed — Satisfaction Survey section discontinued.
+
 
   // Progress polling
   const [progress, setProgress] = useState<{ percent: number; message: string } | null>(null);
@@ -251,15 +244,15 @@ function CallCenterPage() {
         </div>
       </div>
 
-      {/* Progress bar (only during initial fetch) */}
-      {q.isFetching && !q.data && (
-        <Card>
+      {/* Progress bar — shows during any fetch so users get feedback on re-queries too */}
+      {q.isFetching && (
+        <Card className="border-primary/30 bg-primary/5">
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">{progress?.message ?? "Loading call records…"}</span>
-              <span className="tabular-nums text-muted-foreground">{progress?.percent ?? 0}%</span>
+              <span className="font-medium text-foreground">{progress?.message ?? (q.data ? "Refreshing analytics…" : "Loading call records…")}</span>
+              <span className="tabular-nums text-muted-foreground">{progress?.percent ?? (q.data ? 60 : 0)}%</span>
             </div>
-            <Progress value={progress?.percent ?? 0} />
+            <Progress value={progress?.percent ?? (q.data ? 60 : 5)} />
           </CardContent>
         </Card>
       )}
@@ -276,25 +269,25 @@ function CallCenterPage() {
       {/* HERO KPIs */}
       <SectionHeader>Overview</SectionHeader>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <HeroKpi label="Total calls" value={totals?.total ?? 0} loading={isLoading} icon={Users} />
-        <HeroKpi label="Answered calls" value={totals?.answered ?? 0} accent="text-emerald-600" loading={isLoading} icon={PhoneIncoming} />
-        <HeroKpi label="Answer rate" value={pct(totals?.answerRate)} accent="text-emerald-600" loading={isLoading} icon={PhoneIncoming} />
-        <HeroKpi label="Conversion rate" value={pct(conv?.overall.conversionRate)} accent="text-blue-600" loading={isLoading} icon={PhoneOutgoing} />
+        <HeroKpi label="Total calls" value={totals?.total ?? 0} loading={isLoading} icon={Users} tone="primary" />
+        <HeroKpi label="Answered calls" value={totals?.answered ?? 0} loading={isLoading} icon={PhoneIncoming} tone="success" />
+        <HeroKpi label="Answer rate" value={pct(totals?.answerRate)} loading={isLoading} icon={TrendingUp} tone="success" />
+        <HeroKpi label="Conversion rate" value={pct(totals?.total ? ((conv?.overall.orders ?? 0) / totals.total) * 100 : 0)} loading={isLoading} icon={PhoneOutgoing} tone="secondary" hint="Total orders ÷ total calls" />
       </div>
 
       {/* QUEUE STATS */}
       <SectionHeader>Queue statistics</SectionHeader>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Kpi label="Missed calls (queue)" value={totals?.missed ?? 0} accent="text-red-600" loading={isLoading} hint="Inbound not answered within ring window" />
-        <Kpi label="Abandoned calls" value={totals?.abandoned ?? 0} accent="text-orange-600" loading={isLoading} hint="Inbound hung up before ring threshold" />
+        <Kpi label="Missed calls (queue)" value={totals?.missed ?? 0} tone="destructive" loading={isLoading} hint="Inbound not answered within ring window" />
+        <Kpi label="Abandoned calls" value={totals?.abandoned ?? 0} tone="warning" loading={isLoading} hint="Inbound hung up before ring threshold" />
         <Kpi label="No-answer outbound" value={totals?.noAnswerOutbound ?? 0} loading={isLoading} hint="Customer did not pick up (not a missed call)" />
       </div>
 
       {/* DIRECTION */}
       <SectionHeader>Call direction</SectionHeader>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Kpi label="Inbound calls" value={totals?.inbound ?? 0} accent="text-emerald-600" loading={isLoading} icon={PhoneIncoming} />
-        <Kpi label="Outbound calls" value={totals?.outbound ?? 0} accent="text-blue-600" loading={isLoading} icon={PhoneOutgoing} />
+        <Kpi label="Inbound calls" value={totals?.inbound ?? 0} tone="success" loading={isLoading} icon={PhoneIncoming} />
+        <Kpi label="Outbound calls" value={totals?.outbound ?? 0} tone="secondary" loading={isLoading} icon={PhoneOutgoing} />
       </div>
 
       {/* TIME METRICS */}
@@ -319,24 +312,25 @@ function CallCenterPage() {
           <div className="grid lg:grid-cols-2 gap-3">
             <ChartCard title="Inbound vs outbound" loading={isLoading} hasData={byDay.length > 0}>
               <ResponsiveContainer>
-                <BarChart data={byDay}>
+                <BarChart data={byDay} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip /><Legend />
-                  <Bar dataKey="inbound" name="Inbound" fill="hsl(var(--chart-1))" stackId="a" />
-                  <Bar dataKey="outbound" name="Outbound" fill="hsl(var(--chart-2))" stackId="a" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} allowDecimals={false} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--color-muted)", opacity: 0.4 }} />
+                  <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                  <Bar dataKey="inbound" name="Inbound" fill="var(--color-chart-1)" radius={[6, 6, 0, 0]} stackId="a" />
+                  <Bar dataKey="outbound" name="Outbound" fill="var(--color-chart-3)" radius={[6, 6, 0, 0]} stackId="a" />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
             <ChartCard title="Answer rate over time" loading={isLoading} hasData={byDay.length > 0}>
               <ResponsiveContainer>
-                <LineChart data={byDay.map((d) => ({ date: d.date, rate: d.total ? (d.answered / d.total) * 100 : 0 }))}>
+                <LineChart data={byDay.map((d) => ({ date: d.date, rate: d.total ? (d.answered / d.total) * 100 : 0 }))} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                  <Tooltip formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
-                  <Line type="monotone" dataKey="rate" stroke="#16a34a" strokeWidth={2} dot={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`${Number(v).toFixed(1)}%`, "Answer rate"]} />
+                  <Line type="monotone" dataKey="rate" stroke="var(--color-chart-1)" strokeWidth={2.5} dot={{ r: 3, fill: "var(--color-chart-1)" }} activeDot={{ r: 5 }} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -346,16 +340,18 @@ function CallCenterPage() {
           <SectionHeader>Hourly distribution</SectionHeader>
           <ChartCard title="Calls by hour" loading={isLoading} hasData={byHour.some((h) => h.total > 0)}>
             <ResponsiveContainer>
-              <BarChart data={hourly12}>
+              <BarChart data={hourly12} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip /><Legend />
-                <Bar dataKey="inbound" name="Inbound" fill="hsl(var(--chart-1))" stackId="h" />
-                <Bar dataKey="outbound" name="Outbound" fill="hsl(var(--chart-2))" stackId="h" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} interval={0} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} allowDecimals={false} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--color-muted)", opacity: 0.4 }} />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Bar dataKey="inbound" name="Inbound" fill="var(--color-chart-1)" radius={[6, 6, 0, 0]} stackId="h" />
+                <Bar dataKey="outbound" name="Outbound" fill="var(--color-chart-3)" radius={[6, 6, 0, 0]} stackId="h" />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
+
 
           {/* TEAM COMPARE */}
           {teamCompare.length > 0 && (
@@ -363,11 +359,11 @@ function CallCenterPage() {
               <SectionHeader>Team comparison</SectionHeader>
               <div className="grid lg:grid-cols-2 gap-3">
                 {teamCompare.map((t) => (
-                  <Card key={t.team}>
-                    <CardHeader><CardTitle className="text-base">{t.team === "customer_care" ? "Customer Care" : "Telesales"}</CardTitle></CardHeader>
+                  <Card key={t.team} className="border-l-4" style={{ borderLeftColor: t.team === "customer_care" ? "var(--color-chart-1)" : "var(--color-chart-3)" }}>
+                    <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">{t.team === "customer_care" ? "Customer Care" : "Telesales"}</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <Kpi label="Calls" value={t.calls} loading={isLoading} />
-                      <Kpi label="Answered" value={t.answered} accent="text-emerald-600" loading={isLoading} />
+                      <Kpi label="Answered" value={t.answered} tone="success" loading={isLoading} />
                       <Kpi label="Answer rate" value={pct(t.answerRate)} loading={isLoading} />
                       <Kpi label="Total talk" value={hhmmss(t.talkSeconds)} loading={isLoading} />
                     </CardContent>
@@ -417,8 +413,8 @@ function CallCenterPage() {
                       <td className="px-3 py-2 font-medium">{a.name}</td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{a.team === "customer_care" ? "Customer Care" : "Telesales"}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{a.total}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{a.answered}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-red-600">{a.missed}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-success">{a.answered}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-destructive">{a.missed}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{a.noAnswerOutbound}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{a.inbound}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{a.outbound}</td>
@@ -439,21 +435,28 @@ function CallCenterPage() {
 
           {/* CONVERSION */}
           <SectionHeader>Telesales conversion</SectionHeader>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            <Kpi label="Answered (tele)" value={conv?.overall.answered ?? 0} loading={isLoading} />
-            <Kpi label="Completed orders" value={conv?.overall.completed ?? 0} accent="text-emerald-600" loading={isLoading} />
-            <Kpi label="Conversion rate" value={pct(conv?.overall.conversionRate)} accent="text-blue-600" loading={isLoading} />
-            <Kpi label="Revenue" value={conv ? fmtSAR(conv.overall.revenue) : "—"} loading={isLoading} />
-            <Kpi label="Revenue / call" value={conv ? fmtSAR(conv.overall.revenuePerCall) : "—"} loading={isLoading} />
-          </div>
+          {(() => {
+            const teleCalls = teamCompare.find((t) => t.team === "telesales")?.calls ?? 0;
+            const teleOrders = conv?.overall.orders ?? 0;
+            const teleConv = teleCalls ? (teleOrders / teleCalls) * 100 : 0;
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                <Kpi label="Telesales calls" value={teleCalls} loading={isLoading} />
+                <Kpi label="Total orders" value={teleOrders} tone="primary" loading={isLoading} />
+                <Kpi label="Completed" value={conv?.overall.completed ?? 0} tone="success" loading={isLoading} />
+                <Kpi label="Conversion rate" value={pct(teleConv)} tone="secondary" loading={isLoading} hint="Orders ÷ telesales calls" />
+                <Kpi label="Revenue" value={conv ? fmtSAR(conv.overall.revenue) : "—"} loading={isLoading} />
+              </div>
+            );
+          })()}
           <ChartCard title="Conversion rate per day" loading={isLoading} hasData={(conv?.perDay ?? []).length > 0}>
             <ResponsiveContainer>
-              <LineChart data={conv?.perDay ?? []}>
+              <LineChart data={conv?.perDay ?? []} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
-                <Tooltip formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
-                <Line type="monotone" dataKey="rate" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} tickFormatter={(v) => `${v}%`} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`${Number(v).toFixed(1)}%`, "Conversion"]} />
+                <Line type="monotone" dataKey="rate" stroke="var(--color-chart-1)" strokeWidth={2.5} dot={{ r: 3, fill: "var(--color-chart-1)" }} activeDot={{ r: 5 }} />
               </LineChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -480,7 +483,7 @@ function CallCenterPage() {
                       <td className="px-3 py-2 font-mono text-xs">{c.ext}</td>
                       <td className="px-3 py-2 font-medium">{c.name}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{c.answered}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{c.ordersCompleted}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-success">{c.ordersCompleted}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{c.conversionRate.toFixed(1)}%</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmtSAR(c.revenue)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmtSAR(c.revenuePerCall)}</td>
@@ -491,9 +494,8 @@ function CallCenterPage() {
             </CardContent>
           </Card>
 
-          {/* SATISFACTION */}
-          <SectionHeader>Satisfaction survey</SectionHeader>
-          <SurveySection loading={sq.isPending} data={sq.data} />
+          {/* Satisfaction Survey section removed per product decision. */}
+
         </>
       )}
     </div>
@@ -510,36 +512,63 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   );
 }
 
-function HeroKpi({ label, value, accent, loading, icon: Icon }: { label: string; value: string | number; accent?: string; loading?: boolean; icon?: any }) {
+const tooltipStyle: React.CSSProperties = {
+  background: "var(--color-popover)",
+  border: "1px solid var(--color-border)",
+  borderRadius: 10,
+  fontSize: 12,
+  boxShadow: "0 6px 20px -10px rgba(0,0,0,.25)",
+  color: "var(--color-foreground)",
+};
+
+type Tone = "primary" | "secondary" | "success" | "warning" | "destructive" | "muted";
+
+const toneMap: Record<Tone, { text: string; ring: string; iconBg: string; iconText: string }> = {
+  primary:     { text: "text-primary",     ring: "ring-primary/20",     iconBg: "bg-primary/10",     iconText: "text-primary" },
+  secondary:   { text: "text-secondary",   ring: "ring-secondary/20",   iconBg: "bg-secondary/10",   iconText: "text-secondary" },
+  success:     { text: "text-success",     ring: "ring-success/20",     iconBg: "bg-success/10",     iconText: "text-success" },
+  warning:     { text: "text-warning",     ring: "ring-warning/20",     iconBg: "bg-warning/10",     iconText: "text-warning" },
+  destructive: { text: "text-destructive", ring: "ring-destructive/20", iconBg: "bg-destructive/10", iconText: "text-destructive" },
+  muted:       { text: "text-foreground",  ring: "ring-border",         iconBg: "bg-muted",          iconText: "text-muted-foreground" },
+};
+
+function HeroKpi({ label, value, loading, icon: Icon, tone = "muted", hint }: { label: string; value: string | number; loading?: boolean; icon?: any; tone?: Tone; hint?: string }) {
+  const t = toneMap[tone];
   return (
-    <Card>
+    <Card className="overflow-hidden transition-shadow hover:shadow-md">
       <CardContent className="p-4 sm:p-5">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="text-xs font-medium text-muted-foreground">{label}</div>
-          {Icon && <Icon className="h-4 w-4 text-muted-foreground/60" />}
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</div>
+          {Icon && (
+            <div className={cn("rounded-lg p-2", t.iconBg)}>
+              <Icon className={cn("h-4 w-4", t.iconText)} />
+            </div>
+          )}
         </div>
         {loading ? (
-          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-9 w-24" />
         ) : (
-          <div className={cn("text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight", accent)}>{value}</div>
+          <div className={cn("text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight", t.text)}>{value}</div>
         )}
+        {hint && <div className="mt-1.5 text-[11px] text-muted-foreground/80">{hint}</div>}
       </CardContent>
     </Card>
   );
 }
 
-function Kpi({ label, value, accent, loading, icon: Icon, hint }: { label: string; value: string | number; accent?: string; loading?: boolean; icon?: any; hint?: string }) {
+function Kpi({ label, value, loading, icon: Icon, tone = "muted", hint }: { label: string; value: string | number; loading?: boolean; icon?: any; tone?: Tone; hint?: string }) {
+  const t = toneMap[tone];
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-sm">
       <CardContent className="p-3 sm:p-4">
-        <div className="flex items-center justify-between mb-1">
-          <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
-          {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground/60" />}
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{label}</div>
+          {Icon && <Icon className={cn("h-3.5 w-3.5", t.iconText)} />}
         </div>
         {loading ? (
           <Skeleton className="h-6 w-16" />
         ) : (
-          <div className={cn("text-lg sm:text-xl font-semibold tabular-nums", accent)}>{value}</div>
+          <div className={cn("text-lg sm:text-xl font-semibold tabular-nums", t.text)}>{value}</div>
         )}
         {hint && <div className="mt-1 text-[10px] text-muted-foreground/80">{hint}</div>}
       </CardContent>
@@ -550,7 +579,7 @@ function Kpi({ label, value, accent, loading, icon: Icon, hint }: { label: strin
 function ChartCard({ title, loading, hasData, children }: { title: string; loading?: boolean; hasData?: boolean; children: React.ReactNode }) {
   return (
     <Card>
-      <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+      <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">{title}</CardTitle></CardHeader>
       <CardContent className="h-64">
         {loading ? (
           <Skeleton className="h-full w-full" />
@@ -562,49 +591,8 @@ function ChartCard({ title, loading, hasData, children }: { title: string; loadi
   );
 }
 
-function SurveySection({ loading, data }: { loading: boolean; data: any }) {
-  const total = data?.total ?? 0;
-  const avg = data?.avg ?? 0;
-  const distribution = data?.distribution ?? [];
-  const trend = data?.trend ?? [];
-  const hasData = total > 0;
-  const responseRate = 0; // requires call-count baseline per survey source; left blank until IVR wire-in.
-  return (
-    <>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Kpi label="Survey responses" value={total} loading={loading} icon={Star} />
-        <Kpi label="Average score" value={hasData ? avg.toFixed(2) : "—"} accent="text-amber-600" loading={loading} icon={Star} />
-        <Kpi label="5-star responses" value={distribution.find((d: any) => d.rating === 5)?.count ?? 0} loading={loading} />
-        <Kpi label="Response rate" value={responseRate ? `${responseRate}%` : "—"} loading={loading} hint="Awaiting IVR data source" />
-      </div>
-      <div className="grid lg:grid-cols-2 gap-3">
-        <ChartCard title="Rating distribution" loading={loading} hasData={hasData}>
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie data={distribution} dataKey="count" nameKey="rating" outerRadius={90} label={(e: any) => `★${e.rating}`}>
-                {distribution.map((_: any, i: number) => (
-                  <Cell key={i} fill={["#dc2626", "#f97316", "#eab308", "#84cc16", "#16a34a"][i]} />
-                ))}
-              </Pie>
-              <Legend /><Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartCard>
-        <ChartCard title="Satisfaction trend" loading={loading} hasData={trend.length > 0}>
-          <ResponsiveContainer>
-            <LineChart data={trend}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} domain={[0, 5]} />
-              <Tooltip />
-              <Line type="monotone" dataKey="avg" name="Avg rating" stroke="#f59e0b" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
-    </>
-  );
-}
+// SurveySection removed — Satisfaction Survey has been discontinued.
+
 
 function hourLabel(h: number): string {
   if (h === 0) return "12 AM";
