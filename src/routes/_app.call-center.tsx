@@ -413,8 +413,8 @@ function CallCenterPage() {
                       <td className="px-3 py-2 font-medium">{a.name}</td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{a.team === "customer_care" ? "Customer Care" : "Telesales"}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{a.total}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{a.answered}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-red-600">{a.missed}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-success">{a.answered}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-destructive">{a.missed}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{a.noAnswerOutbound}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{a.inbound}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{a.outbound}</td>
