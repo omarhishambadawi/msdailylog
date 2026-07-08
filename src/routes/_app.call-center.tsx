@@ -554,49 +554,8 @@ function ChartCard({ title, loading, hasData, children }: { title: string; loadi
   );
 }
 
-function SurveySection({ loading, data }: { loading: boolean; data: any }) {
-  const total = data?.total ?? 0;
-  const avg = data?.avg ?? 0;
-  const distribution = data?.distribution ?? [];
-  const trend = data?.trend ?? [];
-  const hasData = total > 0;
-  const responseRate = 0; // requires call-count baseline per survey source; left blank until IVR wire-in.
-  return (
-    <>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Kpi label="Survey responses" value={total} loading={loading} icon={Star} />
-        <Kpi label="Average score" value={hasData ? avg.toFixed(2) : "—"} accent="text-amber-600" loading={loading} icon={Star} />
-        <Kpi label="5-star responses" value={distribution.find((d: any) => d.rating === 5)?.count ?? 0} loading={loading} />
-        <Kpi label="Response rate" value={responseRate ? `${responseRate}%` : "—"} loading={loading} hint="Awaiting IVR data source" />
-      </div>
-      <div className="grid lg:grid-cols-2 gap-3">
-        <ChartCard title="Rating distribution" loading={loading} hasData={hasData}>
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie data={distribution} dataKey="count" nameKey="rating" outerRadius={90} label={(e: any) => `★${e.rating}`}>
-                {distribution.map((_: any, i: number) => (
-                  <Cell key={i} fill={["#dc2626", "#f97316", "#eab308", "#84cc16", "#16a34a"][i]} />
-                ))}
-              </Pie>
-              <Legend /><Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartCard>
-        <ChartCard title="Satisfaction trend" loading={loading} hasData={trend.length > 0}>
-          <ResponsiveContainer>
-            <LineChart data={trend}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} domain={[0, 5]} />
-              <Tooltip />
-              <Line type="monotone" dataKey="avg" name="Avg rating" stroke="#f59e0b" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
-    </>
-  );
-}
+// SurveySection removed — Satisfaction Survey has been discontinued.
+
 
 function hourLabel(h: number): string {
   if (h === 0) return "12 AM";
