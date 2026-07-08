@@ -244,15 +244,15 @@ function CallCenterPage() {
         </div>
       </div>
 
-      {/* Progress bar (only during initial fetch) */}
-      {q.isFetching && !q.data && (
-        <Card>
+      {/* Progress bar — shows during any fetch so users get feedback on re-queries too */}
+      {q.isFetching && (
+        <Card className="border-primary/30 bg-primary/5">
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">{progress?.message ?? "Loading call records…"}</span>
-              <span className="tabular-nums text-muted-foreground">{progress?.percent ?? 0}%</span>
+              <span className="font-medium text-foreground">{progress?.message ?? (q.data ? "Refreshing analytics…" : "Loading call records…")}</span>
+              <span className="tabular-nums text-muted-foreground">{progress?.percent ?? (q.data ? 60 : 0)}%</span>
             </div>
-            <Progress value={progress?.percent ?? 0} />
+            <Progress value={progress?.percent ?? (q.data ? 60 : 5)} />
           </CardContent>
         </Card>
       )}
@@ -269,25 +269,25 @@ function CallCenterPage() {
       {/* HERO KPIs */}
       <SectionHeader>Overview</SectionHeader>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <HeroKpi label="Total calls" value={totals?.total ?? 0} loading={isLoading} icon={Users} />
-        <HeroKpi label="Answered calls" value={totals?.answered ?? 0} accent="text-emerald-600" loading={isLoading} icon={PhoneIncoming} />
-        <HeroKpi label="Answer rate" value={pct(totals?.answerRate)} accent="text-emerald-600" loading={isLoading} icon={PhoneIncoming} />
-        <HeroKpi label="Conversion rate" value={pct(conv?.overall.conversionRate)} accent="text-blue-600" loading={isLoading} icon={PhoneOutgoing} />
+        <HeroKpi label="Total calls" value={totals?.total ?? 0} loading={isLoading} icon={Users} tone="primary" />
+        <HeroKpi label="Answered calls" value={totals?.answered ?? 0} loading={isLoading} icon={PhoneIncoming} tone="success" />
+        <HeroKpi label="Answer rate" value={pct(totals?.answerRate)} loading={isLoading} icon={TrendingUp} tone="success" />
+        <HeroKpi label="Conversion rate" value={pct(totals?.total ? ((conv?.overall.orders ?? 0) / totals.total) * 100 : 0)} loading={isLoading} icon={PhoneOutgoing} tone="secondary" hint="Total orders ÷ total calls" />
       </div>
 
       {/* QUEUE STATS */}
       <SectionHeader>Queue statistics</SectionHeader>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Kpi label="Missed calls (queue)" value={totals?.missed ?? 0} accent="text-red-600" loading={isLoading} hint="Inbound not answered within ring window" />
-        <Kpi label="Abandoned calls" value={totals?.abandoned ?? 0} accent="text-orange-600" loading={isLoading} hint="Inbound hung up before ring threshold" />
+        <Kpi label="Missed calls (queue)" value={totals?.missed ?? 0} tone="destructive" loading={isLoading} hint="Inbound not answered within ring window" />
+        <Kpi label="Abandoned calls" value={totals?.abandoned ?? 0} tone="warning" loading={isLoading} hint="Inbound hung up before ring threshold" />
         <Kpi label="No-answer outbound" value={totals?.noAnswerOutbound ?? 0} loading={isLoading} hint="Customer did not pick up (not a missed call)" />
       </div>
 
       {/* DIRECTION */}
       <SectionHeader>Call direction</SectionHeader>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Kpi label="Inbound calls" value={totals?.inbound ?? 0} accent="text-emerald-600" loading={isLoading} icon={PhoneIncoming} />
-        <Kpi label="Outbound calls" value={totals?.outbound ?? 0} accent="text-blue-600" loading={isLoading} icon={PhoneOutgoing} />
+        <Kpi label="Inbound calls" value={totals?.inbound ?? 0} tone="success" loading={isLoading} icon={PhoneIncoming} />
+        <Kpi label="Outbound calls" value={totals?.outbound ?? 0} tone="secondary" loading={isLoading} icon={PhoneOutgoing} />
       </div>
 
       {/* TIME METRICS */}
@@ -312,24 +312,25 @@ function CallCenterPage() {
           <div className="grid lg:grid-cols-2 gap-3">
             <ChartCard title="Inbound vs outbound" loading={isLoading} hasData={byDay.length > 0}>
               <ResponsiveContainer>
-                <BarChart data={byDay}>
+                <BarChart data={byDay} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip /><Legend />
-                  <Bar dataKey="inbound" name="Inbound" fill="hsl(var(--chart-1))" stackId="a" />
-                  <Bar dataKey="outbound" name="Outbound" fill="hsl(var(--chart-2))" stackId="a" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} allowDecimals={false} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--color-muted)", opacity: 0.4 }} />
+                  <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                  <Bar dataKey="inbound" name="Inbound" fill="var(--color-chart-1)" radius={[6, 6, 0, 0]} stackId="a" />
+                  <Bar dataKey="outbound" name="Outbound" fill="var(--color-chart-3)" radius={[6, 6, 0, 0]} stackId="a" />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
             <ChartCard title="Answer rate over time" loading={isLoading} hasData={byDay.length > 0}>
               <ResponsiveContainer>
-                <LineChart data={byDay.map((d) => ({ date: d.date, rate: d.total ? (d.answered / d.total) * 100 : 0 }))}>
+                <LineChart data={byDay.map((d) => ({ date: d.date, rate: d.total ? (d.answered / d.total) * 100 : 0 }))} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                  <Tooltip formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
-                  <Line type="monotone" dataKey="rate" stroke="#16a34a" strokeWidth={2} dot={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`${Number(v).toFixed(1)}%`, "Answer rate"]} />
+                  <Line type="monotone" dataKey="rate" stroke="var(--color-chart-1)" strokeWidth={2.5} dot={{ r: 3, fill: "var(--color-chart-1)" }} activeDot={{ r: 5 }} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -339,16 +340,18 @@ function CallCenterPage() {
           <SectionHeader>Hourly distribution</SectionHeader>
           <ChartCard title="Calls by hour" loading={isLoading} hasData={byHour.some((h) => h.total > 0)}>
             <ResponsiveContainer>
-              <BarChart data={hourly12}>
+              <BarChart data={hourly12} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip /><Legend />
-                <Bar dataKey="inbound" name="Inbound" fill="hsl(var(--chart-1))" stackId="h" />
-                <Bar dataKey="outbound" name="Outbound" fill="hsl(var(--chart-2))" stackId="h" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} interval={0} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} allowDecimals={false} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--color-muted)", opacity: 0.4 }} />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Bar dataKey="inbound" name="Inbound" fill="var(--color-chart-1)" radius={[6, 6, 0, 0]} stackId="h" />
+                <Bar dataKey="outbound" name="Outbound" fill="var(--color-chart-3)" radius={[6, 6, 0, 0]} stackId="h" />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
+
 
           {/* TEAM COMPARE */}
           {teamCompare.length > 0 && (
