@@ -505,36 +505,63 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   );
 }
 
-function HeroKpi({ label, value, accent, loading, icon: Icon }: { label: string; value: string | number; accent?: string; loading?: boolean; icon?: any }) {
+const tooltipStyle: React.CSSProperties = {
+  background: "var(--color-popover)",
+  border: "1px solid var(--color-border)",
+  borderRadius: 10,
+  fontSize: 12,
+  boxShadow: "0 6px 20px -10px rgba(0,0,0,.25)",
+  color: "var(--color-foreground)",
+};
+
+type Tone = "primary" | "secondary" | "success" | "warning" | "destructive" | "muted";
+
+const toneMap: Record<Tone, { text: string; ring: string; iconBg: string; iconText: string }> = {
+  primary:     { text: "text-primary",     ring: "ring-primary/20",     iconBg: "bg-primary/10",     iconText: "text-primary" },
+  secondary:   { text: "text-secondary",   ring: "ring-secondary/20",   iconBg: "bg-secondary/10",   iconText: "text-secondary" },
+  success:     { text: "text-success",     ring: "ring-success/20",     iconBg: "bg-success/10",     iconText: "text-success" },
+  warning:     { text: "text-warning",     ring: "ring-warning/20",     iconBg: "bg-warning/10",     iconText: "text-warning" },
+  destructive: { text: "text-destructive", ring: "ring-destructive/20", iconBg: "bg-destructive/10", iconText: "text-destructive" },
+  muted:       { text: "text-foreground",  ring: "ring-border",         iconBg: "bg-muted",          iconText: "text-muted-foreground" },
+};
+
+function HeroKpi({ label, value, loading, icon: Icon, tone = "muted", hint }: { label: string; value: string | number; loading?: boolean; icon?: any; tone?: Tone; hint?: string }) {
+  const t = toneMap[tone];
   return (
-    <Card>
+    <Card className="overflow-hidden transition-shadow hover:shadow-md">
       <CardContent className="p-4 sm:p-5">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="text-xs font-medium text-muted-foreground">{label}</div>
-          {Icon && <Icon className="h-4 w-4 text-muted-foreground/60" />}
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</div>
+          {Icon && (
+            <div className={cn("rounded-lg p-2", t.iconBg)}>
+              <Icon className={cn("h-4 w-4", t.iconText)} />
+            </div>
+          )}
         </div>
         {loading ? (
-          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-9 w-24" />
         ) : (
-          <div className={cn("text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight", accent)}>{value}</div>
+          <div className={cn("text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight", t.text)}>{value}</div>
         )}
+        {hint && <div className="mt-1.5 text-[11px] text-muted-foreground/80">{hint}</div>}
       </CardContent>
     </Card>
   );
 }
 
-function Kpi({ label, value, accent, loading, icon: Icon, hint }: { label: string; value: string | number; accent?: string; loading?: boolean; icon?: any; hint?: string }) {
+function Kpi({ label, value, loading, icon: Icon, tone = "muted", hint }: { label: string; value: string | number; loading?: boolean; icon?: any; tone?: Tone; hint?: string }) {
+  const t = toneMap[tone];
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-sm">
       <CardContent className="p-3 sm:p-4">
-        <div className="flex items-center justify-between mb-1">
-          <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
-          {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground/60" />}
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{label}</div>
+          {Icon && <Icon className={cn("h-3.5 w-3.5", t.iconText)} />}
         </div>
         {loading ? (
           <Skeleton className="h-6 w-16" />
         ) : (
-          <div className={cn("text-lg sm:text-xl font-semibold tabular-nums", accent)}>{value}</div>
+          <div className={cn("text-lg sm:text-xl font-semibold tabular-nums", t.text)}>{value}</div>
         )}
         {hint && <div className="mt-1 text-[10px] text-muted-foreground/80">{hint}</div>}
       </CardContent>
@@ -545,7 +572,7 @@ function Kpi({ label, value, accent, loading, icon: Icon, hint }: { label: strin
 function ChartCard({ title, loading, hasData, children }: { title: string; loading?: boolean; hasData?: boolean; children: React.ReactNode }) {
   return (
     <Card>
-      <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+      <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">{title}</CardTitle></CardHeader>
       <CardContent className="h-64">
         {loading ? (
           <Skeleton className="h-full w-full" />
