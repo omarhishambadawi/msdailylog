@@ -11,17 +11,16 @@ import { format, startOfMonth } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
-  LineChart, Line, Legend, PieChart, Pie, Cell,
+  LineChart, Line, Legend,
 } from "recharts";
 // xlsx is lazy-loaded inside the export handler to keep it out of the initial route chunk.
 import {
-  Download, ShieldAlert, PhoneOff, AlertTriangle, Printer, Star, PhoneIncoming, PhoneOutgoing, Clock, Users,
+  Download, ShieldAlert, PhoneOff, AlertTriangle, Printer, PhoneIncoming, PhoneOutgoing, Clock, Users, TrendingUp,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { hasPerm } from "@/lib/permissions";
 import { getCallCenterAnalytics } from "@/lib/yeastar.functions";
-import { getSurveyAnalytics } from "@/lib/surveys.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
