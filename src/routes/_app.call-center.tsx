@@ -484,9 +484,8 @@ function CallCenterPage() {
             </CardContent>
           </Card>
 
-          {/* SATISFACTION */}
-          <SectionHeader>Satisfaction survey</SectionHeader>
-          <SurveySection loading={sq.isPending} data={sq.data} />
+          {/* Satisfaction Survey section removed per product decision. */}
+
         </>
       )}
     </div>
