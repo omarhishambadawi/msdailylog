@@ -359,11 +359,11 @@ function CallCenterPage() {
               <SectionHeader>Team comparison</SectionHeader>
               <div className="grid lg:grid-cols-2 gap-3">
                 {teamCompare.map((t) => (
-                  <Card key={t.team}>
-                    <CardHeader><CardTitle className="text-base">{t.team === "customer_care" ? "Customer Care" : "Telesales"}</CardTitle></CardHeader>
+                  <Card key={t.team} className="border-l-4" style={{ borderLeftColor: t.team === "customer_care" ? "var(--color-chart-1)" : "var(--color-chart-3)" }}>
+                    <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">{t.team === "customer_care" ? "Customer Care" : "Telesales"}</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <Kpi label="Calls" value={t.calls} loading={isLoading} />
-                      <Kpi label="Answered" value={t.answered} accent="text-emerald-600" loading={isLoading} />
+                      <Kpi label="Answered" value={t.answered} tone="success" loading={isLoading} />
                       <Kpi label="Answer rate" value={pct(t.answerRate)} loading={isLoading} />
                       <Kpi label="Total talk" value={hhmmss(t.talkSeconds)} loading={isLoading} />
                     </CardContent>
