@@ -435,13 +435,20 @@ function CallCenterPage() {
 
           {/* CONVERSION */}
           <SectionHeader>Telesales conversion</SectionHeader>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            <Kpi label="Answered (tele)" value={conv?.overall.answered ?? 0} loading={isLoading} />
-            <Kpi label="Completed orders" value={conv?.overall.completed ?? 0} accent="text-emerald-600" loading={isLoading} />
-            <Kpi label="Conversion rate" value={pct(conv?.overall.conversionRate)} accent="text-blue-600" loading={isLoading} />
-            <Kpi label="Revenue" value={conv ? fmtSAR(conv.overall.revenue) : "—"} loading={isLoading} />
-            <Kpi label="Revenue / call" value={conv ? fmtSAR(conv.overall.revenuePerCall) : "—"} loading={isLoading} />
-          </div>
+          {(() => {
+            const teleCalls = teamCompare.find((t) => t.team === "telesales")?.calls ?? 0;
+            const teleOrders = conv?.overall.orders ?? 0;
+            const teleConv = teleCalls ? (teleOrders / teleCalls) * 100 : 0;
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                <Kpi label="Telesales calls" value={teleCalls} loading={isLoading} />
+                <Kpi label="Total orders" value={teleOrders} tone="primary" loading={isLoading} />
+                <Kpi label="Completed" value={conv?.overall.completed ?? 0} tone="success" loading={isLoading} />
+                <Kpi label="Conversion rate" value={pct(teleConv)} tone="secondary" loading={isLoading} hint="Orders ÷ telesales calls" />
+                <Kpi label="Revenue" value={conv ? fmtSAR(conv.overall.revenue) : "—"} loading={isLoading} />
+              </div>
+            );
+          })()}
           <ChartCard title="Conversion rate per day" loading={isLoading} hasData={(conv?.perDay ?? []).length > 0}>
             <ResponsiveContainer>
               <LineChart data={conv?.perDay ?? []}>
