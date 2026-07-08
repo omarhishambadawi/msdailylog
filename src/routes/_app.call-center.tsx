@@ -106,14 +106,8 @@ function CallCenterPage() {
     placeholderData: keepPreviousData,
   });
 
-  // Survey query — separate, lightweight
-  const surveyFn = useServerFn(getSurveyAnalytics);
-  const sq = useQuery({
-    queryKey: ["cc-surveys", from, to, agentId],
-    queryFn: () => surveyFn({ data: { from, to, agentId: canAll && agentId !== "all" ? agentId : null } }),
-    staleTime: 5 * 60_000,
-    placeholderData: keepPreviousData,
-  });
+  // Survey removed — Satisfaction Survey section discontinued.
+
 
   // Progress polling
   const [progress, setProgress] = useState<{ percent: number; message: string } | null>(null);
