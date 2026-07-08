@@ -483,7 +483,7 @@ function CallCenterPage() {
                       <td className="px-3 py-2 font-mono text-xs">{c.ext}</td>
                       <td className="px-3 py-2 font-medium">{c.name}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{c.answered}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{c.ordersCompleted}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-success">{c.ordersCompleted}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{c.conversionRate.toFixed(1)}%</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmtSAR(c.revenue)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmtSAR(c.revenuePerCall)}</td>
