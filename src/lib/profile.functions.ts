@@ -19,7 +19,7 @@ export const updateMyProfile = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const patch: Record<string, unknown> = {};
+    const patch: { full_name?: string; avatar_url?: string | null } = {};
     if (data.fullName !== undefined) patch.full_name = data.fullName;
     if (data.avatarUrl !== undefined) patch.avatar_url = data.avatarUrl;
     if (Object.keys(patch).length === 0) return { ok: true };
