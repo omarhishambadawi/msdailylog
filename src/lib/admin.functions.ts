@@ -155,7 +155,7 @@ export const adminListUsers = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profiles, error } = await supabaseAdmin
       .from("profiles" as any)
-      .select("id,full_name,agent_code,active,permissions,created_at,yeastar_ext")
+      .select("id,full_name,agent_code,active,permissions,created_at,yeastar_ext,avatar_url")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     const { data: roles } = await supabaseAdmin.from("user_roles").select("user_id,role");

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useAuth, isAdministrator } from "@/lib/auth";
@@ -7,22 +7,44 @@ import { adminCreateUser, adminListUsers, adminSetActive, adminSetRole, adminSet
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ShieldAlert, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
+import { ShieldAlert, KeyRound, Pencil, Plus, Trash2, Search, MoreHorizontal, Users as UsersIcon } from "lucide-react";
 import { ALL_PERMISSIONS, defaultPermsForRole, PERMISSION_GROUPS, hasPerm } from "@/lib/permissions";
+import { UserAvatar } from "@/components/user-avatar";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/admin/users")({
-  head: () => ({ meta: [{ title: "Users — Admin" }] }),
+  head: () => ({ meta: [{ title: "Users — MilaServ Portal" }] }),
   component: AdminUsers,
 });
+
+type RoleKey = "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor";
+
+const ROLE_LABEL: Record<string, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  customer_care: "Customer Care",
+  telesales: "Telesales",
+  call_center: "Call Center",
+  auditor: "Auditor",
+};
+
+const ROLE_TONE: Record<string, string> = {
+  owner: "bg-primary/10 text-primary border-primary/30",
+  admin: "bg-secondary/15 text-secondary-foreground border-secondary/40",
+  auditor: "bg-muted text-muted-foreground border-border",
+  customer_care: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30",
+  telesales: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+  call_center: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30",
+};
 
 function AdminUsers() {
   const { role, profile } = useAuth();
@@ -43,11 +65,31 @@ function AdminUsers() {
   });
 
   const [openNew, setOpenNew] = useState(false);
-  const [nf, setNf] = useState({ email: "", password: "", fullName: "", agentCode: "", role: "customer_care" as "admin" | "customer_care" | "telesales" | "call_center" | "auditor" });
+  const [nf, setNf] = useState({ email: "", password: "", fullName: "", agentCode: "", role: "customer_care" as RoleKey });
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
   const [pwUser, setPwUser] = useState<any | null>(null);
   const [newPw, setNewPw] = useState("");
+
+  const [q, setQ] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const filtered = useMemo(() => {
+    const users = (data as any[]) ?? [];
+    const term = q.trim().toLowerCase();
+    return users.filter((u) => {
+      if (roleFilter !== "all" && (u.role ?? "") !== roleFilter) return false;
+      if (statusFilter === "active" && !u.active) return false;
+      if (statusFilter === "inactive" && u.active) return false;
+      if (!term) return true;
+      return (
+        (u.full_name ?? "").toLowerCase().includes(term) ||
+        (u.email ?? "").toLowerCase().includes(term) ||
+        (u.agent_code ?? "").toLowerCase().includes(term)
+      );
+    });
+  }, [data, q, roleFilter, statusFilter]);
 
   if (!canManageUsers) {
     return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to user management.</p></div>;
@@ -86,7 +128,6 @@ function AdminUsers() {
     try {
       const roleKey = (editing.role ?? "customer_care") as any;
       const currentPerms: string[] = editing.permissions ?? [];
-      // If the set equals role defaults, keep the user on auto-updating defaults (empty array).
       const toStore = editing._usingDefaults || permsEqual(currentPerms, defaultPermsForRole(roleKey))
         ? []
         : currentPerms;
@@ -105,7 +146,6 @@ function AdminUsers() {
     setEditing({ ...editing, permissions: next, _usingDefaults: false });
   };
 
-
   const savePw = async () => {
     if (!pwUser) return;
     try {
@@ -115,15 +155,23 @@ function AdminUsers() {
     } catch (e: any) { toast.error(e.message); }
   };
 
+  const totalCount = (data as any[])?.length ?? 0;
+  const activeCount = (data as any[])?.filter((u) => u.active).length ?? 0;
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 animate-in fade-in duration-150">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-          <p className="text-sm text-muted-foreground">Manage agents and administrators</p>
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <UsersIcon className="h-6 w-6 text-primary" /> Users
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {totalCount} total · {activeCount} active
+          </p>
         </div>
         <Dialog open={openNew} onOpenChange={setOpenNew}>
-          <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />New user</Button></DialogTrigger>
+          <DialogTrigger asChild><Button className="shadow-sm"><Plus className="h-4 w-4 mr-2" />Invite user</Button></DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Create user</DialogTitle></DialogHeader>
             <form onSubmit={onCreate} className="space-y-3">
@@ -136,7 +184,7 @@ function AdminUsers() {
                 <div className="space-y-2"><Label>Password</Label><Input type="password" minLength={8} required value={nf.password} onChange={(e) => setNf({ ...nf, password: e.target.value })} /></div>
                 <div className="space-y-2">
                   <Label>Role</Label>
-                  <Select value={nf.role} onValueChange={(v) => setNf({ ...nf, role: v as any })}>
+                  <Select value={nf.role} onValueChange={(v) => setNf({ ...nf, role: v as RoleKey })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="customer_care">Customer Care</SelectItem>
@@ -154,42 +202,119 @@ function AdminUsers() {
         </Dialog>
       </div>
 
+      {/* Toolbar */}
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="p-3 flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email, code…" className="pl-9 h-9" />
+          </div>
+          <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <SelectTrigger className="w-[180px] h-9"><SelectValue placeholder="All roles" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All roles</SelectItem>
+              {Object.entries(ROLE_LABEL).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="text-xs text-muted-foreground ml-auto">
+            {filtered.length} result{filtered.length === 1 ? "" : "s"}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Table */}
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Code</TableHead><TableHead>Role</TableHead><TableHead>Active</TableHead><TableHead className="text-right">Actions</TableHead></TableRow>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead className="hidden md:table-cell">Email</TableHead>
+                <TableHead className="hidden md:table-cell">Code</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Loading…</TableCell></TableRow>}
-              {error && <TableRow><TableCell colSpan={6} className="text-center text-destructive py-8">{(error as Error).message}</TableCell></TableRow>}
-              {(data ?? []).map((u: any) => (
-                <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.full_name}</TableCell>
-                  <TableCell>{u.email}</TableCell>
-                  <TableCell className="font-mono text-xs">{u.agent_code ?? "—"}</TableCell>
-                  <TableCell><Badge variant="outline" className="capitalize">{(u.role ?? "—").replace("_", " ")}</Badge></TableCell>
+              {isLoading && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-10">Loading…</TableCell></TableRow>}
+              {error && <TableRow><TableCell colSpan={6} className="text-center text-destructive py-10">{(error as Error).message}</TableCell></TableRow>}
+              {!isLoading && filtered.length === 0 && (
+                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-10">No users match your filters.</TableCell></TableRow>
+              )}
+              {filtered.map((u: any) => (
+                <TableRow key={u.id} className="group">
                   <TableCell>
-                    <Switch checked={u.active} onCheckedChange={async (v) => { try { await setActiveFn({ data: { userId: u.id, active: v } }); reload(); } catch (e: any) { toast.error(e.message); } }} />
+                    <div className="flex items-center gap-3 min-w-0">
+                      <UserAvatar name={u.full_name} url={u.avatar_url} size="sm" />
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{u.full_name}</div>
+                        <div className="text-xs text-muted-foreground truncate md:hidden">{u.email}</div>
+                      </div>
+                    </div>
                   </TableCell>
-                  <TableCell className="text-right space-x-1">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(u)}><Pencil className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="sm" onClick={() => setPwUser(u)}><KeyRound className="h-4 w-4" /></Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete {u.full_name}?</AlertDialogTitle>
-                          <AlertDialogDescription>This permanently removes the account and signs them out. Their existing orders are kept for records. This cannot be undone.</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={async () => { try { await delFn({ data: { userId: u.id } }); toast.success("User deleted"); reload(); } catch (e: any) { toast.error(e.message); } }}>Delete</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{u.email}</TableCell>
+                  <TableCell className="hidden md:table-cell font-mono text-xs">{u.agent_code ?? "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={cn("capitalize font-medium", ROLE_TONE[u.role ?? ""] ?? "")}>
+                      {ROLE_LABEL[u.role ?? ""] ?? "—"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className={cn("h-2 w-2 rounded-full", u.active ? "bg-emerald-500" : "bg-muted-foreground/40")} />
+                      <span className="text-xs">{u.active ? "Active" : "Inactive"}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 group-hover:opacity-100"><MoreHorizontal className="h-4 w-4" /></Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        <DropdownMenuItem onClick={() => openEdit(u)}>
+                          <Pencil className="h-4 w-4 mr-2" />Edit & permissions
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setPwUser(u)}>
+                          <KeyRound className="h-4 w-4 mr-2" />Reset password
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} asChild>
+                          <label className="flex items-center px-2 py-1.5 text-sm cursor-pointer">
+                            <span className="mr-auto">Active</span>
+                            <Switch
+                              checked={u.active}
+                              onCheckedChange={async (v) => { try { await setActiveFn({ data: { userId: u.id, active: v } }); reload(); } catch (e: any) { toast.error(e.message); } }}
+                            />
+                          </label>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive focus:text-destructive">
+                              <Trash2 className="h-4 w-4 mr-2" />Delete user
+                            </DropdownMenuItem>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete {u.full_name}?</AlertDialogTitle>
+                              <AlertDialogDescription>This permanently removes the account and signs them out. Their existing orders are kept for records. This cannot be undone.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={async () => { try { await delFn({ data: { userId: u.id } }); toast.success("User deleted"); reload(); } catch (e: any) { toast.error(e.message); } }}>Delete</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))}
@@ -198,11 +323,19 @@ function AdminUsers() {
         </CardContent>
       </Card>
 
+      {/* Edit dialog */}
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Edit user &amp; permissions</DialogTitle></DialogHeader>
           {editing && (
-            <div className="space-y-4">
+            <div className="space-y-5">
+              <div className="flex items-center gap-3 pb-3 border-b border-border">
+                <UserAvatar name={editing.full_name} url={editing.avatar_url} size="md" />
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{editing.full_name}</div>
+                  <div className="text-xs text-muted-foreground truncate">{editing.email}</div>
+                </div>
+              </div>
               <div className="grid sm:grid-cols-3 gap-3">
                 <div className="space-y-2 sm:col-span-2"><Label>Full name</Label><Input value={editing.full_name} onChange={(e) => setEditing({ ...editing, full_name: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Agent code</Label><Input value={editing.agent_code ?? ""} onChange={(e) => setEditing({ ...editing, agent_code: e.target.value })} /></div>
@@ -225,29 +358,30 @@ function AdminUsers() {
                   </Select>
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <Label>Permissions</Label>
                     <Badge variant={editing._usingDefaults ? "secondary" : "outline"} className="text-[10px]">
-                      {editing._usingDefaults ? "Using role defaults" : "Custom permissions"}
+                      {editing._usingDefaults ? "Using role defaults" : "Custom"}
                     </Badge>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditing({ ...editing, permissions: defaultPermsForRole((editing.role ?? "customer_care")), _usingDefaults: true })}>Reset to role defaults</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditing({ ...editing, permissions: defaultPermsForRole((editing.role ?? "customer_care")), _usingDefaults: true })}>Reset to defaults</Button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {PERMISSION_GROUPS.map((group) => {
                     const perms = ALL_PERMISSIONS.filter((p) => p.group === group);
+                    if (perms.length === 0) return null;
                     return (
-                      <div key={group} className="rounded-lg border bg-card p-3 space-y-2">
+                      <div key={group} className="rounded-lg border bg-card/40 p-3 space-y-2">
                         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b pb-1.5">{group}</div>
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           {perms.map((p) => {
                             const checked = (editing.permissions ?? []).includes(p.key);
                             return (
-                              <label key={p.key} className="flex items-center gap-2 text-sm cursor-pointer rounded px-1 py-0.5 hover:bg-accent/40">
-                                <Checkbox checked={checked} onCheckedChange={(v) => togglePerm(p.key, !!v)} />
-                                <span className="flex-1">{p.label}</span>
+                              <label key={p.key} className="flex items-center justify-between gap-2 text-sm cursor-pointer rounded px-1 py-1 hover:bg-accent/40 transition-colors duration-150">
+                                <span className="flex-1 min-w-0 truncate">{p.label}</span>
+                                <Switch checked={checked} onCheckedChange={(v) => togglePerm(p.key, !!v)} />
                               </label>
                             );
                           })}
@@ -258,10 +392,9 @@ function AdminUsers() {
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   {editing._usingDefaults
-                    ? "This user auto-tracks role defaults. Any change pins an exact custom set; saving a set identical to defaults keeps them on auto-updating defaults."
-                    : "Custom permission set. Click \"Reset to role defaults\" to return to auto-updating defaults. Admins always have all permissions."}
+                    ? "This user auto-tracks role defaults. Any change pins an exact custom set."
+                    : "Custom permission set. Click \"Reset to defaults\" to return to auto-updating defaults."}
                 </p>
-
               </div>
               <DialogFooter><Button onClick={saveEdit}>Save changes</Button></DialogFooter>
             </div>
@@ -269,6 +402,7 @@ function AdminUsers() {
         </DialogContent>
       </Dialog>
 
+      {/* Password dialog */}
       <Dialog open={!!pwUser} onOpenChange={(o) => { if (!o) { setPwUser(null); setNewPw(""); } }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Reset password</DialogTitle></DialogHeader>
