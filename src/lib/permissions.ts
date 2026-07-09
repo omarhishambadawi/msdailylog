@@ -1,7 +1,7 @@
 import type { AppRole } from "@/lib/auth";
 import { isAdministrator } from "@/lib/auth";
 
-export type PermissionGroup = "Orders" | "Complaints" | "Dashboard" | "Invoice Verification" | "Administration";
+export type PermissionGroup = "Orders" | "Complaints" | "Dashboard" | "Invoice Verification" | "Branches" | "Administration";
 
 export interface PermissionDef {
   key: string;
@@ -34,11 +34,13 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   { key: "verify_own_orders", label: "Verify Own Orders", group: "Invoice Verification" },
   { key: "verify_all_orders", label: "Verify All Orders", group: "Invoice Verification" },
   { key: "view_invoice_analytics", label: "View Invoice Analytics", group: "Invoice Verification" },
+  // Branches
+  { key: "view_branches", label: "View Branches", group: "Branches" },
   // Administration
   { key: "view_reports", label: "View All Reports", group: "Administration" },
   { key: "manage_users", label: "Manage Users", group: "Administration" },
   { key: "manage_roles", label: "Manage Roles", group: "Administration" },
-  { key: "admin_access", label: "Admin Access", group: "Administration" },
+  { key: "admin_access", label: "Admin Access (edit branches, system)", group: "Administration" },
 ] as const;
 
 export type PermKey = string;
@@ -53,6 +55,7 @@ const AUDITOR_PERMS: PermKey[] = [
   "view_invoice_analytics",
   "view_reports",
   "export_reports",
+  "view_branches",
 ];
 
 const AUDITOR_SAFE_READ_PERMS: PermKey[] = [...AUDITOR_PERMS];
@@ -63,12 +66,14 @@ const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin" | "owner">, PermKey[]>
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
     "view_dashboard", "view_team_analytics",
     "verify_own_orders", "view_invoice_analytics",
+    "view_branches",
     "export_reports",
   ],
   telesales: [
     "view_orders", "create_orders", "edit_orders",
     "view_dashboard", "view_team_analytics",
     "verify_own_orders", "view_invoice_analytics",
+    "view_branches",
     "export_reports",
   ],
   call_center: [
@@ -76,6 +81,7 @@ const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin" | "owner">, PermKey[]>
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
     "view_dashboard", "view_team_analytics", "view_call_center",
     "view_invoice_analytics", "export_reports",
+    "view_branches",
   ],
   auditor: AUDITOR_SAFE_READ_PERMS,
 };
@@ -88,25 +94,26 @@ const ROLE_DEFAULTS: Record<AppRole, PermKey[]> = {
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
     "view_dashboard", "view_team_analytics",
     "verify_own_orders",
+    "view_branches",
   ],
   telesales: [
     "view_orders", "create_orders", "edit_orders",
     "view_dashboard",
     "verify_own_orders",
+    "view_branches",
   ],
   call_center: [
     "view_orders",
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
     "view_dashboard", "view_team_analytics", "view_call_center",
+    "view_branches",
   ],
   auditor: AUDITOR_PERMS,
 };
 
 export function hasPerm(role: AppRole | null, permissions: string[] | null | undefined, perm: PermKey): boolean {
   if (!role) return false;
-  // Owner and admin have full access to every permission
   if (isAdministrator(role)) return true;
-  // Auditor is strictly read-only — custom grants may add read-only modules, never mutating perms
   if (role === "auditor") {
     if (!AUDITOR_SAFE_READ_PERMS.includes(perm)) return false;
     if (permissions && permissions.length > 0) return permissions.includes(perm);
@@ -121,4 +128,4 @@ export function defaultPermsForRole(role: AppRole): PermKey[] {
   return ROLE_DEFAULTS[role];
 }
 
-export const PERMISSION_GROUPS: PermissionGroup[] = ["Orders", "Complaints", "Dashboard", "Invoice Verification", "Administration"];
+export const PERMISSION_GROUPS: PermissionGroup[] = ["Orders", "Complaints", "Dashboard", "Invoice Verification", "Branches", "Administration"];
