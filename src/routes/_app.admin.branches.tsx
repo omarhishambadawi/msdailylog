@@ -9,18 +9,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Pencil, Plus, ShieldAlert, Trash2, Search } from "lucide-react";
+import { Pencil, Plus, ShieldAlert, Trash2, Search, Eye } from "lucide-react";
 import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app/admin/branches")({
-  head: () => ({ meta: [{ title: "Branches — Admin" }] }),
+  head: () => ({ meta: [{ title: "Branches — MilaServ Portal" }] }),
   component: AdminBranches,
 });
 
 function AdminBranches() {
   const { role, profile } = useAuth();
-  const canManageBranches = hasPerm(role, profile?.permissions as any, "admin_access");
+  const canView = hasPerm(role, profile?.permissions as any, "view_branches") || hasPerm(role, profile?.permissions as any, "admin_access");
+  const canManage = hasPerm(role, profile?.permissions as any, "admin_access");
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -33,11 +35,11 @@ function AdminBranches() {
       if (error) throw error;
       return data ?? [];
     },
-    enabled: canManageBranches,
+    enabled: canView,
   });
 
-  if (!canManageBranches) {
-    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to branch administration.</p></div>;
+  if (!canView) {
+    return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to Branches.</p></div>;
   }
 
   const filtered = (data ?? []).filter((b: any) => {
@@ -68,27 +70,34 @@ function AdminBranches() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Branches</h1>
+    <div className="space-y-4 animate-in fade-in duration-150">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-semibold tracking-tight">Branches</h1>
+            {!canManage && (
+              <Badge variant="outline" className="gap-1 text-[10px] uppercase tracking-wide"><Eye className="h-3 w-3" />Read-only</Badge>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">Centralized branch → city mapping</p>
         </div>
-        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setEditing(null); }}>
-          <DialogTrigger asChild>
-            <Button onClick={() => setEditing({ branch_no: "", city: "", _new: true })}><Plus className="h-4 w-4 mr-2" />Add branch</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>{editing?._new ? "Add branch" : "Edit branch"}</DialogTitle></DialogHeader>
-            {editing && (
-              <div className="space-y-3">
-                <div className="space-y-2"><Label>Branch No.</Label><Input value={editing.branch_no} disabled={!editing._new} onChange={(e) => setEditing({ ...editing, branch_no: e.target.value })} /></div>
-                <div className="space-y-2"><Label>City</Label><Input value={editing.city} onChange={(e) => setEditing({ ...editing, city: e.target.value })} /></div>
-                <DialogFooter><Button onClick={save}>Save</Button></DialogFooter>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+        {canManage && (
+          <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setEditing(null); }}>
+            <DialogTrigger asChild>
+              <Button onClick={() => setEditing({ branch_no: "", city: "", _new: true })}><Plus className="h-4 w-4 mr-2" />Add branch</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>{editing?._new ? "Add branch" : "Edit branch"}</DialogTitle></DialogHeader>
+              {editing && (
+                <div className="space-y-3">
+                  <div className="space-y-2"><Label>Branch No.</Label><Input value={editing.branch_no} disabled={!editing._new} onChange={(e) => setEditing({ ...editing, branch_no: e.target.value })} /></div>
+                  <div className="space-y-2"><Label>City</Label><Input value={editing.city} onChange={(e) => setEditing({ ...editing, city: e.target.value })} /></div>
+                  <DialogFooter><Button onClick={save}>Save</Button></DialogFooter>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <Card>
@@ -103,18 +112,29 @@ function AdminBranches() {
       <Card>
         <CardContent className="p-0">
           <Table>
-            <TableHeader><TableRow><TableHead>Branch No.</TableHead><TableHead>City</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Branch No.</TableHead>
+                <TableHead>City</TableHead>
+                {canManage && <TableHead className="text-right">Actions</TableHead>}
+              </TableRow>
+            </TableHeader>
             <TableBody>
               {filtered.map((b: any) => (
                 <TableRow key={b.branch_no}>
                   <TableCell className="font-mono">{b.branch_no}</TableCell>
                   <TableCell>{b.city}</TableCell>
-                  <TableCell className="text-right space-x-2">
-                    <Button variant="ghost" size="sm" onClick={() => { setEditing({ branch_no: b.branch_no, city: b.city }); setOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="sm" onClick={() => del(b.branch_no)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                  </TableCell>
+                  {canManage && (
+                    <TableCell className="text-right space-x-2">
+                      <Button variant="ghost" size="sm" onClick={() => { setEditing({ branch_no: b.branch_no, city: b.city }); setOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="sm" onClick={() => del(b.branch_no)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
+              {filtered.length === 0 && (
+                <TableRow><TableCell colSpan={canManage ? 3 : 2} className="text-center text-muted-foreground py-8">No branches match.</TableCell></TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
