@@ -49,16 +49,17 @@ function CallCenterPage() {
   const canAll = hasPerm(role, profile?.permissions as any, "view_all_agents");
   const canExport = hasPerm(role, profile?.permissions as any, "export_reports");
 
-  // Default: current month
+  // Default: today
   const today = new Date();
-  const [range, setRange] = useState<DateRange | undefined>({ from: startOfMonth(today), to: today });
+  const [range, setRange] = useState<DateRange | undefined>({ from: today, to: today });
   const [team, setTeam] = useState<Team>("all");
   const [agentId, setAgentId] = useState<string>("all");
   const [direction, setDirection] = useState<Direction>("all");
   const [search, setSearch] = useState("");
 
-  const from = range?.from ? toISO(range.from) : toISO(startOfMonth(today));
+  const from = range?.from ? toISO(range.from) : toISO(today);
   const to = range?.to ? toISO(range.to) : from;
+
 
   // Agents dropdown (admin only)
   const { data: agents } = useQuery({
