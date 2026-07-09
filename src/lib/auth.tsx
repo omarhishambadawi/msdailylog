@@ -20,7 +20,10 @@ export interface Profile {
   agent_code: string | null;
   active: boolean;
   permissions: string[];
+  yeastar_ext?: string | null;
+  created_at?: string;
 }
+
 
 interface AuthCtx {
   session: Session | null;
