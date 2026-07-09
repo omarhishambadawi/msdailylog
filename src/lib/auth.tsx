@@ -22,6 +22,7 @@ export interface Profile {
   permissions: string[];
   yeastar_ext?: string | null;
   created_at?: string;
+  avatar_url?: string | null;
 }
 
 

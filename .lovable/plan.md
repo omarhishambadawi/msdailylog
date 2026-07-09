@@ -1,39 +1,87 @@
-## Part 1 — Call Center Analytics Accuracy
+# UI/UX Refinement Plan
 
-The reported symptoms — Inbound 607 vs expected 247 (~2.4x), Answered 1129 vs 768, Abandoned 0 — point to two independent bugs:
+Six focused workstreams. No schema-breaking changes; one additive migration for avatars + `view_branches` permission.
 
-1. **Grouping falls through to per-row IDs.** Today `groupKey` is `linkedid ?? call_id ?? uid ?? new_id ?? id`. `uid`, `new_id`, and `id` are unique per CDR row, so when `linkedid`/`call_id` are absent (P-Series Cloud), every leg becomes its own group and multi-leg queue calls get counted 2–3x. That inflates Inbound and Answered.
-2. **Abandoned always 0.** Abandoned is defined as Inbound unanswered + ring < 5s. If those groups also collapse into a later ANSWERED leg (because `call_id` shares across the queue attempt and final answer), the abandoned bucket is never hit. Combined with bug #1, or if `ring_duration` is empty and the field is actually `agent_ring_time`/`wait_time`, this metric collapses to zero.
+## 1. Sidebar — compact-by-default
 
-### Fix
-- Rewrite `groupKey`: use `call_id` when present, else `linkedid`, else a **fingerprint** `${call_from_number}|${call_to_number}|floor(timestamp/120)` so adjacent legs of the same queue call collapse. Never fall through to `uid`/`id` (per-row unique).
-- **Row-level dedup** before grouping: drop exact duplicates on `(timestamp, call_from_number, call_to_number, disposition, talk_duration)`.
-- **Internal exclusion hardening**: also drop rows where both `call_from_number` and `call_to_number` are ≤4 digits (internal ext ranges) regardless of `call_type`.
-- **Ring / wait fallback**: compute ring seconds as `max(ring_duration, agent_ring_time, wait_time)` across the group so Abandoned can trigger.
-- Recompute per-agent stats from raw rows unchanged (already correct).
-- Expand `yeastarCdrProbe` sample to include `call_id`, `linkedid`, `uid`, `new_id`, `pin_code`, `id`, `agent_ring_time`, `wait_time`, `ring_duration` so we can verify the field shape from the Yeastar Diagnostics page and tune the heuristic if the numbers still don't line up.
+Rewrite `src/routes/_app.tsx`:
+- Default state: **collapsed** (icons + label under icon), width `w-20` (~80px).
+- Expanded state: icons + labels beside, width `w-56` (down from `w-64`).
+- Preference persisted to `localStorage` (`milaserv.sidebar.collapsed`), hydrated after mount to avoid SSR mismatch.
+- Toggle button in top bar (Menu icon) — clear affordance, `aria-expanded`.
+- Transition: `transition-[width] duration-200 ease-out` (was 300ms).
+- Active state: kept (primary bg + accent stripe), but tightened.
+- Logo area: **always-white rounded container** (`bg-white ring-1 ring-border`), padded, dark-mode safe. Sits in header regardless of collapsed/expanded.
 
-If after this fix numbers still drift, the probe output will tell us exactly which ID field ties queue legs together and I can lock the grouping to that single field.
+## 2. Global animation speed pass
 
-## Part 2 — Progressive Web App
+- Reduce durations: `duration-300` → `duration-150`/`200` on page transitions, sidebar, drawers.
+- Buttons/cards hover: `transition-colors duration-150`.
+- Route content wrapper: `duration-150` fade-in only (drop slide-in — it feels laggy).
+- Dropdowns/dialogs (shadcn) already use fast Radix defaults — no change needed unless a component overrides them.
 
-Follow the built-in PWA skill's controlled path (offline support was explicitly requested):
+## 3. Editable Profile + avatars
 
-- Add `vite-plugin-pwa` with `generateSW`, `registerType: "autoUpdate"`, `injectRegister: null`, `devOptions.enabled: false`.
-- Runtime caching: `NetworkFirst` for HTML navigations, `CacheFirst` for hashed same-origin assets, exclude `/~oauth`, `/_serverFn`, `/api`.
-- Create `src/lib/pwa/register.ts` — guarded wrapper that refuses to register in dev, iframe, Lovable preview hosts, or when `?sw=off`; unregisters any stale `/sw.js` in those contexts. Called once from `RootComponent`.
-- Manifest: name "MilaServ Portal", short_name "MilaServ", `display: standalone`, `theme_color` + `background_color` matching the app palette, start_url `/dashboard`, scope `/`.
-- Icons: generate a 512×512 brand mark (maskable + any purpose), reference 192 and 512 in the manifest.
-- `__root.tsx` head: add `<link rel="manifest">`, `<meta name="theme-color">`, `<link rel="apple-touch-icon">`.
+Migration:
+- Add `avatar_url text` to `public.profiles`.
+- Create private storage bucket `avatars` (per-user folder `${uid}/…`), RLS: user can CRUD own folder; anyone authenticated can read (needed to display avatars everywhere). Or public bucket — simpler for cross-user display. **Going public** so avatars render in orders/comments without signed URLs.
+- Add `view_branches` to permissions catalog (see §5).
 
-## Files touched
-- `src/lib/yeastar/stats.server.ts` — grouping, dedup, internal filter, ring fallback
-- `src/lib/yeastar.functions.ts` — expanded probe sample fields
-- `vite.config.ts` — add VitePWA plugin
-- `src/lib/pwa/register.ts` — new guarded registration
-- `src/routes/__root.tsx` — manifest link, theme-color, apple-touch-icon, register call
-- `public/manifest.webmanifest`, `public/pwa-192.png`, `public/pwa-512.png` — new
-- `package.json` — add `vite-plugin-pwa`
+`src/routes/_app.profile.tsx`:
+- Remove gradient banner.
+- Minimalist header: large avatar (Linear/Slack style), name, role badge, edit affordance.
+- Avatar upload dialog: file input → preview → Save/Remove. Uploads to `avatars/${uid}/avatar-<ts>.<ext>`, updates `profiles.avatar_url`.
+- Editable fields (with permission gate): `full_name`. `agent_code`, `yeastar_ext`, role, active flag remain admin-only (read-only for self).
+- Save via server fn using `requireSupabaseAuth` (writes own row).
 
-## Out of scope for this turn
-- Verifying the analytics numbers exactly match Yeastar totals — that requires you to open Admin → Yeastar Diagnostics after this ships and share the expanded probe sample so I can confirm which ID field groups the legs. If the numbers are still off, I'll pin the grouping to that field.
+Reusable `<UserAvatar userId? url? name? size />` component in `src/components/user-avatar.tsx` used by orders lists, comments, activity, sidebar profile card. Falls back to initials gradient (existing style) when no `avatar_url`.
+
+Wire into: sidebar profile card, mobile bottom-nav profile icon, orders list agent column, order detail activity/comments, complaint activity — wherever a name currently renders with initials.
+
+## 4. Branches read-only for agents
+
+Migration:
+- Add `view_branches` permission string (catalog only — no DB enum for permissions, they're text[] on profiles).
+- Update `has_permission` mapping in `src/lib/permissions.ts`: `customer_care`, `telesales`, `call_center` get `view_branches`; only `admin_access` gets edit/delete.
+
+Route `_app.admin.branches.tsx`:
+- Gate render on `view_branches` (not `admin_access`).
+- Hide Add/Edit/Delete/Import/Export buttons when `!admin_access`.
+- Add search + filter (existing table probably has search; verify and add if missing).
+- Sidebar link visibility: show for `view_branches` (currently gated on `admin_access`).
+
+## 5. Users page redesign
+
+Rewrite `src/routes/_app.admin.users.tsx` presentation only — keep existing server fns and mutations:
+- Header row with title + primary "Invite user" button.
+- Toolbar: search (name/email), role filter, status filter, results count.
+- Table redesigned with proper avatar column (uses `<UserAvatar />`), role badge with tone (owner=primary, admin=secondary, auditor=muted, others=outline), status pill (Active/Inactive with dot), overflow menu (…) for actions instead of raw buttons.
+- Permission management: switch from a wall of checkboxes to a **grouped popover/sheet** — grouped by section (Dashboard, Orders, Complaints, Call Center, Admin) with toggle switches. Better UX, same underlying `permissions text[]`.
+- Client-side pagination retained (or add simple `page-size` selector).
+- Mobile: table collapses to card list.
+
+## 6. Non-goals / preserved
+
+- Auth flow, RLS on orders/complaints, Call Center analytics logic — untouched.
+- Yeastar integration untouched.
+- Existing route paths unchanged.
+
+## Technical notes
+
+- Storage bucket via `supabase--storage_create_bucket` tool, then RLS policies via migration.
+- `profiles.avatar_url` returned by existing `get_my_profile()` RPC — update RPC signature to include the new column.
+- `Profile` interface extended with `avatar_url`.
+- No changes to `_authenticated`/auth middleware wiring.
+
+## Order of execution
+
+1. Migration (avatar_url column, `get_my_profile` update) + storage bucket.
+2. `permissions.ts` update + `Profile` type.
+3. `<UserAvatar />` component.
+4. Sidebar rewrite + white logo container + animation speeds.
+5. Profile page editable + minimalist header.
+6. Branches gating.
+7. Users page redesign.
+8. Wire `<UserAvatar />` into orders/complaints/activity lists.
+
+Ready to build on approval.
