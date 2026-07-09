@@ -297,6 +297,7 @@ export type Database = {
         Row: {
           active: boolean
           agent_code: string | null
+          avatar_url: string | null
           created_at: string
           full_name: string
           id: string
@@ -307,6 +308,7 @@ export type Database = {
         Insert: {
           active?: boolean
           agent_code?: string | null
+          avatar_url?: string | null
           created_at?: string
           full_name: string
           id: string
@@ -317,6 +319,7 @@ export type Database = {
         Update: {
           active?: boolean
           agent_code?: string | null
+          avatar_url?: string | null
           created_at?: string
           full_name?: string
           id?: string
@@ -458,6 +461,7 @@ export type Database = {
         Returns: {
           active: boolean
           agent_code: string | null
+          avatar_url: string | null
           created_at: string
           full_name: string
           id: string
