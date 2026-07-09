@@ -91,7 +91,8 @@ function CallCenterPage() {
     setJobId(id);
   }, [from, to, team, agentId, direction]);
 
-  // Analytics query — one call feeds every section
+  // Analytics query — one call feeds every section.
+  // Gate on auth readiness + permissions to prevent duplicate/premature fetches.
   const analyticsFn = useServerFn(getCallCenterAnalytics);
   const q = useQuery({
     queryKey: ["cc-analytics", from, to, team, agentId, direction],
@@ -104,14 +105,18 @@ function CallCenterPage() {
         jobId: jobIdRef.current,
       },
     }),
+    enabled: !authLoading && canView,
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
   // Survey removed — Satisfaction Survey section discontinued.
 
 
-  // Progress polling
+  // Progress polling — track live server progress during any fetch.
   const [progress, setProgress] = useState<{ percent: number; message: string } | null>(null);
   useEffect(() => {
     if (!q.isFetching || !jobId) { setProgress(null); return; }
@@ -129,7 +134,7 @@ function CallCenterPage() {
     return () => { stop = true; clearInterval(iv); };
   }, [q.isFetching, jobId]);
 
-  if (!canView) {
+  if (!authLoading && !canView) {
     return (
       <div className="text-center py-16">
         <ShieldAlert className="mx-auto h-10 w-10 text-destructive" />
@@ -141,10 +146,13 @@ function CallCenterPage() {
   const data = q.data;
   const ok = data && data.ok === true;
   const configured = !data || (data as any).configured !== false;
-  const isLoading = q.isPending;
+  // Use isFetching so the loading state persists across every fetch (initial + refetches),
+  // and treat auth loading as loading too to avoid a flash of empty KPIs.
+  const isLoading = authLoading || q.isFetching || (q.isPending && (q.fetchStatus !== "idle"));
   const errored = (data && data.ok === false) || !!q.error;
   const errMsg = q.error instanceof Error ? q.error.message
     : errored ? (configured ? "Call analytics are temporarily unavailable." : "Call analytics are not configured yet.") : null;
+
 
   const totals = ok ? data.totals : null;
   const rows = ok ? data.agents : [];
