@@ -42,12 +42,13 @@ type Team = "all" | "customer_care" | "telesales";
 type Direction = "all" | "Inbound" | "Outbound";
 
 function CallCenterPage() {
-  const { role, profile } = useAuth();
+  const { role, profile, loading: authLoading } = useAuth();
   const canView = hasPerm(role, profile?.permissions as any, "view_call_center")
     || hasPerm(role, profile?.permissions as any, "view_team_analytics")
     || hasPerm(role, profile?.permissions as any, "view_dashboard");
   const canAll = hasPerm(role, profile?.permissions as any, "view_all_agents");
   const canExport = hasPerm(role, profile?.permissions as any, "export_reports");
+
 
   // Default: today
   const today = new Date();
