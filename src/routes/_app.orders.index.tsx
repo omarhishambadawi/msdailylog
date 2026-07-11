@@ -396,25 +396,27 @@ function OrdersList() {
         <CardContent className="p-0">
           {/* Desktop / tablet table — raw table so overflow-x-auto works correctly */}
           <div className="hidden md:block w-full overflow-x-auto">
-            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1180 }}>
+            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1200 }}>
               <colgroup>
-                <col style={{ width: 40 }} />
+                <col style={{ width: 44 }} />
                 <col style={{ width: 168 }} />
-                <col style={{ width: 92 }} />
+                <col style={{ width: 176 }} />
                 <col style={{ width: 210 }} />
                 <col style={{ width: 160 }} />
-                <col style={{ width: 118 }} />
+                <col style={{ width: 140 }} />
                 <col style={{ width: 76 }} />
-                <col style={{ width: 112 }} />
+                <col style={{ width: 118 }} />
                 <col style={{ width: 122 }} />
                 <col style={{ width: 132 }} />
                 <col style={{ width: 48 }} />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
                 <tr className="text-[10.5px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                  <th className="text-center px-2 py-3 border-b border-border/70"></th>
+                  <th className="text-center px-2 py-3 border-b border-border/70" title="Call Center verified">
+                    <ShieldCheck className="h-4 w-4 mx-auto text-primary/80" aria-label="Verified" />
+                  </th>
                   <th className="text-left px-3 py-3 border-b border-border/70">Order</th>
-                  <th className="text-left px-2 py-3 border-b border-border/70">Date</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Date</th>
                   <th className="text-left px-3 py-3 border-b border-border/70">Customer</th>
                   <th className="text-left px-3 py-3 border-b border-border/70">Agent</th>
                   <th className="text-left px-3 py-3 border-b border-border/70">Invoice No.</th>
