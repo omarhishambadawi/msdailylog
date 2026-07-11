@@ -322,15 +322,16 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
               );
             })}
 
-            {/* Bubbles — render smallest first so the largest bubble paints on top */}
+            {/* Bubbles — render smallest first so the largest bubble paints on top.
+                Visual layer is not interactive; hit-testing is handled by the
+                dedicated top-most layer below to avoid overlap hijacking hover
+                (e.g. Jeddah/Makkah/Taif clustering). */}
             {[...placed].reverse().map((p, i) => {
               const active = hoverName === p.name;
               return (
                 <g key={p.name}
-                  onMouseEnter={() => setHoverName(p.name)}
-                  onMouseLeave={() => setHoverName((n) => (n === p.name ? null : n))}
                   style={{
-                    cursor: "pointer",
+                    pointerEvents: "none",
                     transformOrigin: `${p.cx}px ${p.cy}px`,
                     transform: mounted ? "scale(1)" : "scale(0)",
                     opacity: mounted ? 1 : 0,
@@ -384,6 +385,26 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                 </circle>
               </g>
             )}
+
+            {/* Top-most hit-target layer — smaller bubbles rendered last so
+                overlapping clusters (Jeddah / Makkah / Taif) each capture
+                their own hover accurately. Transparent circles clamped to a
+                minimum radius for reliable pointer targets on any density. */}
+            {[...placed].sort((a, b) => b.r - a.r).map((p) => (
+              <circle
+                key={`hit-${p.name}`}
+                cx={p.cx}
+                cy={p.cy}
+                r={Math.max(p.r, 10)}
+                fill="transparent"
+                style={{ cursor: "pointer" }}
+                onMouseEnter={() => setHoverName(p.name)}
+                onMouseLeave={() => setHoverName((n) => (n === p.name ? null : n))}
+                onTouchStart={() => setHoverName(p.name)}
+              >
+                <title>{p.name}</title>
+              </circle>
+            ))}
           </svg>
 
           {hover && (() => {

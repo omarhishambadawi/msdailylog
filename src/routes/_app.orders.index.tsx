@@ -9,8 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 
-import { Check, ChevronLeft, ChevronRight, Copy, Download, Eye, Pencil, Plus, Search } from "lucide-react";
-import { format } from "date-fns";
+import { Check, ChevronLeft, ChevronRight, Copy, Download, Eye, Pencil, Plus, Search, ShieldCheck } from "lucide-react";
+import { format, parseISO } from "date-fns";
 import type { DateRange } from "react-day-picker";
 // xlsx is lazy-loaded inside the export handler to keep it out of the initial route chunk.
 import { STATUSES, STATUS_STYLES, TEAMS, CURRENCY, fmtSAR, formatOrderNo } from "@/lib/branches";
@@ -29,6 +29,18 @@ const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_STORAGE_KEY = "orders.pageSize";
 const normalizeSearchTerm = (value: string) => value.replace(/[,%.*()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+
+/** Format ISO date as "Friday, Jul 10, 2026". */
+const fmtOrderDate = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  try { return format(parseISO(iso), "EEEE, MMM d, yyyy"); } catch { return String(iso); }
+};
+
+/** Short form for mobile / dense cells: "Fri, Jul 10". */
+const fmtOrderDateShort = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  try { return format(parseISO(iso), "EEE, MMM d"); } catch { return String(iso); }
+};
 
 // In-memory filter cache. Survives SPA navigation (e.g. edit an order and come
 // back) but is wiped on a full page refresh because the JS module reloads.
@@ -282,12 +294,12 @@ function OrdersList() {
     const XLSX = await import("xlsx");
     const xrows = all.map((o: any) => ({
       "Order #": formatOrderNo(o.team, o.display_no),
-      Date: o.order_date,
+      Date: fmtOrderDate(o.order_date),
       Team: o.team === "telesales" ? "Telesales" : "Customer Care",
       Agent: names?.get(o.agent_id)?.full_name ?? "",
       "Agent Code": names?.get(o.agent_id)?.agent_code ?? "",
-      "Customer Name": o.customer_name,
-      "Customer Phone": o.customer_phone,
+      Customer: o.customer_name,
+      "Phone Number": o.customer_phone,
       "Order Type": o.order_type,
       "Branch No.": o.branch_no,
       City: cities?.get(o.branch_no) ?? "",
@@ -384,25 +396,27 @@ function OrdersList() {
         <CardContent className="p-0">
           {/* Desktop / tablet table — raw table so overflow-x-auto works correctly */}
           <div className="hidden md:block w-full overflow-x-auto">
-            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1180 }}>
+            <table className="w-full caption-bottom text-sm border-separate border-spacing-0" style={{ minWidth: 1200 }}>
               <colgroup>
-                <col style={{ width: 40 }} />
+                <col style={{ width: 44 }} />
                 <col style={{ width: 168 }} />
-                <col style={{ width: 92 }} />
+                <col style={{ width: 176 }} />
                 <col style={{ width: 210 }} />
                 <col style={{ width: 160 }} />
-                <col style={{ width: 118 }} />
+                <col style={{ width: 140 }} />
                 <col style={{ width: 76 }} />
-                <col style={{ width: 112 }} />
+                <col style={{ width: 118 }} />
                 <col style={{ width: 122 }} />
                 <col style={{ width: 132 }} />
                 <col style={{ width: 48 }} />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
                 <tr className="text-[10.5px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                  <th className="text-center px-2 py-3 border-b border-border/70"></th>
+                  <th className="text-center px-2 py-3 border-b border-border/70" title="Call Center verified">
+                    <ShieldCheck className="h-4 w-4 mx-auto text-primary/80" aria-label="Verified" />
+                  </th>
                   <th className="text-left px-3 py-3 border-b border-border/70">Order</th>
-                  <th className="text-left px-2 py-3 border-b border-border/70">Date</th>
+                  <th className="text-left px-3 py-3 border-b border-border/70">Date</th>
                   <th className="text-left px-3 py-3 border-b border-border/70">Customer</th>
                   <th className="text-left px-3 py-3 border-b border-border/70">Agent</th>
                   <th className="text-left px-3 py-3 border-b border-border/70">Invoice No.</th>
@@ -441,7 +455,7 @@ function OrdersList() {
                         </div>
                       </td>
 
-                      <td className={cn("px-2 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{o.order_date}</td>
+                      <td className={cn("px-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{fmtOrderDate(o.order_date)}</td>
                       <td className={cn("px-3 text-sm", cellCls)}>
                         <div className="truncate font-semibold text-foreground leading-tight">{o.customer_name || <span className="text-muted-foreground font-normal">—</span>}</div>
                         {o.customer_phone && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.customer_phone}</div>}
@@ -451,7 +465,7 @@ function OrdersList() {
                         {o.agent_code && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.agent_code}</div>}
                       </td>
                       <td className={cn("px-3 text-[13px] font-mono text-foreground/90", cellCls)}>
-                        <div className="truncate">{o.invoice_no || <span className="text-muted-foreground font-sans">—</span>}</div>
+                        <InvoiceCell value={o.invoice_no} />
                       </td>
                       <td className={cn("px-2 text-xs text-muted-foreground whitespace-nowrap", cellCls)}>{o.order_type}</td>
                       <td className={cn("px-3 text-sm", cellCls)}>
@@ -507,7 +521,7 @@ function OrdersList() {
                           <TeamBadge team={o.team} />
                         </div>
 
-                        <span className="text-xs text-muted-foreground ml-auto">{o.order_date}</span>
+                        <span className="text-xs text-muted-foreground ml-auto">{fmtOrderDateShort(o.order_date)}</span>
                       </div>
                       <div className="mt-2 text-sm font-medium truncate">{o.customer_name || <span className="text-muted-foreground font-normal">No customer</span>}</div>
                       {o.customer_phone && <div className="text-xs text-muted-foreground font-mono truncate">{o.customer_phone}</div>}
@@ -657,6 +671,28 @@ function KpiCard({ label, tone, highlight, totalSales, completedSales, totalOrde
           <div className="text-2xl font-bold tabular-nums leading-tight text-green-600 dark:text-green-400">{completedOrders}</div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Displays one or many invoice numbers. Splits on comma/newline, shows the
+ *  first inline with a "+N" chip listing the rest in a tooltip title. */
+function InvoiceCell({ value }: { value: string | null | undefined }) {
+  if (!value) return <span className="text-muted-foreground font-sans">—</span>;
+  const parts = String(value).split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
+  if (parts.length === 0) return <span className="text-muted-foreground font-sans">—</span>;
+  const [first, ...rest] = parts;
+  return (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span className="truncate">{first}</span>
+      {rest.length > 0 && (
+        <span
+          className="shrink-0 inline-flex items-center rounded-full bg-primary/10 text-primary text-[10px] font-sans font-semibold px-1.5 py-0.5 leading-none"
+          title={parts.join(", ")}
+        >
+          +{rest.length}
+        </span>
+      )}
     </div>
   );
 }

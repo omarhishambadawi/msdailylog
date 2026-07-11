@@ -94,14 +94,12 @@ function AppLayout() {
 
   const SidebarContent = (
     <>
-      {/* Logo — always on a white plate regardless of theme */}
+      {/* Logo — inline, no plate/container */}
       <div className={cn(
         "px-3 py-4 border-b border-border flex items-center gap-3",
         !expanded && "justify-center px-2",
       )}>
-        <div className="shrink-0 bg-white rounded-xl p-1.5 ring-1 ring-border shadow-sm">
-          <img src={logo.url} alt="MilaServ" className="h-9 w-9 object-contain" />
-        </div>
+        <img src={logo.url} alt="MilaServ" className="h-10 w-10 object-contain shrink-0 drop-shadow-sm" />
         {expanded && (
           <div className="min-w-0">
             <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
@@ -214,50 +212,11 @@ function AppLayout() {
         {/* Route content — quick fade-in */}
         <div
           key={location.pathname}
-          className="p-3 sm:p-4 lg:p-6 xl:px-8 w-full pb-24 md:pb-6 animate-in fade-in duration-150"
+          className="p-3 sm:p-4 lg:p-6 xl:px-8 w-full animate-in fade-in duration-150"
         >
           <Outlet />
         </div>
       </main>
-
-      {/* Mobile bottom nav */}
-      <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-card/95 backdrop-blur border-t border-border shadow-[0_-4px_16px_-8px_rgba(0,0,0,0.15)]"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <ul className="grid grid-cols-5">
-          {mobileNav.map((n) => {
-            const active = activePath === n.to;
-            const Icon = n.icon;
-            return (
-              <li key={n.to}>
-                <Link
-                  to={n.to}
-                  className={cn(
-                    "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors duration-150",
-                    active ? "text-primary" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Icon className={cn("h-5 w-5 transition-transform duration-150", active && "scale-110")} />
-                  <span className="truncate max-w-[64px]">{n.label}</span>
-                </Link>
-              </li>
-            );
-          })}
-          <li>
-            <Link
-              to="/profile"
-              className={cn(
-                "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors duration-150",
-                activePath === "/profile" || location.pathname.startsWith("/profile") ? "text-primary" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <UserCircle2 className="h-5 w-5" />
-              <span>Profile</span>
-            </Link>
-          </li>
-        </ul>
-      </nav>
     </div>
   );
 }
@@ -273,9 +232,7 @@ function MobileSidebar({ nav, activePath, profile, role, email, onSignOut }: {
   return (
     <>
       <div className="px-3 py-3 border-b border-border flex items-center gap-3">
-        <div className="shrink-0 bg-white rounded-xl p-1.5 ring-1 ring-border shadow-sm">
-          <img src={logo.url} alt="MilaServ" className="h-9 w-9 object-contain" />
-        </div>
+        <img src={logo.url} alt="MilaServ" className="h-10 w-10 object-contain shrink-0 drop-shadow-sm" />
         <div className="min-w-0">
           <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
           <div className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">Portal</div>

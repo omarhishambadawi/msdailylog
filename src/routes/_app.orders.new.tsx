@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronsUpDown, Clock, ShieldAlert, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronsUpDown, Clock, Plus, ShieldAlert, Trash2, X } from "lucide-react";
 import { ORDER_TYPES, DELIVERY_TYPES, TEAMS, CURRENCY, formatOrderNo } from "@/lib/branches";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
@@ -75,11 +75,11 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
     customer_phone: "",
     branch_no: "" as string | null,
     delivery_type: "",
-    invoice_no: "",
     invoice_value: "",
     notes: "",
     status: "Pending",
   });
+  const [invoices, setInvoices] = useState<string[]>([""]);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -103,11 +103,13 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         customer_phone: (existing as any).customer_phone ?? "",
         branch_no: existing.branch_no ?? "",
         delivery_type: existing.delivery_type ?? "",
-        invoice_no: existing.invoice_no ?? "",
         invoice_value: existing.invoice_value?.toString() ?? "",
         notes: existing.notes ?? "",
         status: existing.status,
       });
+      const raw = (existing.invoice_no ?? "").toString();
+      const parts = raw.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
+      setInvoices(parts.length > 0 ? parts : [""]);
     }
   }, [existing]);
 
@@ -116,6 +118,8 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
   }, [role, mode]);
 
   const cityFor = useMemo(() => (b: string | null) => branches?.find((x) => x.branch_no === b)?.city ?? "", [branches]);
+
+  const invoicesJoined = invoices.map((s) => s.trim()).filter(Boolean).join(", ");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,7 +132,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         customer_name: form.customer_name || null,
         customer_phone: form.customer_phone || null,
         branch_no: form.branch_no || "",
-        invoice_no: form.invoice_no || null,
+        invoice_no: invoicesJoined || null,
         notes: form.notes || null,
         status: mode === "create" ? "Pending" : form.status,
       });
@@ -252,9 +256,44 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               <Label>Order value ({CURRENCY})</Label>
               <Input type="number" step="0.01" min="0" value={form.invoice_value} onChange={(e) => setForm({ ...form, invoice_value: e.target.value })} placeholder="0.00" />
             </div>
-            <div className="space-y-2">
-              <Label>Invoice No.</Label>
-              <Input value={form.invoice_no} onChange={(e) => setForm({ ...form, invoice_no: e.target.value })} />
+            <div className="space-y-2 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <Label>Invoice No. <span className="text-xs text-muted-foreground font-normal">(one or many)</span></Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  disabled={readOnly}
+                  onClick={() => setInvoices((arr) => [...arr, ""])}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add invoice
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {invoices.map((val, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={val}
+                      onChange={(e) => setInvoices((arr) => arr.map((v, j) => (j === i ? e.target.value : v)))}
+                      placeholder={`Invoice ${i + 1}`}
+                    />
+                    {invoices.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                        disabled={readOnly}
+                        onClick={() => setInvoices((arr) => arr.filter((_, j) => j !== i))}
+                        aria-label="Remove invoice"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label>Notes</Label>
