@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronsUpDown, Clock, ShieldAlert, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronsUpDown, Clock, Plus, ShieldAlert, Trash2, X } from "lucide-react";
 import { ORDER_TYPES, DELIVERY_TYPES, TEAMS, CURRENCY, formatOrderNo } from "@/lib/branches";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
