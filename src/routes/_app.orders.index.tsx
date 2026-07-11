@@ -455,7 +455,7 @@ function OrdersList() {
                         </div>
                       </td>
 
-                      <td className={cn("px-2 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{o.order_date}</td>
+                      <td className={cn("px-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums", cellCls)}>{fmtOrderDate(o.order_date)}</td>
                       <td className={cn("px-3 text-sm", cellCls)}>
                         <div className="truncate font-semibold text-foreground leading-tight">{o.customer_name || <span className="text-muted-foreground font-normal">—</span>}</div>
                         {o.customer_phone && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.customer_phone}</div>}
@@ -465,7 +465,7 @@ function OrdersList() {
                         {o.agent_code && <div className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">{o.agent_code}</div>}
                       </td>
                       <td className={cn("px-3 text-[13px] font-mono text-foreground/90", cellCls)}>
-                        <div className="truncate">{o.invoice_no || <span className="text-muted-foreground font-sans">—</span>}</div>
+                        <InvoiceCell value={o.invoice_no} />
                       </td>
                       <td className={cn("px-2 text-xs text-muted-foreground whitespace-nowrap", cellCls)}>{o.order_type}</td>
                       <td className={cn("px-3 text-sm", cellCls)}>
