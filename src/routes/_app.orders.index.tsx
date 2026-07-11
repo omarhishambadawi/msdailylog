@@ -30,6 +30,18 @@ const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_STORAGE_KEY = "orders.pageSize";
 const normalizeSearchTerm = (value: string) => value.replace(/[,%.*()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
 
+/** Format ISO date as "Friday, Jul 10, 2026". */
+const fmtOrderDate = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  try { return format(parseISO(iso), "EEEE, MMM d, yyyy"); } catch { return String(iso); }
+};
+
+/** Short form for mobile / dense cells: "Fri, Jul 10". */
+const fmtOrderDateShort = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  try { return format(parseISO(iso), "EEE, MMM d"); } catch { return String(iso); }
+};
+
 // In-memory filter cache. Survives SPA navigation (e.g. edit an order and come
 // back) but is wiped on a full page refresh because the JS module reloads.
 type OrdersFilterCache = {
