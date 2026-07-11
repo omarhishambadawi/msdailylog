@@ -294,12 +294,12 @@ function OrdersList() {
     const XLSX = await import("xlsx");
     const xrows = all.map((o: any) => ({
       "Order #": formatOrderNo(o.team, o.display_no),
-      Date: o.order_date,
+      Date: fmtOrderDate(o.order_date),
       Team: o.team === "telesales" ? "Telesales" : "Customer Care",
       Agent: names?.get(o.agent_id)?.full_name ?? "",
       "Agent Code": names?.get(o.agent_id)?.agent_code ?? "",
-      "Customer Name": o.customer_name,
-      "Customer Phone": o.customer_phone,
+      Customer: o.customer_name,
+      "Phone Number": o.customer_phone,
       "Order Type": o.order_type,
       "Branch No.": o.branch_no,
       City: cities?.get(o.branch_no) ?? "",
