@@ -521,7 +521,7 @@ function OrdersList() {
                           <TeamBadge team={o.team} />
                         </div>
 
-                        <span className="text-xs text-muted-foreground ml-auto">{o.order_date}</span>
+                        <span className="text-xs text-muted-foreground ml-auto">{fmtOrderDateShort(o.order_date)}</span>
                       </div>
                       <div className="mt-2 text-sm font-medium truncate">{o.customer_name || <span className="text-muted-foreground font-normal">No customer</span>}</div>
                       {o.customer_phone && <div className="text-xs text-muted-foreground font-mono truncate">{o.customer_phone}</div>}
