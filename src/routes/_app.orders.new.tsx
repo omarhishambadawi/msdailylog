@@ -75,11 +75,11 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
     customer_phone: "",
     branch_no: "" as string | null,
     delivery_type: "",
-    invoice_no: "",
     invoice_value: "",
     notes: "",
     status: "Pending",
   });
+  const [invoices, setInvoices] = useState<string[]>([""]);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
 
