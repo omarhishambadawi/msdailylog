@@ -385,6 +385,26 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                 </circle>
               </g>
             )}
+
+            {/* Top-most hit-target layer — smaller bubbles rendered last so
+                overlapping clusters (Jeddah / Makkah / Taif) each capture
+                their own hover accurately. Transparent circles clamped to a
+                minimum radius for reliable pointer targets on any density. */}
+            {[...placed].sort((a, b) => b.r - a.r).map((p) => (
+              <circle
+                key={`hit-${p.name}`}
+                cx={p.cx}
+                cy={p.cy}
+                r={Math.max(p.r, 10)}
+                fill="transparent"
+                style={{ cursor: "pointer" }}
+                onMouseEnter={() => setHoverName(p.name)}
+                onMouseLeave={() => setHoverName((n) => (n === p.name ? null : n))}
+                onTouchStart={() => setHoverName(p.name)}
+              >
+                <title>{p.name}</title>
+              </circle>
+            ))}
           </svg>
 
           {hover && (() => {
