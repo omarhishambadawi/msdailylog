@@ -212,50 +212,11 @@ function AppLayout() {
         {/* Route content — quick fade-in */}
         <div
           key={location.pathname}
-          className="p-3 sm:p-4 lg:p-6 xl:px-8 w-full pb-24 md:pb-6 animate-in fade-in duration-150"
+          className="p-3 sm:p-4 lg:p-6 xl:px-8 w-full animate-in fade-in duration-150"
         >
           <Outlet />
         </div>
       </main>
-
-      {/* Mobile bottom nav */}
-      <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-card/95 backdrop-blur border-t border-border shadow-[0_-4px_16px_-8px_rgba(0,0,0,0.15)]"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <ul className="grid grid-cols-5">
-          {mobileNav.map((n) => {
-            const active = activePath === n.to;
-            const Icon = n.icon;
-            return (
-              <li key={n.to}>
-                <Link
-                  to={n.to}
-                  className={cn(
-                    "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors duration-150",
-                    active ? "text-primary" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Icon className={cn("h-5 w-5 transition-transform duration-150", active && "scale-110")} />
-                  <span className="truncate max-w-[64px]">{n.label}</span>
-                </Link>
-              </li>
-            );
-          })}
-          <li>
-            <Link
-              to="/profile"
-              className={cn(
-                "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors duration-150",
-                activePath === "/profile" || location.pathname.startsWith("/profile") ? "text-primary" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <UserCircle2 className="h-5 w-5" />
-              <span>Profile</span>
-            </Link>
-          </li>
-        </ul>
-      </nav>
     </div>
   );
 }
