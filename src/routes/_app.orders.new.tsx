@@ -256,9 +256,44 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
               <Label>Order value ({CURRENCY})</Label>
               <Input type="number" step="0.01" min="0" value={form.invoice_value} onChange={(e) => setForm({ ...form, invoice_value: e.target.value })} placeholder="0.00" />
             </div>
-            <div className="space-y-2">
-              <Label>Invoice No.</Label>
-              <Input value={form.invoice_no} onChange={(e) => setForm({ ...form, invoice_no: e.target.value })} />
+            <div className="space-y-2 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <Label>Invoice No. <span className="text-xs text-muted-foreground font-normal">(one or many)</span></Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  disabled={readOnly}
+                  onClick={() => setInvoices((arr) => [...arr, ""])}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add invoice
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {invoices.map((val, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={val}
+                      onChange={(e) => setInvoices((arr) => arr.map((v, j) => (j === i ? e.target.value : v)))}
+                      placeholder={`Invoice ${i + 1}`}
+                    />
+                    {invoices.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                        disabled={readOnly}
+                        onClick={() => setInvoices((arr) => arr.filter((_, j) => j !== i))}
+                        aria-label="Remove invoice"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label>Notes</Label>
