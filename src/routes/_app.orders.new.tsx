@@ -103,11 +103,13 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         customer_phone: (existing as any).customer_phone ?? "",
         branch_no: existing.branch_no ?? "",
         delivery_type: existing.delivery_type ?? "",
-        invoice_no: existing.invoice_no ?? "",
         invoice_value: existing.invoice_value?.toString() ?? "",
         notes: existing.notes ?? "",
         status: existing.status,
       });
+      const raw = (existing.invoice_no ?? "").toString();
+      const parts = raw.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
+      setInvoices(parts.length > 0 ? parts : [""]);
     }
   }, [existing]);
 
@@ -116,6 +118,8 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
   }, [role, mode]);
 
   const cityFor = useMemo(() => (b: string | null) => branches?.find((x) => x.branch_no === b)?.city ?? "", [branches]);
+
+  const invoicesJoined = invoices.map((s) => s.trim()).filter(Boolean).join(", ");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,7 +132,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         customer_name: form.customer_name || null,
         customer_phone: form.customer_phone || null,
         branch_no: form.branch_no || "",
-        invoice_no: form.invoice_no || null,
+        invoice_no: invoicesJoined || null,
         notes: form.notes || null,
         status: mode === "create" ? "Pending" : form.status,
       });
