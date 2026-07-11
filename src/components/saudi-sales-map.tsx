@@ -322,15 +322,16 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
               );
             })}
 
-            {/* Bubbles — render smallest first so the largest bubble paints on top */}
+            {/* Bubbles — render smallest first so the largest bubble paints on top.
+                Visual layer is not interactive; hit-testing is handled by the
+                dedicated top-most layer below to avoid overlap hijacking hover
+                (e.g. Jeddah/Makkah/Taif clustering). */}
             {[...placed].reverse().map((p, i) => {
               const active = hoverName === p.name;
               return (
                 <g key={p.name}
-                  onMouseEnter={() => setHoverName(p.name)}
-                  onMouseLeave={() => setHoverName((n) => (n === p.name ? null : n))}
                   style={{
-                    cursor: "pointer",
+                    pointerEvents: "none",
                     transformOrigin: `${p.cx}px ${p.cy}px`,
                     transform: mounted ? "scale(1)" : "scale(0)",
                     opacity: mounted ? 1 : 0,
