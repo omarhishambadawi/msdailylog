@@ -93,6 +93,176 @@ export const yeastarCdrProbe = createServerFn({ method: "POST" })
     }
   });
 
+// ---- Endpoint capability probe (admin only) --------------------------------
+//
+// Verifies which Yeastar OpenAPI endpoints the connected PBX actually exposes,
+// on this firmware, using the live access token. Purely read-only. Nothing
+// else in the app changes based on this — the caller decides whether to wire
+// a new integration in based on the results.
+//
+// Semantics:
+//   supported === true  → HTTP 200 AND (errcode === 0 OR errcode absent)
+//   supported === false → HTTP 404 / 501, errcode 404xx, or firmware-not-supported errcodes
+//   otherwise the raw status/errcode/errmsg is returned so we can classify
+//   auth vs. schema vs. missing-endpoint failures without guessing.
+
+const endpointProbeInput = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+interface ProbeResult {
+  endpoint: string;
+  method: "GET" | "POST";
+  httpStatus: number;
+  errcode: number | null;
+  errmsg: string | null;
+  supported: boolean;
+  sampleKeys: string[] | null;
+  dataCount: number | null;
+  bodyPreview: string;
+  note?: string;
+}
+
+export const yeastarEndpointProbe = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => endpointProbeInput.parse(d ?? {}))
+  .handler(async ({ context, data }): Promise<{
+    ok: boolean;
+    configured: boolean;
+    at: string;
+    window?: { from: string; to: string; startEpoch: number; endEpoch: number };
+    results: ProbeResult[];
+  }> => {
+    await assertAdmin(context as any);
+    const { isConfigured, yeastarFetch, getAccessToken } = await import("@/lib/yeastar/client.server");
+    if (!isConfigured()) return { ok: false, configured: false, at: new Date().toISOString(), results: [] };
+
+    // Ensure auth works before probing — otherwise every probe returns the same auth error.
+    try { await getAccessToken(); }
+    catch (err) {
+      return {
+        ok: false, configured: true, at: new Date().toISOString(), results: [
+          { endpoint: "auth", method: "POST", httpStatus: 0, errcode: null, errmsg: err instanceof Error ? err.message : String(err), supported: false, sampleKeys: null, dataCount: null, bodyPreview: "", note: "Auth failed — probe aborted" },
+        ],
+      };
+    }
+
+    // 24h window ending now, or caller-supplied dates.
+    const now = Math.floor(Date.now() / 1000);
+    let startEpoch = now - 86_400;
+    let endEpoch = now;
+    if (data.from && data.to) {
+      startEpoch = Math.floor(new Date(`${data.from}T00:00:00Z`).getTime() / 1000);
+      endEpoch = Math.floor(new Date(`${data.to}T23:59:59Z`).getTime() / 1000);
+    }
+
+    const classify = (httpStatus: number, errcode: number | null, errmsg: string | null): boolean => {
+      if (httpStatus === 200 && (errcode === 0 || errcode === null)) return true;
+      // Yeastar returns 200 with errcode for "invalid params" too — that still means
+      // the endpoint exists on this firmware. Only treat clear "not supported" as false.
+      if (httpStatus === 200 && errcode !== null && errcode !== 0) {
+        const msg = (errmsg ?? "").toLowerCase();
+        if (msg.includes("not support") || msg.includes("not exist") || msg.includes("no such") || msg.includes("invalid api")) return false;
+        return true; // endpoint exists, just needs different params
+      }
+      return false;
+    };
+
+    const summarize = (json: any): { sampleKeys: string[] | null; dataCount: number | null } => {
+      if (!json || typeof json !== "object") return { sampleKeys: null, dataCount: null };
+      const arr = Array.isArray(json.data) ? json.data
+        : Array.isArray(json.list) ? json.list
+        : Array.isArray(json.result) ? json.result
+        : null;
+      const dataCount = arr ? arr.length : null;
+      const first = arr && arr.length ? arr[0] : json;
+      const sampleKeys = first && typeof first === "object" ? Object.keys(first).slice(0, 40) : null;
+      return { sampleKeys, dataCount };
+    };
+
+    const runProbe = async (
+      endpoint: string,
+      method: "GET" | "POST",
+      query: Record<string, string | number | undefined> = {},
+      body?: Record<string, unknown>,
+      note?: string,
+    ): Promise<ProbeResult> => {
+      try {
+        const { httpStatus, json, body: rawBody } = await yeastarFetch<any>(endpoint, query, { method, body, timeoutMs: 15_000 });
+        const errcode = json?.errcode ?? null;
+        const errmsg = json?.errmsg ?? null;
+        const { sampleKeys, dataCount } = summarize(json);
+        return {
+          endpoint, method, httpStatus, errcode, errmsg,
+          supported: classify(httpStatus, errcode, errmsg),
+          sampleKeys, dataCount,
+          bodyPreview: (rawBody ?? "").slice(0, 400),
+          note,
+        };
+      } catch (err) {
+        return {
+          endpoint, method, httpStatus: 0, errcode: null,
+          errmsg: err instanceof Error ? err.message : String(err),
+          supported: false, sampleKeys: null, dataCount: null, bodyPreview: "",
+          note: note ?? "fetch threw",
+        };
+      }
+    };
+
+    // The connected firmware only exposes /openapi/v1.0/*. We still test v2.0
+    // paths explicitly so the caller sees the actual 404 rather than assuming.
+    const results: ProbeResult[] = [];
+
+    // --- CDR ---------------------------------------------------------------
+    results.push(await runProbe("/openapi/v1.0/cdr/list", "GET", { page: 1, page_size: 1 },
+      undefined, "Current implementation uses this as fallback."));
+    results.push(await runProbe("/openapi/v1.0/cdr/search", "GET",
+      { page: 1, page_size: 1, start_time: startEpoch, end_time: endEpoch },
+      undefined, "Current implementation prefers this over /cdr/list."));
+    results.push(await runProbe("/openapi/v2.0/cdr/detail", "GET",
+      { start_time: startEpoch, end_time: endEpoch, page: 1, page_size: 1 },
+      undefined, "v2.0 CDR — commonly absent on P-Series."));
+
+    // --- Queue ------------------------------------------------------------
+    results.push(await runProbe("/openapi/v1.0/queue/call_status", "GET", {},
+      undefined, "Real-time queue call status."));
+    results.push(await runProbe("/openapi/v1.0/queue/agent_status", "GET", {},
+      undefined, "Real-time queue agent status."));
+    results.push(await runProbe("/openapi/v1.0/queue/list", "GET", { page: 1, page_size: 10 },
+      undefined, "Queue enumeration."));
+    results.push(await runProbe("/openapi/v1.0/queue/callstatistics", "GET",
+      { start_time: startEpoch, end_time: endEpoch }, undefined, "Historical queue statistics."));
+    results.push(await runProbe("/openapi/v1.0/queue/panel/callstatistics", "GET",
+      { start_time: startEpoch, end_time: endEpoch }, undefined, "Queue panel statistics (alt path)."));
+
+    // --- Call / extension -------------------------------------------------
+    results.push(await runProbe("/openapi/v1.0/call/query", "GET", {},
+      undefined, "Active call query."));
+    results.push(await runProbe("/openapi/v1.0/extension/callstatistics", "GET",
+      { start_time: startEpoch, end_time: endEpoch }, undefined, "Per-extension historical stats."));
+
+    // --- Event push (webhooks / subscriptions) ----------------------------
+    // These are subscription endpoints, not GET data endpoints. Probing them
+    // read-only tells us whether the firmware exposes the event push API at all.
+    results.push(await runProbe("/openapi/v1.0/event/list", "GET", {},
+      undefined, "Event push — list current subscriptions (Call End / Incoming / Ring Timeout / Transfer)."));
+    results.push(await runProbe("/openapi/v1.0/event_center/event/list", "GET", {},
+      undefined, "Event Center — alt event listing path."));
+    results.push(await runProbe("/openapi/v1.0/subscribe", "GET", {},
+      undefined, "Event subscription endpoint (probe with GET — POST would create a subscription)."));
+
+    return {
+      ok: true,
+      configured: true,
+      at: new Date().toISOString(),
+      window: { from: data.from ?? new Date(startEpoch * 1000).toISOString().slice(0, 10),
+                to: data.to ?? new Date(endEpoch * 1000).toISOString().slice(0, 10),
+                startEpoch, endEpoch },
+      results,
+    };
+  });
+
 // ---- Agent mapping diagnostic (admin) --------------------------------------
 
 export const yeastarAgentMappingDiagnostic = createServerFn({ method: "POST" })
