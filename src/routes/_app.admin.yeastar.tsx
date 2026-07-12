@@ -16,6 +16,7 @@ import {
   yeastarCdrProbe,
   yeastarAgentMappingDiagnostic,
   yeastarEndpointProbe,
+  yeastarQueueRoster,
 } from "@/lib/yeastar.functions";
 
 export const Route = createFileRoute("/_app/admin/yeastar")({
@@ -45,12 +46,14 @@ function YeastarAdmin() {
   const probeFn = useServerFn(yeastarCdrProbe);
   const mapFn = useServerFn(yeastarAgentMappingDiagnostic);
   const capsFn = useServerFn(yeastarEndpointProbe);
+  const rosterFn = useServerFn(yeastarQueueRoster);
 
   const config = useQuery({ queryKey: ["yeastar-config"], queryFn: () => configFn(), enabled: isAdmin });
   const auth = useMutation({ mutationFn: () => authFn() });
   const probe = useMutation({ mutationFn: () => probeFn({ data: { from, to } }) });
   const map = useMutation({ mutationFn: () => mapFn({ data: { from, to } }) });
   const caps = useMutation({ mutationFn: () => capsFn({ data: { from, to } }) });
+  const roster = useMutation({ mutationFn: () => rosterFn() });
 
   if (!isAdmin) {
     return (
@@ -159,6 +162,54 @@ function YeastarAdmin() {
             </div>
           ) : null}
           {caps.error ? <div className="text-sm text-destructive">{(caps.error as Error).message}</div> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">6. Queue roster (PBX-authoritative)</CardTitle>
+          <div className="text-xs text-muted-foreground">
+            Confirmed supported: <span className="font-mono">/openapi/v1.0/queue/list</span>. Returns the
+            queues configured on the PBX and their agent members (extension ↔ display name). This is the
+            authoritative source for "who is a Call Center agent". Not yet wired into analytics — review the
+            roster below, then we can replace the manual per-user extension mapping.
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button size="sm" onClick={() => roster.mutate()} disabled={roster.isPending}>
+            {roster.isPending ? "Fetching…" : "Fetch queue roster"}
+          </Button>
+          {roster.data ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge variant="outline">Queues: {roster.data.totalQueues}</Badge>
+                <Badge variant="outline">Unique agents: {roster.data.uniqueAgents?.length ?? 0}</Badge>
+                {roster.data.error ? <Badge variant="destructive">{roster.data.error}</Badge> : null}
+              </div>
+              {roster.data.queues?.map((q) => (
+                <div key={q.id} className="rounded border p-3 space-y-2">
+                  <div className="text-sm font-medium">
+                    {q.name} <span className="text-muted-foreground font-normal">· #{q.number} · {q.ring_strategy}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {q.static_members.map((m) => (
+                      <Badge key={m.extension_id} variant="secondary" className="font-mono text-[11px]">
+                        {m.extension_number} · {m.display_name}
+                      </Badge>
+                    ))}
+                    {q.static_members.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">No static members</span>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground">Raw JSON</summary>
+                <Json data={roster.data} />
+              </details>
+            </div>
+          ) : null}
+          {roster.error ? <div className="text-sm text-destructive">{(roster.error as Error).message}</div> : null}
         </CardContent>
       </Card>
     </div>

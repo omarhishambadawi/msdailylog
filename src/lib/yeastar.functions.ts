@@ -93,6 +93,84 @@ export const yeastarCdrProbe = createServerFn({ method: "POST" })
     }
   });
 
+// ---- Queue roster (admin only) --------------------------------------------
+//
+// Confirmed supported on this firmware via /openapi/v1.0/queue/list. Returns
+// the queues configured on the PBX and their static agent members with
+// {extension_id, extension_number, display_name}. This is authoritative for
+// "who is a Call Center agent". Read-only; not persisted.
+// NOT wired into analytics yet — exposed as diagnostic first.
+
+interface QueueMember {
+  extension_id: string;
+  extension_number: string;
+  display_name: string;
+  member_type: string;
+}
+interface QueueEntry {
+  id: number;
+  number: string;
+  name: string;
+  ring_strategy: string;
+  static_members: QueueMember[];
+  dynamic_members: QueueMember[];
+}
+
+export const yeastarQueueRoster = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<{
+    ok: boolean;
+    configured: boolean;
+    at: string;
+    totalQueues: number;
+    queues: QueueEntry[];
+    uniqueAgents: QueueMember[];
+    error?: string;
+  }> => {
+    await assertAdmin(context as any);
+    const { isConfigured, yeastarFetch } = await import("@/lib/yeastar/client.server");
+    if (!isConfigured()) {
+      return { ok: false, configured: false, at: new Date().toISOString(), totalQueues: 0, queues: [], uniqueAgents: [] };
+    }
+    const { httpStatus, json } = await yeastarFetch<any>("/openapi/v1.0/queue/list", { page: 1, page_size: 100 });
+    if (httpStatus !== 200 || json?.errcode !== 0) {
+      return {
+        ok: false, configured: true, at: new Date().toISOString(),
+        totalQueues: 0, queues: [], uniqueAgents: [],
+        error: `queue/list failed: HTTP ${httpStatus} errcode=${json?.errcode ?? "n/a"} errmsg=${json?.errmsg ?? "n/a"}`,
+      };
+    }
+
+    const mapMember = (m: any): QueueMember => ({
+      extension_id: String(m?.value ?? ""),
+      extension_number: String(m?.text2 ?? ""),
+      display_name: String(m?.text ?? ""),
+      member_type: String(m?.type ?? "extension"),
+    });
+
+    const queues: QueueEntry[] = (Array.isArray(json.queue_list) ? json.queue_list : []).map((q: any): QueueEntry => ({
+      id: Number(q?.id ?? 0),
+      number: String(q?.number ?? ""),
+      name: String(q?.name ?? ""),
+      ring_strategy: String(q?.ring_strategy ?? ""),
+      static_members: Array.isArray(q?.static_agent_list) ? q.static_agent_list.map(mapMember) : [],
+      dynamic_members: Array.isArray(q?.dynamic_agent_list) ? q.dynamic_agent_list.map(mapMember) : [],
+    }));
+
+    const seen = new Set<string>();
+    const uniqueAgents: QueueMember[] = [];
+    for (const q of queues) {
+      for (const m of [...q.static_members, ...q.dynamic_members]) {
+        if (!m.extension_number || seen.has(m.extension_number)) continue;
+        seen.add(m.extension_number);
+        uniqueAgents.push(m);
+      }
+    }
+    uniqueAgents.sort((a, b) => a.extension_number.localeCompare(b.extension_number, undefined, { numeric: true }));
+
+    return { ok: true, configured: true, at: new Date().toISOString(), totalQueues: queues.length, queues, uniqueAgents };
+  });
+
 // ---- Endpoint capability probe (admin only) --------------------------------
 //
 // Verifies which Yeastar OpenAPI endpoints the connected PBX actually exposes,
