@@ -46,12 +46,14 @@ function YeastarAdmin() {
   const probeFn = useServerFn(yeastarCdrProbe);
   const mapFn = useServerFn(yeastarAgentMappingDiagnostic);
   const capsFn = useServerFn(yeastarEndpointProbe);
+  const rosterFn = useServerFn(yeastarQueueRoster);
 
   const config = useQuery({ queryKey: ["yeastar-config"], queryFn: () => configFn(), enabled: isAdmin });
   const auth = useMutation({ mutationFn: () => authFn() });
   const probe = useMutation({ mutationFn: () => probeFn({ data: { from, to } }) });
   const map = useMutation({ mutationFn: () => mapFn({ data: { from, to } }) });
   const caps = useMutation({ mutationFn: () => capsFn({ data: { from, to } }) });
+  const roster = useMutation({ mutationFn: () => rosterFn() });
 
   if (!isAdmin) {
     return (
