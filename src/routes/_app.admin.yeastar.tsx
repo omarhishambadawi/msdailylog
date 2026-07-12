@@ -133,6 +133,34 @@ function YeastarAdmin() {
           {map.error ? <div className="text-sm text-destructive">{(map.error as Error).message}</div> : null}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">5. Endpoint capability probe</CardTitle>
+          <div className="text-xs text-muted-foreground">
+            Verifies which Yeastar OpenAPI endpoints the connected PBX actually exposes on this firmware.
+            Read-only. Results feed the decision of whether to wire an endpoint in — nothing else changes based on this.
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button size="sm" onClick={() => caps.mutate()} disabled={caps.isPending}>
+            {caps.isPending ? "Probing…" : "Probe endpoints"}
+          </Button>
+          {caps.data ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {caps.data.results?.map((r) => (
+                  <Badge key={r.endpoint} variant={r.supported ? "default" : "destructive"} className="font-mono text-[11px]">
+                    {r.supported ? "✓" : "✗"} {r.endpoint} · {r.httpStatus}{r.errcode !== null ? `/e${r.errcode}` : ""}
+                  </Badge>
+                ))}
+              </div>
+              <Json data={caps.data} />
+            </div>
+          ) : null}
+          {caps.error ? <div className="text-sm text-destructive">{(caps.error as Error).message}</div> : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }
