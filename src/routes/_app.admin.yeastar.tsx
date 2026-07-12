@@ -15,6 +15,7 @@ import {
   yeastarAuthDiagnostic,
   yeastarCdrProbe,
   yeastarAgentMappingDiagnostic,
+  yeastarEndpointProbe,
 } from "@/lib/yeastar.functions";
 
 export const Route = createFileRoute("/_app/admin/yeastar")({
