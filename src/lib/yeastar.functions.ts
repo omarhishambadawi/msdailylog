@@ -472,30 +472,118 @@ async function getCdrCached(from: string, to: string, jobId?: string) {
   return promise;
 }
 
+// Customer Care roster is authoritative from PBX queue #6400 (see user
+// clarification: telesales agents do NOT belong to any queue). Telesales
+// stays DB-driven via `yeastar_ext`, backstopped by static extensions so
+// Ahmed (1000) and Kamr (1001) are always present. The two rosters are
+// merged — one is never a substitute for the other.
+const CUSTOMER_CARE_QUEUE_NUMBER = "6400";
+const TELESALES_STATIC_EXTS: Array<{ ext: string; name: string }> = [
+  { ext: "1000", name: "Ahmed Mousad" },
+  { ext: "1001", name: "Kamr Elsayed" },
+];
+
+const ROSTER_TTL_MS = 60_000;
+let rosterCache: { at: number; exts: Map<string, string> } | null = null;
+
+async function fetchCustomerCareQueueRoster(): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (rosterCache && now - rosterCache.at < ROSTER_TTL_MS) return rosterCache.exts;
+  const exts = new Map<string, string>();
+  try {
+    const { isConfigured, yeastarFetch } = await import("@/lib/yeastar/client.server");
+    if (!isConfigured()) return exts;
+    const { httpStatus, json } = await yeastarFetch<any>("/openapi/v1.0/queue/list", { page: 1, page_size: 100 });
+    if (httpStatus !== 200 || json?.errcode !== 0) return exts;
+    const queues = Array.isArray(json.queue_list) ? json.queue_list : [];
+    const cc = queues.find((q: any) => String(q?.number ?? "") === CUSTOMER_CARE_QUEUE_NUMBER);
+    if (!cc) return exts;
+    const members = [
+      ...(Array.isArray(cc.static_agent_list) ? cc.static_agent_list : []),
+      ...(Array.isArray(cc.dynamic_agent_list) ? cc.dynamic_agent_list : []),
+    ];
+    for (const m of members) {
+      const ext = String(m?.text2 ?? "").trim();
+      const name = String(m?.text ?? "").trim();
+      if (ext) exts.set(ext, name || ext);
+    }
+    rosterCache = { at: now, exts };
+  } catch {
+    // Swallow — caller falls back to DB customer_care mapping.
+  }
+  return exts;
+}
+
 async function loadAgents(_supabase: any) {
   // yeastar_ext and roles are read via the service-role client because
   // authenticated SELECT on profiles no longer exposes sensitive columns
   // ([H4]). This function is only reachable after a call-center permission
   // check upstream, so an admin read here is appropriate.
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const [{ data: profiles }, { data: extRows }, { data: roles }] = await Promise.all([
+  const [{ data: profiles }, { data: extRows }, { data: roles }, ccQueueExts] = await Promise.all([
     supabaseAdmin.from("profiles").select("id,full_name,agent_code,active"),
     supabaseAdmin.from("profiles" as any).select("id,yeastar_ext"),
     supabaseAdmin.from("user_roles").select("user_id,role"),
+    fetchCustomerCareQueueRoster(),
   ]);
 
   const extMap = new Map<string, string | null>(((extRows as any[]) ?? []).map((r) => [r.id, r.yeastar_ext ?? null]));
   const roleMap = new Map<string, string>(((roles as any[]) ?? []).map((r) => [r.user_id, r.role as string]));
-  return ((profiles as any[]) ?? [])
-    .filter((p) => p.active)
-    .map((p) => ({
-      id: p.id as string,
-      name: (p.full_name as string) ?? "Unknown",
-      team: roleMap.get(p.id) as "customer_care" | "telesales" | undefined,
-      ext: String(extMap.get(p.id) ?? p.agent_code ?? "").trim(),
-    }))
-    .filter((a) => a.team === "customer_care" || a.team === "telesales")
-    .filter((a) => a.ext.length > 0) as Array<{ id: string; name: string; team: "customer_care" | "telesales"; ext: string }>;
+  const activeProfiles = ((profiles as any[]) ?? []).filter((p) => p.active);
+
+  // Profile lookup by extension — used to attach queue members to their DB user.
+  const profileByExt = new Map<string, { id: string; name: string }>();
+  for (const p of activeProfiles) {
+    const ext = String(extMap.get(p.id) ?? p.agent_code ?? "").trim();
+    if (ext) profileByExt.set(ext, { id: p.id, name: p.full_name ?? "Unknown" });
+  }
+
+  const agents: Array<{ id: string; name: string; team: "customer_care" | "telesales"; ext: string }> = [];
+
+  // --- Customer Care: queue #6400 authoritative; DB fallback if PBX fails ---
+  if (ccQueueExts.size > 0) {
+    for (const [ext, pbxName] of ccQueueExts) {
+      const p = profileByExt.get(ext);
+      agents.push({
+        id: p?.id ?? `pbx:${ext}`,
+        name: p?.name ?? pbxName,
+        team: "customer_care",
+        ext,
+      });
+    }
+  } else {
+    for (const p of activeProfiles) {
+      if (roleMap.get(p.id) !== "customer_care") continue;
+      const ext = String(extMap.get(p.id) ?? p.agent_code ?? "").trim();
+      if (!ext) continue;
+      agents.push({ id: p.id, name: p.full_name ?? "Unknown", team: "customer_care", ext });
+    }
+  }
+
+  // --- Telesales: DB-driven, backstopped by static extensions -------------
+  //     Telesales does NOT belong to any PBX queue — the static list keeps
+  //     Ahmed (1000) / Kamr (1001) visible even if their yeastar_ext row
+  //     is missing.
+  const telesalesExtsPresent = new Set<string>();
+  for (const p of activeProfiles) {
+    if (roleMap.get(p.id) !== "telesales") continue;
+    const ext = String(extMap.get(p.id) ?? p.agent_code ?? "").trim();
+    if (!ext) continue;
+    telesalesExtsPresent.add(ext);
+    agents.push({ id: p.id, name: p.full_name ?? "Unknown", team: "telesales", ext });
+  }
+  for (const t of TELESALES_STATIC_EXTS) {
+    if (telesalesExtsPresent.has(t.ext)) continue;
+    const p = profileByExt.get(t.ext);
+    agents.push({
+      id: p?.id ?? `pbx:${t.ext}`,
+      name: p?.name ?? t.name,
+      team: "telesales",
+      ext: t.ext,
+    });
+  }
+
+  return agents;
 }
 
 // Note: legacy `getAgentCallStats` was removed (Prompt 1, item 1). Callers
