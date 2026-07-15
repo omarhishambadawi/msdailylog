@@ -20,7 +20,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { hasPerm } from "@/lib/permissions";
-import { getCallCenterAnalytics } from "@/lib/yeastar.functions";
+import { getCallCenterAnalytics, yeastarRealtimeQueue } from "@/lib/yeastar.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
