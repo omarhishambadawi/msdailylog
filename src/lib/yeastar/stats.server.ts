@@ -649,7 +649,7 @@ export function aggregateAnalytics(
     // Count only ANSWERED legs whose ringed extension belongs to a
     // telesales agent — a queue call can hit both teams; only credit tele.
     for (const r of c.rows.filter((r) => isAnswered(r.disposition))) {
-      const ext = agentExtFor(r);
+      const ext = agentExtFor(r, opts.queueNumbers);
       const agent = ext ? byExt.get(String(ext).trim()) : undefined;
       if (agent && agent.team === "telesales") {
         const dk = dayKey(r.timestamp, tz);
