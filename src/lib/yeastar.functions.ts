@@ -655,9 +655,13 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
       }
 
       const { aggregateAnalytics } = await import("@/lib/yeastar/stats.server");
+      // Pass PBX queue numbers so agentExtFor never mistakes a queue for an
+      // agent (root cause of the Inbound=0 bug on queue-inbound calls).
+      const { queueNumbers } = await fetchQueueData();
       const result = aggregateAnalytics(records, agents, orders, {
         direction: data.direction,
         status: data.status,
+        queueNumbers,
       });
 
       if (progress && data.jobId) await progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
