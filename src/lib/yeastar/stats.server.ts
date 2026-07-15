@@ -523,7 +523,7 @@ export function aggregateAnalytics(
 
   for (const r of filteredRecords) {
     if (!keepRowSet.has(r)) continue;
-    const ext = agentExtFor(r);
+    const ext = agentExtFor(r, opts.queueNumbers);
     const agent = ext ? byExt.get(String(ext).trim()) : undefined;
     if (!agent) {
       unmatchedRecords++;
