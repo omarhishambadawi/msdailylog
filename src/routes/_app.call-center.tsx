@@ -113,6 +113,16 @@ function CallCenterPage() {
     refetchOnReconnect: false,
   });
 
+  // Realtime queue widget — /queue/call_status + /queue/agent_status
+  const realtimeFn = useServerFn(yeastarRealtimeQueue);
+  const rt = useQuery({
+    queryKey: ["cc-realtime"],
+    queryFn: () => realtimeFn(),
+    enabled: !authLoading && canView,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  });
+
   // Survey removed — Satisfaction Survey section discontinued.
 
 
