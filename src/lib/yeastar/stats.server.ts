@@ -219,20 +219,54 @@ function looksInternal(r: CdrRecord): boolean {
 
 /**
  * Which extension identifies the answering AGENT for this row?
- *   - Outbound → the caller extension is the agent (`call_from_number`).
- *   - Inbound ANSWERED → the connected extension (`dst` / `dst_num` /
- *     `answer_by`), falling back to `call_to_number` for direct-dial
- *     (non-queue) inbound. Queue calls have the DID/hotline in
- *     `call_to_number`, so using it directly hides the answering agent (C1).
- *   - Inbound UNANSWERED → the ringed extension (`dst` / `call_to_number`).
+ *
+ * CRITICAL: a queue number (e.g. 6400) is NEVER an agent. On this Yeastar
+ * firmware, a queue-inbound CDR row often has `dst = <queue number>` — the
+ * pre-refactor code returned that as the agent extension, no roster entry
+ * matched, every queue call fell into "unmatched", and the downstream
+ * reconciliation block then zero-ed platform Inbound/Answered. Fix: skip
+ * any candidate that is a known queue number, walk a priority list of
+ * confirmed answering-agent fields, and return null (→ "Unknown") rather
+ * than a queue number when no real agent can be resolved.
  */
-function agentExtFor(r: CdrRecord): string | null {
+function agentExtFor(r: CdrRecord, queueNumbers?: Set<string>): string | null {
   const anyR = r as any;
-  if (r.call_type === "Outbound") return r.call_from_number ?? null;
+  const isQueue = (v: unknown): boolean => {
+    if (v == null || !queueNumbers) return false;
+    const s = String(v).trim();
+    return s.length > 0 && queueNumbers.has(s);
+  };
+  const pick = (v: unknown): string | null => {
+    if (v == null) return null;
+    const s = String(v).trim();
+    if (!s || isQueue(s)) return null;
+    return s;
+  };
+
+  if (r.call_type === "Outbound") {
+    return pick(r.call_from_number);
+  }
   if (r.call_type === "Inbound") {
-    const answering = anyR.dst ?? anyR.dst_num ?? anyR.dst_number ?? anyR.answer_by ?? anyR.answered_by ?? anyR.agent_number;
-    if (answering) return String(answering);
-    return r.call_to_number ?? null;
+    // Priority: confirmed answering-agent fields → connected/dst → to-number.
+    // For queue calls the PBX's `last_participant_number` is the agent that
+    // actually took the call; test it FIRST before any dst/to fallback.
+    const candidates: unknown[] = [
+      anyR.last_participant_number,
+      anyR.last_participant,
+      anyR.final_participant,
+      anyR.answer_by,
+      anyR.answered_by,
+      anyR.agent_number,
+      anyR.dst,
+      anyR.dst_num,
+      anyR.dst_number,
+      r.call_to_number,
+    ];
+    for (const c of candidates) {
+      const ext = pick(c);
+      if (ext) return ext;
+    }
+    return null; // Unknown — never fall through to a queue number.
   }
   return null; // Internal ignored
 }
