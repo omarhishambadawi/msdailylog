@@ -220,6 +220,47 @@ function YeastarAdmin() {
           {roster.error ? <div className="text-sm text-destructive">{(roster.error as Error).message}</div> : null}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">7. Realtime queue (widget data source)</CardTitle>
+          <div className="text-xs text-muted-foreground">
+            Powers the realtime widgets on the Call Center page:
+            <span className="font-mono"> /queue/call_status</span> +
+            <span className="font-mono"> /queue/agent_status</span>. Never used for historical analytics.
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button size="sm" onClick={() => realtime.mutate()} disabled={realtime.isPending}>
+            {realtime.isPending ? "Loading…" : "Snapshot realtime queue"}
+          </Button>
+          {realtime.data ? <Json data={realtime.data} /> : null}
+          {realtime.error ? <div className="text-sm text-destructive">{(realtime.error as Error).message}</div> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">8. Analytics debug — trace a Call ID</CardTitle>
+          <div className="text-xs text-muted-foreground">
+            Enter a <span className="font-mono">call_id</span> / <span className="font-mono">linkedid</span> to
+            walk the raw CDR → resolved agent → KPI contribution pipeline. Uses the same date window above.
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-end gap-2">
+            <div className="space-y-1 flex-1 max-w-md">
+              <Label className="text-xs">Call ID / linkedid / uid</Label>
+              <Input value={debugCallId} onChange={(e) => setDebugCallId(e.target.value)} placeholder="e.g. 1721839200.123" />
+            </div>
+            <Button size="sm" onClick={() => debug.mutate()} disabled={debug.isPending || !debugCallId.trim()}>
+              {debug.isPending ? "Tracing…" : "Trace"}
+            </Button>
+          </div>
+          {debug.data ? <Json data={debug.data} /> : null}
+          {debug.error ? <div className="text-sm text-destructive">{(debug.error as Error).message}</div> : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }
