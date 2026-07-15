@@ -484,34 +484,49 @@ const TELESALES_STATIC_EXTS: Array<{ ext: string; name: string }> = [
 ];
 
 const ROSTER_TTL_MS = 60_000;
-let rosterCache: { at: number; exts: Map<string, string> } | null = null;
+let rosterCache: {
+  at: number;
+  ccExts: Map<string, string>;
+  queueNumbers: Set<string>;
+} | null = null;
 
-async function fetchCustomerCareQueueRoster(): Promise<Map<string, string>> {
+async function fetchQueueData(): Promise<{ ccExts: Map<string, string>; queueNumbers: Set<string> }> {
   const now = Date.now();
-  if (rosterCache && now - rosterCache.at < ROSTER_TTL_MS) return rosterCache.exts;
-  const exts = new Map<string, string>();
+  if (rosterCache && now - rosterCache.at < ROSTER_TTL_MS) {
+    return { ccExts: rosterCache.ccExts, queueNumbers: rosterCache.queueNumbers };
+  }
+  const ccExts = new Map<string, string>();
+  const queueNumbers = new Set<string>();
   try {
     const { isConfigured, yeastarFetch } = await import("@/lib/yeastar/client.server");
-    if (!isConfigured()) return exts;
+    if (!isConfigured()) return { ccExts, queueNumbers };
     const { httpStatus, json } = await yeastarFetch<any>("/openapi/v1.0/queue/list", { page: 1, page_size: 100 });
-    if (httpStatus !== 200 || json?.errcode !== 0) return exts;
+    if (httpStatus !== 200 || json?.errcode !== 0) return { ccExts, queueNumbers };
     const queues = Array.isArray(json.queue_list) ? json.queue_list : [];
-    const cc = queues.find((q: any) => String(q?.number ?? "") === CUSTOMER_CARE_QUEUE_NUMBER);
-    if (!cc) return exts;
-    const members = [
-      ...(Array.isArray(cc.static_agent_list) ? cc.static_agent_list : []),
-      ...(Array.isArray(cc.dynamic_agent_list) ? cc.dynamic_agent_list : []),
-    ];
-    for (const m of members) {
-      const ext = String(m?.text2 ?? "").trim();
-      const name = String(m?.text ?? "").trim();
-      if (ext) exts.set(ext, name || ext);
+    for (const q of queues) {
+      const qnum = String(q?.number ?? "").trim();
+      if (qnum) queueNumbers.add(qnum);
+      if (qnum === CUSTOMER_CARE_QUEUE_NUMBER) {
+        const members = [
+          ...(Array.isArray(q.static_agent_list) ? q.static_agent_list : []),
+          ...(Array.isArray(q.dynamic_agent_list) ? q.dynamic_agent_list : []),
+        ];
+        for (const m of members) {
+          const ext = String(m?.text2 ?? "").trim();
+          const name = String(m?.text ?? "").trim();
+          if (ext) ccExts.set(ext, name || ext);
+        }
+      }
     }
-    rosterCache = { at: now, exts };
+    rosterCache = { at: now, ccExts, queueNumbers };
   } catch {
     // Swallow — caller falls back to DB customer_care mapping.
   }
-  return exts;
+  return { ccExts, queueNumbers };
+}
+
+async function fetchCustomerCareQueueRoster(): Promise<Map<string, string>> {
+  return (await fetchQueueData()).ccExts;
 }
 
 async function loadAgents(_supabase: any) {
@@ -640,9 +655,13 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
       }
 
       const { aggregateAnalytics } = await import("@/lib/yeastar/stats.server");
+      // Pass PBX queue numbers so agentExtFor never mistakes a queue for an
+      // agent (root cause of the Inbound=0 bug on queue-inbound calls).
+      const { queueNumbers } = await fetchQueueData();
       const result = aggregateAnalytics(records, agents, orders, {
         direction: data.direction,
         status: data.status,
+        queueNumbers,
       });
 
       if (progress && data.jobId) await progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
@@ -659,4 +678,196 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
       if (progress && data.jobId) await progress.failJob(data.jobId, msg);
       throw err;
     }
+  });
+
+// ---- Realtime queue widgets ------------------------------------------------
+//
+// Powered ONLY by /openapi/v1.0/queue/call_status and /queue/agent_status
+// (confirmed supported on this firmware). Never used for historical
+// analytics — those stay CDR-driven.
+
+export const yeastarRealtimeQueue = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+    const [{ data: canView }, { data: isAdmin }] = await Promise.all([
+      supabase.rpc("has_permission", { _user_id: userId, _permission: "view_call_center" }),
+      supabase.rpc("is_administrator", { _user_id: userId }),
+    ]);
+    if (!canView && !isAdmin) throw new Error("Forbidden");
+
+    const { isConfigured, yeastarFetch } = await import("@/lib/yeastar/client.server");
+    if (!isConfigured()) {
+      return { ok: false as const, configured: false as const };
+    }
+
+    const safeFetch = async (path: string) => {
+      try {
+        const { httpStatus, json } = await yeastarFetch<any>(path, {}, { timeoutMs: 8_000 });
+        if (httpStatus !== 200 || json?.errcode !== 0) return null;
+        return json;
+      } catch { return null; }
+    };
+
+    const [callStatus, agentStatus] = await Promise.all([
+      safeFetch("/openapi/v1.0/queue/call_status"),
+      safeFetch("/openapi/v1.0/queue/agent_status"),
+    ]);
+
+    // queue/call_status → list of calls currently in / on queues.
+    const calls: any[] = Array.isArray(callStatus?.data) ? callStatus.data
+      : Array.isArray(callStatus?.queue_call_status_list) ? callStatus.queue_call_status_list
+      : [];
+    // queue/agent_status → list of agent states.
+    const agents: any[] = Array.isArray(agentStatus?.data) ? agentStatus.data
+      : Array.isArray(agentStatus?.queue_agent_status_list) ? agentStatus.queue_agent_status_list
+      : [];
+
+    // Widget counters — string-comparison is permissive because the field
+    // name varies across firmwares (`status`, `state`, `agent_status`, etc.).
+    const isState = (a: any, ...words: string[]) => {
+      const s = String(a?.status ?? a?.state ?? a?.agent_status ?? "").toLowerCase();
+      return words.some((w) => s.includes(w));
+    };
+
+    const waiting = calls.filter((c) => {
+      const s = String(c?.status ?? c?.state ?? "").toLowerCase();
+      return s.includes("wait") || s.includes("queue");
+    }).length;
+    const active = calls.filter((c) => {
+      const s = String(c?.status ?? c?.state ?? "").toLowerCase();
+      return s.includes("talk") || s.includes("connect") || s.includes("busy") || s.includes("bridged");
+    }).length;
+    const ringing = calls.filter((c) => {
+      const s = String(c?.status ?? c?.state ?? "").toLowerCase();
+      return s.includes("ring");
+    }).length;
+
+    const ready = agents.filter((a) => isState(a, "idle", "ready", "available", "logged_in")).length;
+    const busy = agents.filter((a) => isState(a, "busy", "talk", "on_call", "in_use")).length;
+    const paused = agents.filter((a) => isState(a, "paus", "wrap", "away", "dnd")).length;
+
+    return {
+      ok: true as const,
+      configured: true as const,
+      at: new Date().toISOString(),
+      calls: { waiting, active, ringing, total: calls.length },
+      agents: { ready, busy, paused, total: agents.length },
+      raw: { callsCount: calls.length, agentsCount: agents.length },
+    };
+  });
+
+// ---- Analytics debug — trace a single Call ID ------------------------------
+//
+// Admin-only. Fetches CDRs for a date range, finds every row matching the
+// supplied Call ID / linkedid, runs classification, and reports agent
+// resolution + KPI contribution. Read-only.
+
+const analyticsDebugInput = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  callId: z.string().min(1).max(200),
+});
+
+export const yeastarAnalyticsDebug = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => analyticsDebugInput.parse(d))
+  .handler(async ({ context, data }) => {
+    await assertAdmin(context as any);
+    const { isConfigured } = await import("@/lib/yeastar/client.server");
+    if (!isConfigured()) return { ok: false as const, configured: false as const };
+
+    const { fetchCdrRange } = await import("@/lib/yeastar/cdr.server");
+    const cdr = await fetchCdrRange({ from: data.from, to: data.to });
+
+    const target = data.callId.trim();
+    const rows = cdr.records.filter((r) => {
+      const anyR = r as any;
+      return String(anyR.call_id ?? "") === target
+        || String(anyR.linkedid ?? "") === target
+        || String(anyR.linked_id ?? "") === target
+        || String(anyR.uid ?? "") === target
+        || String(anyR.new_id ?? "") === target
+        || String(anyR.id ?? "") === target;
+    });
+
+    if (rows.length === 0) {
+      return { ok: true as const, configured: true as const, found: false as const, sampledFrom: cdr.records.length };
+    }
+
+    // Load agents + queue numbers for resolution context.
+    const [agents, { queueNumbers }] = await Promise.all([
+      loadAgents((context as any).supabase),
+      fetchQueueData(),
+    ]);
+    const byExt = new Map(agents.map((a) => [String(a.ext).trim(), a]));
+
+    // Resolve agent per row using the same rules as the aggregator.
+    const isQueue = (v: any) => v != null && queueNumbers.has(String(v).trim());
+    const resolveExt = (r: any): { ext: string | null; reason: string } => {
+      if (r.call_type === "Outbound") {
+        const s = r.call_from_number ? String(r.call_from_number).trim() : "";
+        return isQueue(s) ? { ext: null, reason: "call_from_number is a queue" }
+          : { ext: s || null, reason: "outbound: call_from_number" };
+      }
+      if (r.call_type === "Inbound") {
+        const priority: Array<[string, any]> = [
+          ["last_participant_number", r.last_participant_number],
+          ["last_participant", r.last_participant],
+          ["final_participant", r.final_participant],
+          ["answer_by", r.answer_by],
+          ["answered_by", r.answered_by],
+          ["agent_number", r.agent_number],
+          ["dst", r.dst],
+          ["dst_num", r.dst_num],
+          ["dst_number", r.dst_number],
+          ["call_to_number", r.call_to_number],
+        ];
+        for (const [k, v] of priority) {
+          if (v == null) continue;
+          const s = String(v).trim();
+          if (!s) continue;
+          if (isQueue(s)) continue;
+          return { ext: s, reason: `inbound: ${k}` };
+        }
+        return { ext: null, reason: "inbound: no non-queue candidate" };
+      }
+      return { ext: null, reason: "internal ignored" };
+    };
+
+    const trace = rows.map((r) => {
+      const { ext, reason } = resolveExt(r);
+      const agent = ext ? byExt.get(ext) : undefined;
+      return {
+        raw: {
+          time: r.time, timestamp: r.timestamp,
+          call_type: r.call_type, disposition: r.disposition,
+          call_from_number: r.call_from_number, call_to_number: r.call_to_number,
+          dst: (r as any).dst, last_participant_number: (r as any).last_participant_number,
+          talk_duration: r.talk_duration, ring_duration: r.ring_duration,
+          wait_time: (r as any).wait_time,
+        },
+        resolvedExt: ext,
+        resolutionReason: reason,
+        matchedAgent: agent ? { id: agent.id, name: agent.name, team: agent.team, ext: agent.ext } : null,
+        contribution: agent
+          ? { total: 1, inbound: r.call_type === "Inbound" ? 1 : 0, outbound: r.call_type === "Outbound" ? 1 : 0, answered: r.disposition === "ANSWERED" ? 1 : 0 }
+          : { note: "Unknown agent — counted only in platform totals (never zero-ed)." },
+      };
+    });
+
+    // Group-level classification for the call.
+    const { aggregateAnalytics } = await import("@/lib/yeastar/stats.server");
+    const single = aggregateAnalytics(rows, agents, [], { queueNumbers });
+
+    return {
+      ok: true as const,
+      configured: true as const,
+      found: true as const,
+      callId: target,
+      legs: rows.length,
+      trace,
+      groupTotals: single.totals,
+      queueNumbers: [...queueNumbers],
+    };
   });

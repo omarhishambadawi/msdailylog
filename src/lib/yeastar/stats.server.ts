@@ -165,6 +165,13 @@ export interface AggregateOptions {
   direction?: "all" | "Inbound" | "Outbound";
   /** Filter grouped calls by group disposition (applied AFTER classification — C2). */
   status?: "all" | "ANSWERED" | "NO ANSWER" | "BUSY" | "FAILED" | "VOICEMAIL";
+  /**
+   * Known PBX queue numbers (e.g. "6400"). agentExtFor() will NEVER return
+   * one of these — a queue is not an agent. Prevents Inbound queue calls
+   * from being attributed to the queue and then zero-matched, which used to
+   * zero-out platform Inbound totals via the reconciliation block.
+   */
+  queueNumbers?: Set<string>;
 }
 
 const ABANDON_THRESHOLD_SEC = 5;
@@ -212,20 +219,54 @@ function looksInternal(r: CdrRecord): boolean {
 
 /**
  * Which extension identifies the answering AGENT for this row?
- *   - Outbound → the caller extension is the agent (`call_from_number`).
- *   - Inbound ANSWERED → the connected extension (`dst` / `dst_num` /
- *     `answer_by`), falling back to `call_to_number` for direct-dial
- *     (non-queue) inbound. Queue calls have the DID/hotline in
- *     `call_to_number`, so using it directly hides the answering agent (C1).
- *   - Inbound UNANSWERED → the ringed extension (`dst` / `call_to_number`).
+ *
+ * CRITICAL: a queue number (e.g. 6400) is NEVER an agent. On this Yeastar
+ * firmware, a queue-inbound CDR row often has `dst = <queue number>` — the
+ * pre-refactor code returned that as the agent extension, no roster entry
+ * matched, every queue call fell into "unmatched", and the downstream
+ * reconciliation block then zero-ed platform Inbound/Answered. Fix: skip
+ * any candidate that is a known queue number, walk a priority list of
+ * confirmed answering-agent fields, and return null (→ "Unknown") rather
+ * than a queue number when no real agent can be resolved.
  */
-function agentExtFor(r: CdrRecord): string | null {
+function agentExtFor(r: CdrRecord, queueNumbers?: Set<string>): string | null {
   const anyR = r as any;
-  if (r.call_type === "Outbound") return r.call_from_number ?? null;
+  const isQueue = (v: unknown): boolean => {
+    if (v == null || !queueNumbers) return false;
+    const s = String(v).trim();
+    return s.length > 0 && queueNumbers.has(s);
+  };
+  const pick = (v: unknown): string | null => {
+    if (v == null) return null;
+    const s = String(v).trim();
+    if (!s || isQueue(s)) return null;
+    return s;
+  };
+
+  if (r.call_type === "Outbound") {
+    return pick(r.call_from_number);
+  }
   if (r.call_type === "Inbound") {
-    const answering = anyR.dst ?? anyR.dst_num ?? anyR.dst_number ?? anyR.answer_by ?? anyR.answered_by ?? anyR.agent_number;
-    if (answering) return String(answering);
-    return r.call_to_number ?? null;
+    // Priority: confirmed answering-agent fields → connected/dst → to-number.
+    // For queue calls the PBX's `last_participant_number` is the agent that
+    // actually took the call; test it FIRST before any dst/to fallback.
+    const candidates: unknown[] = [
+      anyR.last_participant_number,
+      anyR.last_participant,
+      anyR.final_participant,
+      anyR.answer_by,
+      anyR.answered_by,
+      anyR.agent_number,
+      anyR.dst,
+      anyR.dst_num,
+      anyR.dst_number,
+      r.call_to_number,
+    ];
+    for (const c of candidates) {
+      const ext = pick(c);
+      if (ext) return ext;
+    }
+    return null; // Unknown — never fall through to a queue number.
   }
   return null; // Internal ignored
 }
@@ -482,7 +523,7 @@ export function aggregateAnalytics(
 
   for (const r of filteredRecords) {
     if (!keepRowSet.has(r)) continue;
-    const ext = agentExtFor(r);
+    const ext = agentExtFor(r, opts.queueNumbers);
     const agent = ext ? byExt.get(String(ext).trim()) : undefined;
     if (!agent) {
       unmatchedRecords++;
@@ -522,32 +563,17 @@ export function aggregateAnalytics(
     answerRate: s.total ? (s.answered / s.total) * 100 : 0,
   })).sort((a, b) => b.total - a.total);
 
-  // ---- Reconcile platform totals to match Yeastar exactly ----------------
-  // Yeastar's authoritative KPIs are per-extension row aggregates. Overwrite
-  // direction / answered / talk totals from the agent rollup so the platform
-  // KPIs mirror the PBX per-extension screen. Queue-only metrics (missed,
-  // abandoned, wait) keep their classified values because they don't appear
-  // in the per-extension screen.
-  {
-    const agInbound = agentRows.reduce((s, a) => s + a.inbound, 0);
-    const agOutbound = agentRows.reduce((s, a) => s + a.outbound, 0);
-    const agAnswered = agentRows.reduce((s, a) => s + a.answered, 0);
-    const agTalk = agentRows.reduce((s, a) => s + a.talkSeconds, 0);
-    const agRing = agentRows.reduce((s, a) => s + a.ringSeconds, 0);
-    const agLongest = agentRows.reduce((m, a) => Math.max(m, a.longestSec), 0);
-    totals.inbound = agInbound;
-    totals.outbound = agOutbound;
-    totals.total = agInbound + agOutbound;
-    totals.answered = agAnswered;
-    totals.talkSeconds = agTalk;
-    totals.ringSeconds = agRing;
-    totals.longestSec = agLongest;
-    totals.avgTalkSec = agAnswered ? agTalk / agAnswered : 0;
-    totals.avgRingAnsweredSec = agAnswered ? agRing / agAnswered : 0;
-    totals.answerRate = totals.total ? (totals.answered / totals.total) * 100 : 0;
-    totals.missedRate = totals.inbound ? (totals.missed / totals.inbound) * 100 : 0;
-    totals.abandonRate = totals.inbound ? (totals.abandoned / totals.inbound) * 100 : 0;
-  }
+  // ---- Reconciliation intentionally REMOVED ------------------------------
+  // Previous code overwrote platform totals from per-agent row aggregates.
+  // That destroyed the correct classified totals whenever an agent could
+  // not be resolved (queue-inbound rows with dst=<queue number> → no
+  // roster match → unmatched → agent totals = 0 → platform Inbound
+  // zeroed out even though CDR clearly showed inbound calls).
+  //
+  // Rule: platform KPIs come from classified CDR groups above and stay
+  // authoritative. Per-agent stats are supplemental and never mutate them.
+
+
 
   // ---- Team compare -------------------------------------------------------
   // Per M1, team `missed` is inbound-missed only (per-agent already scoped).
@@ -623,7 +649,7 @@ export function aggregateAnalytics(
     // Count only ANSWERED legs whose ringed extension belongs to a
     // telesales agent — a queue call can hit both teams; only credit tele.
     for (const r of c.rows.filter((r) => isAnswered(r.disposition))) {
-      const ext = agentExtFor(r);
+      const ext = agentExtFor(r, opts.queueNumbers);
       const agent = ext ? byExt.get(String(ext).trim()) : undefined;
       if (agent && agent.team === "telesales") {
         const dk = dayKey(r.timestamp, tz);
