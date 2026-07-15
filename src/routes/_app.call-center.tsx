@@ -295,6 +295,18 @@ function CallCenterPage() {
         <HeroKpi label="Conversion rate" value={pct(totals?.total ? ((conv?.overall.orders ?? 0) / totals.total) * 100 : 0)} loading={isLoading} icon={PhoneOutgoing} tone="secondary" hint="Total orders ÷ total calls" />
       </div>
 
+      {/* REALTIME QUEUE — powered by /queue/call_status + /queue/agent_status */}
+      <SectionHeader>Realtime queue</SectionHeader>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Kpi label="Waiting" value={rt.data?.ok ? rt.data.calls.waiting : 0} tone="warning" loading={rt.isPending} hint="In queue now" />
+        <Kpi label="Active" value={rt.data?.ok ? rt.data.calls.active : 0} tone="success" loading={rt.isPending} hint="On call" />
+        <Kpi label="Ringing" value={rt.data?.ok ? rt.data.calls.ringing : 0} loading={rt.isPending} />
+        <Kpi label="Agents ready" value={rt.data?.ok ? rt.data.agents.ready : 0} tone="success" loading={rt.isPending} />
+        <Kpi label="Agents busy" value={rt.data?.ok ? rt.data.agents.busy : 0} tone="secondary" loading={rt.isPending} />
+        <Kpi label="Paused" value={rt.data?.ok ? rt.data.agents.paused : 0} loading={rt.isPending} />
+      </div>
+
+
       {/* QUEUE STATS */}
       <SectionHeader>Queue statistics</SectionHeader>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
