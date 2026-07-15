@@ -49,6 +49,10 @@ function YeastarAdmin() {
   const mapFn = useServerFn(yeastarAgentMappingDiagnostic);
   const capsFn = useServerFn(yeastarEndpointProbe);
   const rosterFn = useServerFn(yeastarQueueRoster);
+  const realtimeFn = useServerFn(yeastarRealtimeQueue);
+  const debugFn = useServerFn(yeastarAnalyticsDebug);
+
+  const [debugCallId, setDebugCallId] = useState("");
 
   const config = useQuery({ queryKey: ["yeastar-config"], queryFn: () => configFn(), enabled: isAdmin });
   const auth = useMutation({ mutationFn: () => authFn() });
@@ -56,6 +60,8 @@ function YeastarAdmin() {
   const map = useMutation({ mutationFn: () => mapFn({ data: { from, to } }) });
   const caps = useMutation({ mutationFn: () => capsFn({ data: { from, to } }) });
   const roster = useMutation({ mutationFn: () => rosterFn() });
+  const realtime = useMutation({ mutationFn: () => realtimeFn() });
+  const debug = useMutation({ mutationFn: () => debugFn({ data: { from, to, callId: debugCallId.trim() } }) });
 
   if (!isAdmin) {
     return (
