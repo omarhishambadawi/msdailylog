@@ -484,34 +484,49 @@ const TELESALES_STATIC_EXTS: Array<{ ext: string; name: string }> = [
 ];
 
 const ROSTER_TTL_MS = 60_000;
-let rosterCache: { at: number; exts: Map<string, string> } | null = null;
+let rosterCache: {
+  at: number;
+  ccExts: Map<string, string>;
+  queueNumbers: Set<string>;
+} | null = null;
 
-async function fetchCustomerCareQueueRoster(): Promise<Map<string, string>> {
+async function fetchQueueData(): Promise<{ ccExts: Map<string, string>; queueNumbers: Set<string> }> {
   const now = Date.now();
-  if (rosterCache && now - rosterCache.at < ROSTER_TTL_MS) return rosterCache.exts;
-  const exts = new Map<string, string>();
+  if (rosterCache && now - rosterCache.at < ROSTER_TTL_MS) {
+    return { ccExts: rosterCache.ccExts, queueNumbers: rosterCache.queueNumbers };
+  }
+  const ccExts = new Map<string, string>();
+  const queueNumbers = new Set<string>();
   try {
     const { isConfigured, yeastarFetch } = await import("@/lib/yeastar/client.server");
-    if (!isConfigured()) return exts;
+    if (!isConfigured()) return { ccExts, queueNumbers };
     const { httpStatus, json } = await yeastarFetch<any>("/openapi/v1.0/queue/list", { page: 1, page_size: 100 });
-    if (httpStatus !== 200 || json?.errcode !== 0) return exts;
+    if (httpStatus !== 200 || json?.errcode !== 0) return { ccExts, queueNumbers };
     const queues = Array.isArray(json.queue_list) ? json.queue_list : [];
-    const cc = queues.find((q: any) => String(q?.number ?? "") === CUSTOMER_CARE_QUEUE_NUMBER);
-    if (!cc) return exts;
-    const members = [
-      ...(Array.isArray(cc.static_agent_list) ? cc.static_agent_list : []),
-      ...(Array.isArray(cc.dynamic_agent_list) ? cc.dynamic_agent_list : []),
-    ];
-    for (const m of members) {
-      const ext = String(m?.text2 ?? "").trim();
-      const name = String(m?.text ?? "").trim();
-      if (ext) exts.set(ext, name || ext);
+    for (const q of queues) {
+      const qnum = String(q?.number ?? "").trim();
+      if (qnum) queueNumbers.add(qnum);
+      if (qnum === CUSTOMER_CARE_QUEUE_NUMBER) {
+        const members = [
+          ...(Array.isArray(q.static_agent_list) ? q.static_agent_list : []),
+          ...(Array.isArray(q.dynamic_agent_list) ? q.dynamic_agent_list : []),
+        ];
+        for (const m of members) {
+          const ext = String(m?.text2 ?? "").trim();
+          const name = String(m?.text ?? "").trim();
+          if (ext) ccExts.set(ext, name || ext);
+        }
+      }
     }
-    rosterCache = { at: now, exts };
+    rosterCache = { at: now, ccExts, queueNumbers };
   } catch {
     // Swallow — caller falls back to DB customer_care mapping.
   }
-  return exts;
+  return { ccExts, queueNumbers };
+}
+
+async function fetchCustomerCareQueueRoster(): Promise<Map<string, string>> {
+  return (await fetchQueueData()).ccExts;
 }
 
 async function loadAgents(_supabase: any) {
