@@ -165,6 +165,13 @@ export interface AggregateOptions {
   direction?: "all" | "Inbound" | "Outbound";
   /** Filter grouped calls by group disposition (applied AFTER classification — C2). */
   status?: "all" | "ANSWERED" | "NO ANSWER" | "BUSY" | "FAILED" | "VOICEMAIL";
+  /**
+   * Known PBX queue numbers (e.g. "6400"). agentExtFor() will NEVER return
+   * one of these — a queue is not an agent. Prevents Inbound queue calls
+   * from being attributed to the queue and then zero-matched, which used to
+   * zero-out platform Inbound totals via the reconciliation block.
+   */
+  queueNumbers?: Set<string>;
 }
 
 const ABANDON_THRESHOLD_SEC = 5;
