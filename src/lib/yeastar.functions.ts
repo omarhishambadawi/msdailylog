@@ -812,7 +812,7 @@ export const yeastarRealtimeQueue = createServerFn({ method: "POST" })
       at: new Date().toISOString(),
       calls: { waiting, active, ringing, total: calls.length },
       agents: { ready, busy, paused, total: agents.length },
-      raw: { callsCount: calls.length, agentsCount: agents.length },
+      raw: { callsCount: calls.length, agentsCount: agents.length, queueIds },
     };
   });
 
