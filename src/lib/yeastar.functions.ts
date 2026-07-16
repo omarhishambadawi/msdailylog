@@ -210,7 +210,6 @@ export const yeastarEndpointProbe = createServerFn({ method: "POST" })
     configured: boolean;
     at: string;
     window?: { from: string; to: string; startEpoch: number; endEpoch: number };
-    window?: { from: string; to: string; startEpoch: number; endEpoch: number };
     probeContext?: { sampleQueueId: number | null; sampleQueueNumber: string | null };
     results: ProbeResult[];
   }> => {
