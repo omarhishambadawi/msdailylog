@@ -158,17 +158,69 @@ function YeastarAdmin() {
             {caps.isPending ? "Probing…" : "Probe endpoints"}
           </Button>
           {caps.data ? (
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-2">
-                {caps.data.results?.map((r) => (
-                  <Badge key={r.endpoint} variant={r.supported ? "default" : "destructive"} className="font-mono text-[11px]">
-                    {r.supported ? "✓" : "✗"} {r.endpoint} · {r.httpStatus}{r.errcode !== null ? `/e${r.errcode}` : ""}
-                  </Badge>
-                ))}
+            <div className="space-y-3">
+              {(() => {
+                const results = caps.data.results ?? [];
+                const supported = results.filter((r) => r.supported);
+                const unsupported = results.filter((r) => !r.supported);
+                return (
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <Badge variant="outline">Total: {results.length}</Badge>
+                    <Badge variant="default">Supported: {supported.length}</Badge>
+                    <Badge variant="destructive">Unsupported: {unsupported.length}</Badge>
+                    {caps.data.probeContext?.sampleQueueId ? (
+                      <Badge variant="outline" className="font-mono">
+                        queue_id={caps.data.probeContext.sampleQueueId}
+                        {caps.data.probeContext.sampleQueueNumber ? ` (#${caps.data.probeContext.sampleQueueNumber})` : ""}
+                      </Badge>
+                    ) : null}
+                  </div>
+                );
+              })()}
+              <div className="overflow-x-auto rounded border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr className="text-left">
+                      <th className="px-2 py-1.5 font-medium">Status</th>
+                      <th className="px-2 py-1.5 font-medium">Endpoint</th>
+                      <th className="px-2 py-1.5 font-medium">HTTP</th>
+                      <th className="px-2 py-1.5 font-medium">errcode</th>
+                      <th className="px-2 py-1.5 font-medium">errmsg</th>
+                      <th className="px-2 py-1.5 font-medium">Sample keys</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {caps.data.results?.map((r) => (
+                      <tr key={r.endpoint} className="border-t align-top">
+                        <td className="px-2 py-1.5">
+                          <Badge variant={r.supported ? "default" : "destructive"} className="text-[10px]">
+                            {r.supported ? "✓ supported" : "✗ unsupported"}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-1.5 font-mono">{r.endpoint}</td>
+                        <td className="px-2 py-1.5 font-mono">{r.httpStatus || "—"}</td>
+                        <td className="px-2 py-1.5 font-mono">{r.errcode ?? "—"}</td>
+                        <td className="px-2 py-1.5 text-muted-foreground max-w-[280px] truncate" title={r.errmsg ?? ""}>
+                          {r.errmsg ?? "—"}
+                        </td>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-muted-foreground max-w-[300px]">
+                          {r.sampleKeys && r.sampleKeys.length
+                            ? r.sampleKeys.slice(0, 8).join(", ") + (r.sampleKeys.length > 8 ? "…" : "")
+                            : "—"}
+                          {r.dataCount !== null ? <span className="ml-1 text-foreground/70">({r.dataCount} items)</span> : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <Json data={caps.data} />
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground">Raw JSON</summary>
+                <Json data={caps.data} />
+              </details>
             </div>
           ) : null}
+
           {caps.error ? <div className="text-sm text-destructive">{(caps.error as Error).message}</div> : null}
         </CardContent>
       </Card>

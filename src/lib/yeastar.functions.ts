@@ -210,6 +210,7 @@ export const yeastarEndpointProbe = createServerFn({ method: "POST" })
     configured: boolean;
     at: string;
     window?: { from: string; to: string; startEpoch: number; endEpoch: number };
+    probeContext?: { sampleQueueId: number | null; sampleQueueNumber: string | null };
     results: ProbeResult[];
   }> => {
     await assertAdmin(context as any);
@@ -292,6 +293,28 @@ export const yeastarEndpointProbe = createServerFn({ method: "POST" })
     // paths explicitly so the caller sees the actual 404 rather than assuming.
     const results: ProbeResult[] = [];
 
+    // Discover a real queue id / number up-front. /queue/call_status and
+    // /queue/agent_status require a queue id on this firmware — probing them
+    // without one just returns "invalid params" and looks like a false failure.
+    let sampleQueueId: number | null = null;
+    let sampleQueueNumber: string | null = null;
+    try {
+      const { httpStatus, json } = await yeastarFetch<any>(
+        "/openapi/v1.0/queue/list", { page: 1, page_size: 10 }, { timeoutMs: 10_000 },
+      );
+      if (httpStatus === 200 && json?.errcode === 0) {
+        const first = Array.isArray(json.queue_list) ? json.queue_list[0] : null;
+        if (first) {
+          sampleQueueId = Number(first?.id ?? 0) || null;
+          sampleQueueNumber = String(first?.number ?? "") || null;
+        }
+      }
+    } catch { /* ignore — probes below will still surface the failure */ }
+
+    const queueIdNote = sampleQueueId
+      ? `Probed with queue_id=${sampleQueueId} (${sampleQueueNumber ?? "?"}) from /queue/list.`
+      : "No queue id discovered from /queue/list — probe used empty params.";
+
     // --- CDR ---------------------------------------------------------------
     results.push(await runProbe("/openapi/v1.0/cdr/list", "GET", { page: 1, page_size: 1 },
       undefined, "Current implementation uses this as fallback."));
@@ -303,22 +326,42 @@ export const yeastarEndpointProbe = createServerFn({ method: "POST" })
       undefined, "v2.0 CDR — commonly absent on P-Series."));
 
     // --- Queue ------------------------------------------------------------
-    results.push(await runProbe("/openapi/v1.0/queue/call_status", "GET", {},
-      undefined, "Real-time queue call status."));
-    results.push(await runProbe("/openapi/v1.0/queue/agent_status", "GET", {},
-      undefined, "Real-time queue agent status."));
+    const queueScope = sampleQueueId
+      ? { queue_id: sampleQueueId }
+      : {};
+    results.push(await runProbe("/openapi/v1.0/queue/call_status", "GET", queueScope,
+      undefined, `Real-time queue call status. ${queueIdNote}`));
+    results.push(await runProbe("/openapi/v1.0/queue/agent_status", "GET", queueScope,
+      undefined, `Real-time queue agent status. ${queueIdNote}`));
     results.push(await runProbe("/openapi/v1.0/queue/list", "GET", { page: 1, page_size: 10 },
       undefined, "Queue enumeration."));
+    results.push(await runProbe("/openapi/v1.0/queue/query", "GET",
+      sampleQueueId ? { queue_id: sampleQueueId } : {},
+      undefined, `Queue configuration query. ${queueIdNote}`));
     results.push(await runProbe("/openapi/v1.0/queue/callstatistics", "GET",
       { start_time: startEpoch, end_time: endEpoch }, undefined, "Historical queue statistics."));
     results.push(await runProbe("/openapi/v1.0/queue/panel/callstatistics", "GET",
       { start_time: startEpoch, end_time: endEpoch }, undefined, "Queue panel statistics (alt path)."));
+
+    // --- Call report (authoritative queue/agent KPIs) ---------------------
+    // Candidate replacements for CDR-inferred KPIs. Probe-only in this iteration —
+    // NOT wired into analytics until we confirm firmware support.
+    results.push(await runProbe("/openapi/v1.0/call_report/list", "GET",
+      { start_time: startEpoch, end_time: endEpoch, page: 1, page_size: 1 },
+      undefined, "Authoritative call report list."));
+    results.push(await runProbe("/openapi/v1.0/call_report/detail", "GET",
+      { start_time: startEpoch, end_time: endEpoch, page: 1, page_size: 1 },
+      undefined, "Authoritative call report detail."));
 
     // --- Call / extension -------------------------------------------------
     results.push(await runProbe("/openapi/v1.0/call/query", "GET", {},
       undefined, "Active call query."));
     results.push(await runProbe("/openapi/v1.0/extension/callstatistics", "GET",
       { start_time: startEpoch, end_time: endEpoch }, undefined, "Per-extension historical stats."));
+
+    // --- System -----------------------------------------------------------
+    results.push(await runProbe("/openapi/v1.0/system/information", "GET", {},
+      undefined, "PBX system information (firmware / model)."));
 
     // --- Event push (webhooks / subscriptions) ----------------------------
     // These are subscription endpoints, not GET data endpoints. Probing them
@@ -337,9 +380,11 @@ export const yeastarEndpointProbe = createServerFn({ method: "POST" })
       window: { from: data.from ?? new Date(startEpoch * 1000).toISOString().slice(0, 10),
                 to: data.to ?? new Date(endEpoch * 1000).toISOString().slice(0, 10),
                 startEpoch, endEpoch },
+      probeContext: { sampleQueueId, sampleQueueNumber },
       results,
     };
   });
+
 
 // ---- Agent mapping diagnostic (admin) --------------------------------------
 
@@ -701,27 +746,41 @@ export const yeastarRealtimeQueue = createServerFn({ method: "POST" })
       return { ok: false as const, configured: false as const };
     }
 
-    const safeFetch = async (path: string) => {
+    const safeFetch = async (path: string, query: Record<string, string | number | undefined> = {}) => {
       try {
-        const { httpStatus, json } = await yeastarFetch<any>(path, {}, { timeoutMs: 8_000 });
+        const { httpStatus, json } = await yeastarFetch<any>(path, query, { timeoutMs: 8_000 });
         if (httpStatus !== 200 || json?.errcode !== 0) return null;
         return json;
       } catch { return null; }
     };
 
-    const [callStatus, agentStatus] = await Promise.all([
-      safeFetch("/openapi/v1.0/queue/call_status"),
-      safeFetch("/openapi/v1.0/queue/agent_status"),
-    ]);
+    // /queue/call_status and /queue/agent_status require a queue id on this
+    // firmware; without it they return "invalid params" and the widget shows
+    // zeros. Enumerate queues from /queue/list, then fan out per queue and
+    // merge — preserving the flat calls[] / agents[] shape the widget expects.
+    const queueListJson = await safeFetch("/openapi/v1.0/queue/list", { page: 1, page_size: 100 });
+    const queueList: any[] = Array.isArray(queueListJson?.queue_list) ? queueListJson.queue_list : [];
+    const queueIds: number[] = queueList
+      .map((q) => Number(q?.id ?? 0))
+      .filter((id) => Number.isFinite(id) && id > 0);
 
-    // queue/call_status → list of calls currently in / on queues.
-    const calls: any[] = Array.isArray(callStatus?.data) ? callStatus.data
-      : Array.isArray(callStatus?.queue_call_status_list) ? callStatus.queue_call_status_list
-      : [];
-    // queue/agent_status → list of agent states.
-    const agents: any[] = Array.isArray(agentStatus?.data) ? agentStatus.data
-      : Array.isArray(agentStatus?.queue_agent_status_list) ? agentStatus.queue_agent_status_list
-      : [];
+    const perQueue = await Promise.all(queueIds.map(async (queue_id) => {
+      const [cs, as] = await Promise.all([
+        safeFetch("/openapi/v1.0/queue/call_status", { queue_id }),
+        safeFetch("/openapi/v1.0/queue/agent_status", { queue_id }),
+      ]);
+      const cList: any[] = Array.isArray(cs?.data) ? cs.data
+        : Array.isArray(cs?.queue_call_status_list) ? cs.queue_call_status_list
+        : [];
+      const aList: any[] = Array.isArray(as?.data) ? as.data
+        : Array.isArray(as?.queue_agent_status_list) ? as.queue_agent_status_list
+        : [];
+      return { cList, aList };
+    }));
+
+    const calls: any[] = perQueue.flatMap((r) => r.cList);
+    const agents: any[] = perQueue.flatMap((r) => r.aList);
+
 
     // Widget counters — string-comparison is permissive because the field
     // name varies across firmwares (`status`, `state`, `agent_status`, etc.).
@@ -753,7 +812,7 @@ export const yeastarRealtimeQueue = createServerFn({ method: "POST" })
       at: new Date().toISOString(),
       calls: { waiting, active, ringing, total: calls.length },
       agents: { ready, busy, paused, total: agents.length },
-      raw: { callsCount: calls.length, agentsCount: agents.length },
+      raw: { callsCount: calls.length, agentsCount: agents.length, queueIds },
     };
   });
 
