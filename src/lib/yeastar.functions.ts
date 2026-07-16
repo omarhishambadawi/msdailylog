@@ -292,6 +292,28 @@ export const yeastarEndpointProbe = createServerFn({ method: "POST" })
     // paths explicitly so the caller sees the actual 404 rather than assuming.
     const results: ProbeResult[] = [];
 
+    // Discover a real queue id / number up-front. /queue/call_status and
+    // /queue/agent_status require a queue id on this firmware — probing them
+    // without one just returns "invalid params" and looks like a false failure.
+    let sampleQueueId: number | null = null;
+    let sampleQueueNumber: string | null = null;
+    try {
+      const { httpStatus, json } = await yeastarFetch<any>(
+        "/openapi/v1.0/queue/list", { page: 1, page_size: 10 }, { timeoutMs: 10_000 },
+      );
+      if (httpStatus === 200 && json?.errcode === 0) {
+        const first = Array.isArray(json.queue_list) ? json.queue_list[0] : null;
+        if (first) {
+          sampleQueueId = Number(first?.id ?? 0) || null;
+          sampleQueueNumber = String(first?.number ?? "") || null;
+        }
+      }
+    } catch { /* ignore — probes below will still surface the failure */ }
+
+    const queueIdNote = sampleQueueId
+      ? `Probed with queue_id=${sampleQueueId} (${sampleQueueNumber ?? "?"}) from /queue/list.`
+      : "No queue id discovered from /queue/list — probe used empty params.";
+
     // --- CDR ---------------------------------------------------------------
     results.push(await runProbe("/openapi/v1.0/cdr/list", "GET", { page: 1, page_size: 1 },
       undefined, "Current implementation uses this as fallback."));
@@ -303,22 +325,42 @@ export const yeastarEndpointProbe = createServerFn({ method: "POST" })
       undefined, "v2.0 CDR — commonly absent on P-Series."));
 
     // --- Queue ------------------------------------------------------------
-    results.push(await runProbe("/openapi/v1.0/queue/call_status", "GET", {},
-      undefined, "Real-time queue call status."));
-    results.push(await runProbe("/openapi/v1.0/queue/agent_status", "GET", {},
-      undefined, "Real-time queue agent status."));
+    const queueScope = sampleQueueId
+      ? { queue_id: sampleQueueId }
+      : {};
+    results.push(await runProbe("/openapi/v1.0/queue/call_status", "GET", queueScope,
+      undefined, `Real-time queue call status. ${queueIdNote}`));
+    results.push(await runProbe("/openapi/v1.0/queue/agent_status", "GET", queueScope,
+      undefined, `Real-time queue agent status. ${queueIdNote}`));
     results.push(await runProbe("/openapi/v1.0/queue/list", "GET", { page: 1, page_size: 10 },
       undefined, "Queue enumeration."));
+    results.push(await runProbe("/openapi/v1.0/queue/query", "GET",
+      sampleQueueId ? { queue_id: sampleQueueId } : {},
+      undefined, `Queue configuration query. ${queueIdNote}`));
     results.push(await runProbe("/openapi/v1.0/queue/callstatistics", "GET",
       { start_time: startEpoch, end_time: endEpoch }, undefined, "Historical queue statistics."));
     results.push(await runProbe("/openapi/v1.0/queue/panel/callstatistics", "GET",
       { start_time: startEpoch, end_time: endEpoch }, undefined, "Queue panel statistics (alt path)."));
+
+    // --- Call report (authoritative queue/agent KPIs) ---------------------
+    // Candidate replacements for CDR-inferred KPIs. Probe-only in this iteration —
+    // NOT wired into analytics until we confirm firmware support.
+    results.push(await runProbe("/openapi/v1.0/call_report/list", "GET",
+      { start_time: startEpoch, end_time: endEpoch, page: 1, page_size: 1 },
+      undefined, "Authoritative call report list."));
+    results.push(await runProbe("/openapi/v1.0/call_report/detail", "GET",
+      { start_time: startEpoch, end_time: endEpoch, page: 1, page_size: 1 },
+      undefined, "Authoritative call report detail."));
 
     // --- Call / extension -------------------------------------------------
     results.push(await runProbe("/openapi/v1.0/call/query", "GET", {},
       undefined, "Active call query."));
     results.push(await runProbe("/openapi/v1.0/extension/callstatistics", "GET",
       { start_time: startEpoch, end_time: endEpoch }, undefined, "Per-extension historical stats."));
+
+    // --- System -----------------------------------------------------------
+    results.push(await runProbe("/openapi/v1.0/system/information", "GET", {},
+      undefined, "PBX system information (firmware / model)."));
 
     // --- Event push (webhooks / subscriptions) ----------------------------
     // These are subscription endpoints, not GET data endpoints. Probing them
@@ -337,9 +379,11 @@ export const yeastarEndpointProbe = createServerFn({ method: "POST" })
       window: { from: data.from ?? new Date(startEpoch * 1000).toISOString().slice(0, 10),
                 to: data.to ?? new Date(endEpoch * 1000).toISOString().slice(0, 10),
                 startEpoch, endEpoch },
+      probeContext: { sampleQueueId, sampleQueueNumber },
       results,
     };
   });
+
 
 // ---- Agent mapping diagnostic (admin) --------------------------------------
 
