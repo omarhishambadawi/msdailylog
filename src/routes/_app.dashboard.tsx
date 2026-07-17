@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMemo, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend, AreaChart, Area } from "recharts";
 import { fmtSAR } from "@/lib/branches";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
@@ -385,15 +385,28 @@ function Dashboard() {
           <CardHeader><CardTitle className="text-base">Daily sales trend</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data?.byDay ?? []}>
+              <AreaChart data={data?.byDay ?? []} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="dailyAll" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--color-chart-1)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--color-chart-1)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="dailyCompleted" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#16a34a" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#16a34a" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: any) => fmtSAR(v)} />
-                <Legend />
-                <Bar dataKey="completed" name="Completed" fill="#16a34a" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="total" name="All" fill="var(--color-chart-1)" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickMargin={6} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={48} />
+                <Tooltip
+                  formatter={(v: any) => fmtSAR(v)}
+                  contentStyle={{ borderRadius: 8, border: "1px solid var(--color-border)", fontSize: 12 }}
+                />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                <Area type="monotone" dataKey="total" name="All" stroke="var(--color-chart-1)" strokeWidth={2} fill="url(#dailyAll)" activeDot={{ r: 4 }} isAnimationActive animationDuration={500} />
+                <Area type="monotone" dataKey="completed" name="Completed" stroke="#16a34a" strokeWidth={2} fill="url(#dailyCompleted)" activeDot={{ r: 4 }} isAnimationActive animationDuration={600} />
+              </AreaChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>

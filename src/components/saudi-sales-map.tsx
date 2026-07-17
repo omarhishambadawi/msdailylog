@@ -309,8 +309,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
               filter="url(#ksa-shadow)"
             />
 
-            {/* Label leader lines — drawn largest-last so top bubbles' lines sit above */}
-            {[...placed].reverse().map((p) => {
+            {/* Label leader lines — drawn so smallest bubbles' lines sit above larger ones. */}
+            {placed.map((p) => {
               const active = hoverName === p.name;
               const tx = p.anchor === "start" ? p.labelX - 2 : p.anchor === "end" ? p.labelX + 2 : p.labelX;
               const ty = p.anchor === "middle" && p.labelY < p.cy ? p.labelY + 3 : p.labelY - 4;
@@ -322,11 +322,11 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
               );
             })}
 
-            {/* Bubbles — render smallest first so the largest bubble paints on top.
-                Visual layer is not interactive; hit-testing is handled by the
-                dedicated top-most layer below to avoid overlap hijacking hover
-                (e.g. Jeddah/Makkah/Taif clustering). */}
-            {[...placed].reverse().map((p, i) => {
+            {/* Bubbles — render largest first so the smallest bubble paints on top.
+                This keeps close clusters (Jeddah/Makkah/Taif) individually visible
+                and matches the hit-target ordering below so what you see is what
+                you click. */}
+            {placed.map((p, i) => {
               const active = hoverName === p.name;
               return (
                 <g key={p.name}

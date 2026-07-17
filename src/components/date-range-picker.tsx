@@ -55,13 +55,13 @@ export function DateRangePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[min(calc(100vw-1.5rem),640px)] max-w-[640px] p-0 pointer-events-auto overflow-hidden"
+        className="w-auto max-w-[calc(100vw-1.5rem)] p-0 pointer-events-auto overflow-hidden"
         align={align}
         sideOffset={8}
         collisionPadding={12}
       >
-        <div className="flex flex-col sm:flex-row max-h-[min(80vh,560px)] overflow-auto">
-          <div className="flex sm:flex-col gap-1 border-b sm:border-b-0 sm:border-r p-2 sm:min-w-[130px] bg-muted/30 overflow-x-auto sm:overflow-visible">
+        <div className="flex flex-col sm:flex-row max-h-[min(80vh,560px)]">
+          <div className="flex sm:flex-col gap-1 border-b sm:border-b-0 sm:border-r p-2 sm:w-[124px] shrink-0 bg-muted/30 overflow-x-auto sm:overflow-visible">
             <div className="hidden sm:block text-[10px] uppercase tracking-wider text-muted-foreground px-2 pt-1 pb-1 font-semibold">Presets</div>
             {PRESETS.map((p) => (
               <Button key={p.key} size="sm" variant="ghost" className="justify-start font-normal h-8 whitespace-nowrap shrink-0" onClick={() => onChange(buildRange(p.key))}>
