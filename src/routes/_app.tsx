@@ -232,7 +232,7 @@ function MobileSidebar({ nav, activePath, profile, role, email, onSignOut }: {
   return (
     <>
       <div className="px-3 py-3 border-b border-border flex items-center gap-3">
-        <img src={logo.url} alt="MilaServ" className="h-10 w-10 object-contain shrink-0 drop-shadow-sm" />
+        <img src={logo.url} alt="MilaServ" className="h-10 w-auto object-contain shrink-0" />
         <div className="min-w-0">
           <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
           <div className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">Portal</div>
