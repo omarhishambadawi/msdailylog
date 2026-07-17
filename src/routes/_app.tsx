@@ -99,7 +99,7 @@ function AppLayout() {
         "px-3 py-4 border-b border-border flex items-center gap-3",
         !expanded && "justify-center px-2",
       )}>
-        <img src={logo.url} alt="MilaServ" className="h-10 w-10 object-contain shrink-0 drop-shadow-sm" />
+        <img src={logo.url} alt="MilaServ" className="h-10 w-auto object-contain shrink-0" />
         {expanded && (
           <div className="min-w-0">
             <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
