@@ -55,7 +55,7 @@ export function DateRangePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[min(calc(100vw-1.5rem),640px)] max-w-[640px] p-0 pointer-events-auto overflow-hidden"
+        className="w-auto max-w-[calc(100vw-1.5rem)] p-0 pointer-events-auto overflow-hidden"
         align={align}
         sideOffset={8}
         collisionPadding={12}
