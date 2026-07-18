@@ -134,6 +134,8 @@ function displayLabel(name: string): string {
   if (name.toLowerCase() === "jeddah") return "Taif";
   if (name.toLowerCase() === "taif") return "Jeddah";
   return name;
+}
+
 
 export interface CitySales {
   name: string;
