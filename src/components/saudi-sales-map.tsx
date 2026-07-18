@@ -386,25 +386,42 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
               </g>
             )}
 
-            {/* Top-most hit-target layer — smaller bubbles rendered last so
-                overlapping clusters (Jeddah / Makkah / Taif) each capture
-                their own hover accurately. Transparent circles clamped to a
-                minimum radius for reliable pointer targets on any density. */}
-            {[...placed].sort((a, b) => b.r - a.r).map((p) => (
-              <circle
-                key={`hit-${p.name}`}
-                cx={p.cx}
-                cy={p.cy}
-                r={Math.max(p.r, 10)}
-                fill="transparent"
-                style={{ cursor: "pointer" }}
-                onMouseEnter={() => setHoverName(p.name)}
-                onMouseLeave={() => setHoverName((n) => (n === p.name ? null : n))}
-                onTouchStart={() => setHoverName(p.name)}
-              >
-                <title>{p.name}</title>
-              </circle>
-            ))}
+            {/* Top-most hit-target layer — neighbor-aware radius.
+                Each city's hit circle is bounded by half the distance to its
+                nearest neighbor so overlapping clusters like Jeddah / Makkah /
+                Taif each unambiguously capture their own pointer events.
+                Rendered smallest-last so tiny bubbles sit on top of larger
+                ones for reliable hover in dense clusters. */}
+            {[...placed]
+              .map((p) => {
+                let nearest = Infinity;
+                for (const q of placed) {
+                  if (q.name === p.name) continue;
+                  const d = Math.hypot(p.cx - q.cx, p.cy - q.cy);
+                  if (d < nearest) nearest = d;
+                }
+                // Never let the hit-target reach a neighbor's center.
+                // Use half the distance minus a 1px safety gap.
+                const cap = Number.isFinite(nearest) ? Math.max(4, nearest / 2 - 1) : Infinity;
+                const hitR = Math.min(Math.max(p.r, 8), cap);
+                return { ...p, hitR };
+              })
+              .sort((a, b) => b.hitR - a.hitR)
+              .map((p) => (
+                <circle
+                  key={`hit-${p.name}`}
+                  cx={p.cx}
+                  cy={p.cy}
+                  r={p.hitR}
+                  fill="transparent"
+                  style={{ cursor: "pointer" }}
+                  onMouseEnter={() => setHoverName(p.name)}
+                  onMouseLeave={() => setHoverName((n) => (n === p.name ? null : n))}
+                  onTouchStart={() => setHoverName(p.name)}
+                >
+                  <title>{p.name}</title>
+                </circle>
+              ))}
           </svg>
 
           {hover && (() => {
