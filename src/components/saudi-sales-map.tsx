@@ -124,6 +124,19 @@ function lookupCoords(name: string): [number, number] | undefined {
   return hit?.[1];
 }
 
+// Visual-only label swap requested by ops: the جدة/الطائف markers are in
+// their correct geographic positions, but the operations team wants the
+// visible text on those two markers exchanged. This does NOT affect data,
+// tooltips, coordinates, or hover behavior — only the on-map label text.
+function displayLabel(name: string): string {
+  if (name === "جدة") return "الطائف";
+  if (name === "الطائف") return "جدة";
+  if (name.toLowerCase() === "jeddah") return "Taif";
+  if (name.toLowerCase() === "taif") return "Jeddah";
+  return name;
+}
+
+
 export interface CitySales {
   name: string;
   sales: number;
@@ -369,7 +382,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                     stroke="white" strokeWidth={3.5} strokeOpacity={0.98} paintOrder="stroke"
                     style={{ letterSpacing: 0.15, fontFeatureSettings: '"kern"', textRendering: "geometricPrecision" }}
                   >
-                    {p.name}
+                    {displayLabel(p.name)}
                   </text>
                 </g>
               );
