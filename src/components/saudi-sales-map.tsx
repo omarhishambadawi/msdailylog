@@ -10,7 +10,7 @@ import { fmtSAR } from "@/lib/branches";
 // Approximate lat/lon for major Saudi cities. Keys stored in normalized form.
 const CITY_COORDS: Record<string, [number, number]> = {
   riyadh: [46.6753, 24.7136],
-  jeddah: [39.1925, 21.4858],
+  jeddah: [40.4155, 21.2703],
   mecca: [39.8579, 21.3891],
   makkah: [39.8579, 21.3891],
   medina: [39.6142, 24.4686],
