@@ -28,6 +28,17 @@ export const Route = createFileRoute("/_app/dashboard")({
 
 const toISO = (d: Date) => format(d, "yyyy-MM-dd");
 
+type KpiRow = {
+  bucket: string;
+  total_sales: number;
+  completed_sales: number;
+  order_count: number;
+  completed_count: number;
+  pending_count: number;
+  cancelled_count: number;
+  completion_rate: number;
+};
+
 function Dashboard() {
   const { user, role, profile } = useAuth();
   const canViewDashboard = hasPerm(role, profile?.permissions as any, "view_dashboard");
@@ -266,6 +277,42 @@ function Dashboard() {
     },
   });
 
+  // Headline KPI cards now come from the orders_kpis RPC (server-side
+  // aggregation) instead of the client-side cash/wasfaty/total reduction.
+  // Scoped by the same effective team/agent filters; RLS applies.
+  const { data: kpiRows } = useQuery({
+    queryKey: ["dashboard-kpis", from, to, effectiveAgent, effectiveTeam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("orders_kpis" as any, {
+        _from: from,
+        _to: to,
+        _team: effectiveTeam,
+        _agent: effectiveAgent === "all" ? null : effectiveAgent,
+        _mine: false,
+      });
+      if (error) throw error;
+      return (data ?? []) as KpiRow[];
+    },
+    enabled: canViewDashboard,
+  });
+
+  const kpiByBucket = useMemo(() => {
+    const m = new Map((kpiRows ?? []).map((r) => [r.bucket, r]));
+    const toStats = (b?: KpiRow): DashKpiStats | undefined =>
+      b
+        ? {
+            totalSales: Number(b.total_sales),
+            completedSales: Number(b.completed_sales),
+            totalOrders: Number(b.order_count),
+            completedOrders: Number(b.completed_count),
+            pending: Number(b.pending_count),
+            cancelled: Number(b.cancelled_count),
+            completionRate: Number(b.completion_rate),
+          }
+        : undefined;
+    return { cash: toStats(m.get("cash")), wasfaty: toStats(m.get("wasfaty")), total: toStats(m.get("total")) };
+  }, [kpiRows]);
+
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
     Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
@@ -337,9 +384,9 @@ function Dashboard() {
       <div>
         <SectionTitle title="Performance for selected period" />
         <div className="grid gap-3 sm:grid-cols-3">
-          <DashKpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10" stats={data?.cashStats} />
-          <DashKpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10" stats={data?.wasStats} />
-          <DashKpiCard label="Total" tone="from-primary/10 to-transparent" highlight stats={data?.totalStats} />
+          <DashKpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10" stats={kpiByBucket.cash} />
+          <DashKpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10" stats={kpiByBucket.wasfaty} />
+          <DashKpiCard label="Total" tone="from-primary/10 to-transparent" highlight stats={kpiByBucket.total} />
         </div>
       </div>
 
