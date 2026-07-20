@@ -335,6 +335,27 @@ function Dashboard() {
     [dailyRows],
   );
 
+  // Orders-by-status distribution from orders_status RPC.
+  const { data: statusRows } = useQuery({
+    queryKey: ["dashboard-status", from, to, effectiveAgent, effectiveTeam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("orders_status" as any, {
+        _from: from,
+        _to: to,
+        _team: effectiveTeam,
+        _agent: effectiveAgent === "all" ? null : effectiveAgent,
+        _mine: false,
+      });
+      if (error) throw error;
+      return (data ?? []) as Array<{ status: string; order_count: number }>;
+    },
+    enabled: canViewDashboard,
+  });
+  const statusData = useMemo(
+    () => (statusRows ?? []).map((r) => ({ name: r.status, value: Number(r.order_count) })),
+    [statusRows],
+  );
+
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
     Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
@@ -485,8 +506,8 @@ function Dashboard() {
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={data?.byStatus ?? []} dataKey="value" nameKey="name" outerRadius={80} label>
-                  {(data?.byStatus ?? []).map((s, i) => <Cell key={i} fill={STATUS_COLORS[s.name] ?? COLORS[i % COLORS.length]} />)}
+                <Pie data={statusData} dataKey="value" nameKey="name" outerRadius={80} label>
+                  {statusData.map((s, i) => <Cell key={i} fill={STATUS_COLORS[s.name] ?? COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Legend />
                 <Tooltip />
