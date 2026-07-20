@@ -486,6 +486,33 @@ function Dashboard() {
   const deliveryBranchMatrix = useMemo(() => pivotMatrix("branch"), [matrixRows]);
   const deliveryCityMatrix = useMemo(() => pivotMatrix("city"), [matrixRows]);
 
+  // CC invoice verification per agent from orders_verification RPC (top 12).
+  const { data: verificationRows } = useQuery({
+    queryKey: ["dashboard-verification", from, to, effectiveAgent, effectiveTeam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("orders_verification" as any, {
+        _from: from,
+        _to: to,
+        _team: effectiveTeam,
+        _agent: effectiveAgent === "all" ? null : effectiveAgent,
+        _mine: false,
+      });
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        agent_id: string; agent_name: string; total_orders: number;
+        verified: number; non_verified: number; verified_value: number; rate: number;
+      }>;
+    },
+    enabled: canViewDashboard,
+  });
+  const verifData = useMemo(
+    () => (verificationRows ?? []).slice(0, 12).map((r) => ({
+      name: r.agent_name, total: Number(r.total_orders), verified: Number(r.verified),
+      nonVerified: Number(r.non_verified), rate: Number(r.rate), verifiedValue: Number(r.verified_value),
+    })),
+    [verificationRows],
+  );
+
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
     Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
@@ -582,8 +609,8 @@ function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.verifAgentRows ?? []).length === 0 && <tr><td colSpan={6} className="text-center text-muted-foreground py-6">No data</td></tr>}
-                {(data?.verifAgentRows ?? []).map((r) => (
+                {verifData.length === 0 && <tr><td colSpan={6} className="text-center text-muted-foreground py-6">No data</td></tr>}
+                {verifData.map((r) => (
                   <tr key={r.name} className="border-b last:border-0">
                     <td className="px-3 py-2 font-medium whitespace-nowrap">{r.name}</td>
                     <td className="px-3 py-2 text-right">{r.total}</td>
