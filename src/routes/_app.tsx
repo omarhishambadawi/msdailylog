@@ -227,7 +227,8 @@ function AppLayout() {
   );
 }
 
-function MobileSidebar({ nav, activePath, profile, role, email, onSignOut }: {
+function MobileSidebar({ logoUrl, nav, activePath, profile, role, email, onSignOut }: {
+  logoUrl: string;
   nav: Array<{ to: string; label: string; icon: any }>;
   activePath: string;
   profile: any;
@@ -238,7 +239,8 @@ function MobileSidebar({ nav, activePath, profile, role, email, onSignOut }: {
   return (
     <>
       <div className="px-3 py-3 border-b border-border flex items-center gap-3">
-        <img src={logo.url} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+        <img src={logoUrl} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+
         <div className="min-w-0">
           <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
           <div className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">Portal</div>
