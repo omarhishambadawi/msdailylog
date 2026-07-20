@@ -459,6 +459,33 @@ function Dashboard() {
     [deliveryRows],
   );
 
+  // Branch x method / city x method crosstabs from orders_delivery_matrix RPC.
+  const { data: matrixRows } = useQuery({
+    queryKey: ["dashboard-delivery-matrix", from, to, effectiveAgent, effectiveTeam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("orders_delivery_matrix" as any, {
+        _from: from,
+        _to: to,
+        _team: effectiveTeam,
+        _agent: effectiveAgent === "all" ? null : effectiveAgent,
+        _mine: false,
+      });
+      if (error) throw error;
+      return (data ?? []) as Array<{ location_type: string; location: string; delivery_type: string; completed_sales: number }>;
+    },
+    enabled: canViewDashboard,
+  });
+  const pivotMatrix = (type: "branch" | "city") => {
+    const m: Record<string, Record<string, number>> = {};
+    for (const r of matrixRows ?? []) {
+      if (r.location_type !== type) continue;
+      (m[r.location] ??= {})[r.delivery_type] = Number(r.completed_sales);
+    }
+    return m;
+  };
+  const deliveryBranchMatrix = useMemo(() => pivotMatrix("branch"), [matrixRows]);
+  const deliveryCityMatrix = useMemo(() => pivotMatrix("city"), [matrixRows]);
+
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
     Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
@@ -725,8 +752,8 @@ function Dashboard() {
         </Card>
 
         <div className="grid lg:grid-cols-2 gap-3 sm:gap-4 mt-3">
-          <DeliveryMatrix title="Sales by branch × delivery method" matrix={data?.byDeliveryBranch ?? {}} methods={deliveryMethods} />
-          <DeliveryMatrix title="Sales by city × delivery method" matrix={data?.byDeliveryCity ?? {}} methods={deliveryMethods} />
+          <DeliveryMatrix title="Sales by branch × delivery method" matrix={deliveryBranchMatrix} methods={deliveryMethods} />
+          <DeliveryMatrix title="Sales by city × delivery method" matrix={deliveryCityMatrix} methods={deliveryMethods} />
         </div>
       </div>
 
