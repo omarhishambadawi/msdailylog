@@ -242,7 +242,10 @@ function MobileSidebar({ logoUrl, nav, activePath, profile, role, email, onSignO
   return (
     <>
       <div className="px-3 py-3 border-b border-border flex items-center gap-3">
-        <img src={logoUrl} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+        <div className="h-10 w-10 flex items-center justify-center shrink-0">
+          <img src={logoUrl} alt="MilaServ" className="max-h-full max-w-full object-contain" />
+        </div>
+
 
         <div className="min-w-0">
           <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
