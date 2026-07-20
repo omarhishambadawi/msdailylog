@@ -7,11 +7,12 @@ import {
   ShieldAlert, MessageSquareWarning, Menu, X, PhoneCall, Headphones,
   UserCircle2,
 } from "lucide-react";
-import logo from "@/assets/milaserv-logo.png.asset.json";
+import { useLogo } from "@/lib/use-logo";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/notification-bell";
 import { hasPerm } from "@/lib/permissions";
 import { UserAvatar } from "@/components/user-avatar";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
