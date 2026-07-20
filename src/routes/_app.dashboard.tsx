@@ -378,6 +378,27 @@ function Dashboard() {
     [teamRows],
   );
 
+  // Top agents by sales from orders_agents RPC (top 10 for the chart).
+  const { data: agentRows } = useQuery({
+    queryKey: ["dashboard-agent-sales", from, to, effectiveAgent, effectiveTeam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("orders_agents" as any, {
+        _from: from,
+        _to: to,
+        _team: effectiveTeam,
+        _agent: effectiveAgent === "all" ? null : effectiveAgent,
+        _mine: false,
+      });
+      if (error) throw error;
+      return (data ?? []) as Array<{ agent_id: string; agent_name: string; completed_sales: number }>;
+    },
+    enabled: canViewDashboard,
+  });
+  const agentSalesData = useMemo(
+    () => (agentRows ?? []).slice(0, 10).map((r) => ({ name: r.agent_name, sales: Number(r.completed_sales) })),
+    [agentRows],
+  );
+
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
     Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
@@ -557,7 +578,7 @@ function Dashboard() {
           <CardHeader><CardTitle className="text-base">Top agents by sales</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data?.byAgent ?? []} layout="vertical">
+              <BarChart data={agentSalesData} layout="vertical">
                 <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis type="number" tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
