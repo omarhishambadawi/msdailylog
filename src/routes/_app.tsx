@@ -27,6 +27,8 @@ function AppLayout() {
 
   // Compact-by-default: sidebar starts collapsed (icons + label under icon).
   // Preference persisted to localStorage and hydrated after mount to avoid SSR mismatch.
+  const logoUrl = useLogo();
+  // Compact-by-default: sidebar starts collapsed (icons + label under icon).
   const [expanded, setExpanded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
