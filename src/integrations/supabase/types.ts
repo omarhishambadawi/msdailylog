@@ -456,6 +456,50 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      complaints_in_scope: {
+        Args: { _agent?: string; _from: string; _mine?: boolean; _to: string }
+        Returns: {
+          agent_id: string
+          branch_no: string | null
+          category: string | null
+          complaint_date: string
+          created_at: string
+          customer_name: string | null
+          customer_phone: string | null
+          description: string | null
+          display_no: string
+          id: string
+          resolution: string | null
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "complaints"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      complaints_kpis: {
+        Args: { _agent?: string; _from: string; _mine?: boolean; _to: string }
+        Returns: {
+          in_progress: number
+          resolution_rate: number
+          resolved: number
+          total: number
+        }[]
+      }
+      complaints_locations: {
+        Args: { _agent?: string; _from: string; _mine?: boolean; _to: string }
+        Returns: {
+          location: string
+          location_type: string
+          open: number
+          rate: number
+          resolved: number
+          total: number
+        }[]
+      }
       get_my_profile: {
         Args: never
         Returns: {
@@ -501,6 +545,101 @@ export type Database = {
         }
         Returns: undefined
       }
+      orders_agents: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          agent_id: string
+          agent_name: string
+          completed_sales: number
+          completion_rate: number
+          order_count: number
+          team: string
+        }[]
+      }
+      orders_daily: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          completed_sales: number
+          day: string
+          total_sales: number
+        }[]
+      }
+      orders_delivery: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          completed_sales: number
+          completion_rate: number
+          delivery_type: string
+          order_count: number
+        }[]
+      }
+      orders_delivery_matrix: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          completed_sales: number
+          delivery_type: string
+          location: string
+          location_type: string
+        }[]
+      }
+      orders_in_scope: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          agent_id: string
+          branch_no: string | null
+          call_center_verified: boolean
+          created_at: string
+          customer_name: string | null
+          customer_phone: string | null
+          delivery_type: string | null
+          display_no: string
+          id: string
+          invoice_no: string | null
+          invoice_value: number | null
+          notes: string | null
+          order_date: string
+          order_type: string
+          status: string
+          team: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "orders"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       orders_kpi_summary: {
         Args: {
           _agent?: string
@@ -512,6 +651,89 @@ export type Database = {
           _to: string
         }
         Returns: Json
+      }
+      orders_kpis: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          bucket: string
+          cancelled_count: number
+          completed_count: number
+          completed_sales: number
+          completion_rate: number
+          order_count: number
+          pending_count: number
+          total_sales: number
+        }[]
+      }
+      orders_locations: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          completed_count: number
+          completed_sales: number
+          completion_rate: number
+          location: string
+          location_type: string
+          order_count: number
+          total_sales: number
+        }[]
+      }
+      orders_status: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          order_count: number
+          status: string
+        }[]
+      }
+      orders_teams: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          completed_sales: number
+          completion_rate: number
+          order_count: number
+          team: string
+        }[]
+      }
+      orders_verification: {
+        Args: {
+          _agent?: string
+          _from: string
+          _mine?: boolean
+          _team?: string
+          _to: string
+        }
+        Returns: {
+          agent_id: string
+          agent_name: string
+          non_verified: number
+          rate: number
+          total_orders: number
+          verified: number
+          verified_value: number
+        }[]
       }
     }
     Enums: {
