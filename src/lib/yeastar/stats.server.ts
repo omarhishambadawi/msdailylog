@@ -126,7 +126,8 @@ export interface ConversionRow {
   ordersTotal: number; ordersCompleted: number; ordersCancelled: number; ordersPending: number;
   ordersCash: number; ordersWasfaty: number;
   revenue: number;
-  conversionRate: number;      // completed / answered * 100
+  conversionRate: number;      // total orders / answered * 100 (canonical)
+  completionRate: number;      // completed orders / total orders * 100
   revenuePerCall: number;
   revenuePerOrder: number;
 }
@@ -141,11 +142,12 @@ export interface AnalyticsResult {
     overall: {
       answered: number; orders: number; completed: number; cancelled: number; pending: number;
       cash: number; wasfaty: number; revenue: number;
-      conversionRate: number;        // completed / answered * 100
+      conversionRate: number;        // total orders / answered * 100 (canonical)
+      completionRate: number;        // completed orders / total orders * 100
       revenuePerCall: number; revenuePerOrder: number;
     };
     perAgent: ConversionRow[];
-    perDay: { date: string; answered: number; completed: number; rate: number }[];
+    perDay: { date: string; answered: number; orders: number; rate: number }[];
   };
   unmatched: { records: number; extensions: { ext: string; count: number }[] };
 }
@@ -172,6 +174,15 @@ export interface AggregateOptions {
    * zero-out platform Inbound totals via the reconciliation block.
    */
   queueNumbers?: Set<string>;
+  /**
+   * Active team/agent scope. When set, platform totals, day/hour buckets and
+   * per-agent stats include only call groups attributed to `exts` (a leg
+   * resolved to an in-scope agent extension) plus, for a team selection,
+   * unanswered inbound calls routed through `ownedQueueNumbers` (the team's
+   * owning queue — Customer Care owns 6400). When undefined (team = all,
+   * no agent), every classified call is included (prior behaviour).
+   */
+  scope?: { exts: Set<string>; ownedQueueNumbers?: Set<string> };
 }
 
 const ABANDON_THRESHOLD_SEC = 5;
@@ -269,6 +280,21 @@ function agentExtFor(r: CdrRecord, queueNumbers?: Set<string>): string | null {
     return null; // Unknown — never fall through to a queue number.
   }
   return null; // Internal ignored
+}
+
+/**
+ * True if any leg's destination/DID matches one of the given queue numbers.
+ * Used to attribute unanswered inbound queue calls to the owning team even
+ * when no agent answered (team-scope rule).
+ */
+function routedThroughQueue(rows: CdrRecord[], queueNumbers: Set<string>): boolean {
+  for (const r of rows) {
+    const anyR = r as any;
+    for (const f of [anyR.dst, anyR.dst_num, anyR.dst_number, r.call_to_number, anyR.did_number]) {
+      if (f != null && queueNumbers.has(String(f).trim())) return true;
+    }
+  }
+  return false;
 }
 
 function dayKey(ts: number | undefined, tzOffsetMin: number): string {
@@ -435,6 +461,28 @@ export function aggregateAnalytics(
     return true;
   });
 
+  // Scope filter: when a team/agent selection is active, keep only groups
+  // attributed to the in-scope roster (a leg resolved to an in-scope agent
+  // extension) plus, for a team selection, unanswered inbound calls routed
+  // through the team's owning queue. Undefined scope = include everything.
+  const scope = opts.scope;
+  const groupInScope = (c: Classified): boolean => {
+    if (!scope) return true;
+    for (const r of c.rows) {
+      const ext = agentExtFor(r, opts.queueNumbers);
+      if (ext && scope.exts.has(ext)) return true;
+    }
+    if (
+      scope.ownedQueueNumbers && scope.ownedQueueNumbers.size > 0 &&
+      !c.anyAnswered && c.direction === "Inbound" &&
+      routedThroughQueue(c.rows, scope.ownedQueueNumbers)
+    ) {
+      return true;
+    }
+    return false;
+  };
+  const scopedGroups = scope ? filteredGroups.filter(groupInScope) : filteredGroups;
+
   const totals: CallTotals = {
     total: 0, inbound: 0, outbound: 0,
     answered: 0, missed: 0, abandoned: 0, noAnswerOutbound: 0,
@@ -450,7 +498,7 @@ export function aggregateAnalytics(
   // H5: wait counted over inbound answered + abandoned
   let inboundWaitCount = 0;
 
-  for (const c of filteredGroups) {
+  for (const c of scopedGroups) {
     totals.total++;
     if (c.direction === "Inbound") totals.inbound++;
     else totals.outbound++;
@@ -507,7 +555,7 @@ export function aggregateAnalytics(
 
   // ---- Per-agent (raw rows, but only from groups that passed filters) ------
   const keepRowSet = new WeakSet<CdrRecord>();
-  for (const c of filteredGroups) for (const r of c.rows) keepRowSet.add(r);
+  for (const c of scopedGroups) for (const r of c.rows) keepRowSet.add(r);
 
   const blank = (a: AgentRef): AgentCallStats => ({
     agentId: a.id, name: a.name, ext: a.ext, team: a.team,
@@ -593,80 +641,68 @@ export function aggregateAnalytics(
     t.missedRate = t.inbound ? (t.missed / t.inbound) * 100 : 0;
   }
 
-  // ---- Conversion (telesales only) ----------------------------------------
-  const telesalesAgents = agentRows.filter((a) => a.team === "telesales");
-  const teleAgentIds = new Set(telesalesAgents.map((a) => a.agentId));
-  const teleOrders = orders.filter((o) => teleAgentIds.has(o.agent_id));
-
+  // ---- Conversion & completion (canonical, scoped to the active filter) ----
+  // Conversion Rate = Total Orders / Answered Calls (orders of ANY status).
+  // Completion Rate = Completed Orders / Total Orders.
+  // `orders` and `answered` are already scoped to the active team/agent (orders
+  // by the caller's query, answered by the group-scope filter above). Yeastar
+  // owns call metrics, Orders owns order metrics — divided here, never merged.
   const S_COMPLETED = STATUSES[1]; // "Completed"
   const S_CANCELLED = STATUSES[2]; // "Cancelled"
   const S_PENDING   = STATUSES[0]; // "Pending"
   const T_CASH      = ORDER_TYPES[0];
   const T_WASFATY   = ORDER_TYPES[1];
 
-  const overall = {
-    answered: telesalesAgents.reduce((s, a) => s + a.answered, 0),
-    orders: teleOrders.length,
-    completed: teleOrders.filter((o) => o.status === S_COMPLETED).length,
-    cancelled: teleOrders.filter((o) => o.status === S_CANCELLED).length,
-    pending: teleOrders.filter((o) => o.status === S_PENDING).length,
-    cash: teleOrders.filter((o) => o.order_type === T_CASH).length,
-    wasfaty: teleOrders.filter((o) => o.order_type === T_WASFATY).length,
-    revenue: teleOrders.reduce((s, o) => s + num(o.invoice_value), 0),
-    conversionRate: 0,
-    revenuePerCall: 0,
-    revenuePerOrder: 0,
-  };
-  overall.conversionRate = overall.answered ? (overall.completed / overall.answered) * 100 : 0;
-  overall.revenuePerCall = overall.answered ? overall.revenue / overall.answered : 0;
-  overall.revenuePerOrder = overall.orders ? overall.revenue / overall.orders : 0;
+  const ordersTotal = orders.length;
+  const ordersCompleted = orders.filter((o) => o.status === S_COMPLETED).length;
+  const revenueTotal = orders.reduce((s, o) => s + num(o.invoice_value), 0);
+  const answeredScoped = totals.answered;
 
-  const perAgentConv: ConversionRow[] = telesalesAgents.map((a) => {
+  const overall = {
+    answered: answeredScoped,
+    orders: ordersTotal,
+    completed: ordersCompleted,
+    cancelled: orders.filter((o) => o.status === S_CANCELLED).length,
+    pending: orders.filter((o) => o.status === S_PENDING).length,
+    cash: orders.filter((o) => o.order_type === T_CASH).length,
+    wasfaty: orders.filter((o) => o.order_type === T_WASFATY).length,
+    revenue: revenueTotal,
+    conversionRate: answeredScoped ? (ordersTotal / answeredScoped) * 100 : 0,
+    completionRate: ordersTotal ? (ordersCompleted / ordersTotal) * 100 : 0,
+    revenuePerCall: answeredScoped ? revenueTotal / answeredScoped : 0,
+    revenuePerOrder: ordersTotal ? revenueTotal / ordersTotal : 0,
+  };
+
+  // Per-agent conversion for every in-scope agent (answered from that agent's
+  // call stats; orders joined by agent_id). Same canonical formula.
+  const perAgentConv: ConversionRow[] = agentRows.map((a) => {
     const os = orders.filter((o) => o.agent_id === a.agentId);
-    const completed = os.filter((o) => o.status === S_COMPLETED).length;
+    const oc = os.filter((o) => o.status === S_COMPLETED).length;
     const rev = os.reduce((s, o) => s + num(o.invoice_value), 0);
     return {
       agentId: a.agentId, name: a.name, ext: a.ext,
       answered: a.answered,
       ordersTotal: os.length,
-      ordersCompleted: completed,
+      ordersCompleted: oc,
       ordersCancelled: os.filter((o) => o.status === S_CANCELLED).length,
       ordersPending: os.filter((o) => o.status === S_PENDING).length,
       ordersCash: os.filter((o) => o.order_type === T_CASH).length,
       ordersWasfaty: os.filter((o) => o.order_type === T_WASFATY).length,
       revenue: rev,
-      conversionRate: a.answered ? (completed / a.answered) * 100 : 0,
+      conversionRate: a.answered ? (os.length / a.answered) * 100 : 0,
+      completionRate: os.length ? (oc / os.length) * 100 : 0,
       revenuePerCall: a.answered ? rev / a.answered : 0,
       revenuePerOrder: os.length ? rev / os.length : 0,
     };
   }).sort((a, b) => b.conversionRate - a.conversionRate);
 
-  // ---- Per-day telesales conversion (M3) ----------------------------------
-  // Count answered telesales legs per day directly, not via a global share.
-  const teleAnsweredByDay = new Map<string, number>();
-  for (const c of filteredGroups) {
-    if (!c.anyAnswered) continue;
-    // Count only ANSWERED legs whose ringed extension belongs to a
-    // telesales agent — a queue call can hit both teams; only credit tele.
-    for (const r of c.rows.filter((r) => isAnswered(r.disposition))) {
-      const ext = agentExtFor(r, opts.queueNumbers);
-      const agent = ext ? byExt.get(String(ext).trim()) : undefined;
-      if (agent && agent.team === "telesales") {
-        const dk = dayKey(r.timestamp, tz);
-        teleAnsweredByDay.set(dk, (teleAnsweredByDay.get(dk) ?? 0) + 1);
-        break; // one answered credit per call
-      }
-    }
-  }
-  const dayCompleted = new Map<string, number>();
-  for (const o of teleOrders) {
-    if (o.status !== S_COMPLETED) continue;
-    dayCompleted.set(o.order_date, (dayCompleted.get(o.order_date) ?? 0) + 1);
-  }
+  // Per-day conversion = total orders / answered calls (both scoped).
+  const ordersByDay = new Map<string, number>();
+  for (const o of orders) ordersByDay.set(o.order_date, (ordersByDay.get(o.order_date) ?? 0) + 1);
   const perDay = [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date)).map((d) => {
-    const answered = teleAnsweredByDay.get(d.date) ?? 0;
-    const completed = dayCompleted.get(d.date) ?? 0;
-    return { date: d.date, answered, completed, rate: answered ? (completed / answered) * 100 : 0 };
+    const answered = d.answered;
+    const ord = ordersByDay.get(d.date) ?? 0;
+    return { date: d.date, answered, orders: ord, rate: answered ? (ord / answered) * 100 : 0 };
   });
 
   // Ensure hour 0..23

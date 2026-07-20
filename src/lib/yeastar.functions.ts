@@ -679,6 +679,24 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
     if (!seesAll) agents = agents.filter((a) => a.id === userId);
     else if (data.agentId) agents = agents.filter((a) => a.id === data.agentId);
 
+    // Active scope for EVERY KPI. Non-privileged users are always scoped to
+    // themselves; privileged users are scoped by the team/agent filter. When
+    // no filter is active (team=all, no agent, privileged) scope stays
+    // undefined and all calls/orders are included (prior behaviour).
+    const effectiveAgentId = !seesAll ? userId : (data.agentId ?? null);
+    const scopeActive = data.team !== "all" || !!effectiveAgentId;
+    let scope: { exts: Set<string>; ownedQueueNumbers?: Set<string> } | undefined;
+    if (scopeActive) {
+      const exts = new Set(agents.map((a) => String(a.ext).trim()).filter((e) => e.length > 0));
+      // A team-level selection (no specific agent) also owns its queue's
+      // unanswered inbound calls. Only Customer Care owns a queue (6400).
+      const ownedQueueNumbers =
+        data.team === "customer_care" && !effectiveAgentId
+          ? new Set([CUSTOMER_CARE_QUEUE_NUMBER])
+          : undefined;
+      scope = { exts, ownedQueueNumbers };
+    }
+
     try {
       const cdr = await getCdrCached(data.from, data.to, data.jobId);
       if (progress && data.jobId) await progress.updateJob(data.jobId, { status: "aggregating", message: "Computing analytics…", records: cdr.records.length });
@@ -689,13 +707,18 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
       const records = cdr.records as any[];
 
       // Load orders in the same window, for telesales conversion
+      // Orders scoped to the same team/agent as the calls (Orders is the SSOT
+      // for order metrics; scoping here keeps conversion/completion aligned).
       let orders: any[] = [];
       if (data.includeOrders) {
-        const { data: ord } = await supabase
+        let oq = supabase
           .from("orders")
           .select("id,agent_id,order_date,status,order_type,invoice_value")
           .gte("order_date", data.from)
           .lte("order_date", data.to);
+        if (data.team !== "all") oq = oq.eq("team", data.team);
+        if (effectiveAgentId) oq = oq.eq("agent_id", effectiveAgentId);
+        const { data: ord } = await oq;
         orders = (ord as any[]) ?? [];
       }
 
@@ -707,6 +730,7 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
         direction: data.direction,
         status: data.status,
         queueNumbers,
+        scope,
       });
 
       if (progress && data.jobId) await progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);

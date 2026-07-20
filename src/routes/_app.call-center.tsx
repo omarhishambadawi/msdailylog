@@ -292,7 +292,7 @@ function CallCenterPage() {
         <HeroKpi label="Total calls" value={totals?.total ?? 0} loading={isLoading} icon={Users} tone="primary" />
         <HeroKpi label="Answered calls" value={totals?.answered ?? 0} loading={isLoading} icon={PhoneIncoming} tone="success" />
         <HeroKpi label="Answer rate" value={pct(totals?.answerRate)} loading={isLoading} icon={TrendingUp} tone="success" />
-        <HeroKpi label="Conversion rate" value={pct(totals?.total ? ((conv?.overall.orders ?? 0) / totals.total) * 100 : 0)} loading={isLoading} icon={PhoneOutgoing} tone="secondary" hint="Total orders ÷ total calls" />
+        <HeroKpi label="Conversion rate" value={pct(conv?.overall.conversionRate)} loading={isLoading} icon={PhoneOutgoing} tone="secondary" hint="Total orders ÷ answered calls" />
       </div>
 
       {/* REALTIME QUEUE — powered by /queue/call_status + /queue/agent_status */}
@@ -465,22 +465,16 @@ function CallCenterPage() {
             </CardContent>
           </Card>
 
-          {/* CONVERSION */}
-          <SectionHeader>Telesales conversion</SectionHeader>
-          {(() => {
-            const teleCalls = teamCompare.find((t) => t.team === "telesales")?.calls ?? 0;
-            const teleOrders = conv?.overall.orders ?? 0;
-            const teleConv = teleCalls ? (teleOrders / teleCalls) * 100 : 0;
-            return (
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                <Kpi label="Telesales calls" value={teleCalls} loading={isLoading} />
-                <Kpi label="Total orders" value={teleOrders} tone="primary" loading={isLoading} />
-                <Kpi label="Completed" value={conv?.overall.completed ?? 0} tone="success" loading={isLoading} />
-                <Kpi label="Conversion rate" value={pct(teleConv)} tone="secondary" loading={isLoading} hint="Orders ÷ telesales calls" />
-                <Kpi label="Revenue" value={conv ? fmtSAR(conv.overall.revenue) : "—"} loading={isLoading} />
-              </div>
-            );
-          })()}
+          {/* CONVERSION — canonical, scoped to the active team/agent filter */}
+          <SectionHeader>Conversion</SectionHeader>
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+            <Kpi label="Answered calls" value={totals?.answered ?? 0} loading={isLoading} />
+            <Kpi label="Total orders" value={conv?.overall.orders ?? 0} tone="primary" loading={isLoading} />
+            <Kpi label="Completed" value={conv?.overall.completed ?? 0} tone="success" loading={isLoading} />
+            <Kpi label="Conversion rate" value={pct(conv?.overall.conversionRate)} tone="secondary" loading={isLoading} hint="Orders ÷ answered calls" />
+            <Kpi label="Completion rate" value={pct(conv?.overall.completionRate)} tone="success" loading={isLoading} hint="Completed ÷ total orders" />
+            <Kpi label="Revenue" value={conv ? fmtSAR(conv.overall.revenue) : "—"} loading={isLoading} />
+          </div>
           <ChartCard title="Conversion rate per day" loading={isLoading} hasData={(conv?.perDay ?? []).length > 0}>
             <ResponsiveContainer>
               <LineChart data={conv?.perDay ?? []} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
