@@ -313,6 +313,28 @@ function Dashboard() {
     return { cash: toStats(m.get("cash")), wasfaty: toStats(m.get("wasfaty")), total: toStats(m.get("total")) };
   }, [kpiRows]);
 
+  // Daily sales trend from orders_daily RPC. Rows arrive ordered by full date
+  // (fixes the year-boundary ordering); the label is formatted client-side.
+  const { data: dailyRows } = useQuery({
+    queryKey: ["dashboard-daily", from, to, effectiveAgent, effectiveTeam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("orders_daily" as any, {
+        _from: from,
+        _to: to,
+        _team: effectiveTeam,
+        _agent: effectiveAgent === "all" ? null : effectiveAgent,
+        _mine: false,
+      });
+      if (error) throw error;
+      return (data ?? []) as Array<{ day: string; total_sales: number; completed_sales: number }>;
+    },
+    enabled: canViewDashboard,
+  });
+  const dailyData = useMemo(
+    () => (dailyRows ?? []).map((r) => ({ date: r.day.slice(5), total: Number(r.total_sales), completed: Number(r.completed_sales) })),
+    [dailyRows],
+  );
+
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
     Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
@@ -432,7 +454,7 @@ function Dashboard() {
           <CardHeader><CardTitle className="text-base">Daily sales trend</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data?.byDay ?? []} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <AreaChart data={dailyData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dailyAll" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--color-chart-1)" stopOpacity={0.35} />
