@@ -7,11 +7,12 @@ import {
   ShieldAlert, MessageSquareWarning, Menu, X, PhoneCall, Headphones,
   UserCircle2,
 } from "lucide-react";
-import logo from "@/assets/milaserv-logo.png.asset.json";
+import { useLogo } from "@/lib/use-logo";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/notification-bell";
 import { hasPerm } from "@/lib/permissions";
 import { UserAvatar } from "@/components/user-avatar";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -26,6 +27,8 @@ function AppLayout() {
 
   // Compact-by-default: sidebar starts collapsed (icons + label under icon).
   // Preference persisted to localStorage and hydrated after mount to avoid SSR mismatch.
+  const logoUrl = useLogo();
+  // Compact-by-default: sidebar starts collapsed (icons + label under icon).
   const [expanded, setExpanded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -99,7 +102,8 @@ function AppLayout() {
         "px-3 py-4 border-b border-border flex items-center gap-3",
         !expanded && "justify-center px-2",
       )}>
-        <img src={logo.url} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+        <img src={logoUrl} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+
         {expanded && (
           <div className="min-w-0">
             <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
@@ -185,7 +189,7 @@ function AppLayout() {
               <Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></Button>
             </div>
             {/* Force expanded look in mobile drawer */}
-            <MobileSidebar nav={nav} activePath={activePath} profile={profile} role={role} email={session.user.email} onSignOut={() => signOut().then(() => navigate({ to: "/auth", replace: true }))} />
+            <MobileSidebar logoUrl={logoUrl} nav={nav} activePath={activePath} profile={profile} role={role} email={session.user.email} onSignOut={() => signOut().then(() => navigate({ to: "/auth", replace: true }))} />
           </aside>
         </div>
       )}
@@ -207,7 +211,9 @@ function AppLayout() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="text-sm font-medium truncate flex-1 text-foreground/80">MilaServ Portal</div>
+          <ThemeToggle />
           <NotificationBell />
+
         </div>
         {/* Route content — quick fade-in */}
         <div
@@ -221,7 +227,8 @@ function AppLayout() {
   );
 }
 
-function MobileSidebar({ nav, activePath, profile, role, email, onSignOut }: {
+function MobileSidebar({ logoUrl, nav, activePath, profile, role, email, onSignOut }: {
+  logoUrl: string;
   nav: Array<{ to: string; label: string; icon: any }>;
   activePath: string;
   profile: any;
@@ -232,7 +239,8 @@ function MobileSidebar({ nav, activePath, profile, role, email, onSignOut }: {
   return (
     <>
       <div className="px-3 py-3 border-b border-border flex items-center gap-3">
-        <img src={logo.url} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+        <img src={logoUrl} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+
         <div className="min-w-0">
           <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
           <div className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">Portal</div>
