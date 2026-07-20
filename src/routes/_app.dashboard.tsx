@@ -87,8 +87,13 @@ function Dashboard() {
     return base.filter((a: any) => a.role === teamFilter);
   }, [agents, teamFilter]);
 
-  const { data } = useQuery({
-    queryKey: ["dashboard", from, to, effectiveAgent, effectiveTeam, isAdmin, user?.id],
+  // Legacy full-row aggregation retained ONLY to power the Excel export, and
+  // now fetched on demand (enabled: false + refetch on Export click) so it no
+  // longer pulls every order/complaint on each page load. All on-screen widgets
+  // read the focused orders_*/complaints_* RPCs above.
+  const { refetch: refetchExport, isFetching: exportBusy } = useQuery({
+    queryKey: ["dashboard-export", from, to, effectiveAgent, effectiveTeam, isAdmin, user?.id],
+    enabled: false,
     queryFn: async () => {
       const buildOrders = () => {
         let qb = supabase.from("orders")
@@ -609,8 +614,11 @@ function Dashboard() {
               {mineOnly ? "My data" : "All data"}
             </Button>
           )}
-          {canExport && <Button variant="outline" size="sm" onClick={() => exportDashboard(data, { from, to, agentLabel: selectedAgentLabel, teamLabel: teamFilter })} disabled={!data}>
-            <Download className="h-4 w-4 mr-2" />Export
+          {canExport && <Button variant="outline" size="sm" onClick={async () => {
+            const r = await refetchExport();
+            if (r.data) exportDashboard(r.data, { from, to, agentLabel: selectedAgentLabel, teamLabel: teamFilter });
+          }} disabled={exportBusy}>
+            <Download className="h-4 w-4 mr-2" />{exportBusy ? "Preparing…" : "Export"}
           </Button>}
         </div>
       </div>
@@ -970,29 +978,6 @@ function DashKpiCard({ label, tone, highlight, stats }: {
   );
 }
 
-
-function KpiBlock({ label, tone, highlight, children }: { label: string; tone: string; highlight?: boolean; children: React.ReactNode }) {
-  return (
-    <div className={cn("relative rounded-lg border bg-gradient-to-br p-4", tone, highlight && "border-primary/40 shadow-sm")}>
-      <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
-      <div className="mt-2 space-y-1.5">{children}</div>
-    </div>
-  );
-}
-function KpiBig({ value, accent }: { value: string | number; accent?: string }) {
-  return <div className={cn("text-2xl sm:text-3xl font-bold tabular-nums leading-tight", accent)}>{value}</div>;
-}
-function KpiLine({ label, value, accent, muted }: { label: string; value: string; accent?: string; muted?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={cn("text-sm font-semibold tabular-nums truncate", accent, muted && !accent && "text-foreground")}>{value}</span>
-    </div>
-  );
-}
-function KpiFoot({ value }: { value: string }) {
-  return <div className="text-[11px] text-muted-foreground mt-1 pt-1.5 border-t border-border/60">{value}</div>;
-}
 
 function exportDashboard(
   data: any,
