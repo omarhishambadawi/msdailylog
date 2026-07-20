@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import logo from "@/assets/milaserv-logo.png.asset.json";
+import { useLogo } from "@/lib/use-logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/auth")({
