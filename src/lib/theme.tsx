@@ -22,12 +22,12 @@ function apply(theme: Theme, animate = true) {
 
   // Use View Transitions API for a seamless cross-fade when supported.
   // Falls back to a CSS transition class otherwise.
-  // @ts-expect-error - startViewTransition is not in older TS DOM libs
-  if (typeof document.startViewTransition === "function") {
-    // @ts-expect-error
-    document.startViewTransition(() => { applyRaw(theme); });
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (typeof doc.startViewTransition === "function") {
+    doc.startViewTransition(() => { applyRaw(theme); });
     return;
   }
+
 
   root.classList.add("theme-transition");
   applyRaw(theme);
