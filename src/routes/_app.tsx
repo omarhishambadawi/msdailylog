@@ -102,7 +102,10 @@ function AppLayout() {
         "px-3 py-4 border-b border-border flex items-center gap-3",
         !expanded && "justify-center px-2",
       )}>
-        <img src={logoUrl} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+        <div className="h-10 w-10 flex items-center justify-center shrink-0">
+          <img src={logoUrl} alt="MilaServ" className="max-h-full max-w-full object-contain" />
+        </div>
+
 
         {expanded && (
           <div className="min-w-0">
