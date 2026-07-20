@@ -189,7 +189,7 @@ function AppLayout() {
               <Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></Button>
             </div>
             {/* Force expanded look in mobile drawer */}
-            <MobileSidebar nav={nav} activePath={activePath} profile={profile} role={role} email={session.user.email} onSignOut={() => signOut().then(() => navigate({ to: "/auth", replace: true }))} />
+            <MobileSidebar logoUrl={logoUrl} nav={nav} activePath={activePath} profile={profile} role={role} email={session.user.email} onSignOut={() => signOut().then(() => navigate({ to: "/auth", replace: true }))} />
           </aside>
         </div>
       )}
