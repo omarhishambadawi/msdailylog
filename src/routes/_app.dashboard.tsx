@@ -513,6 +513,40 @@ function Dashboard() {
     [verificationRows],
   );
 
+  // Complaints analytics (scoped by date + agent only; complaints have no team).
+  const cmpAgent = effectiveAgent === "all" ? null : effectiveAgent;
+  const { data: cmpKpiRows } = useQuery({
+    queryKey: ["dashboard-complaints-kpis", from, to, effectiveAgent],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("complaints_kpis" as any, { _from: from, _to: to, _agent: cmpAgent, _mine: false });
+      if (error) throw error;
+      return (data ?? []) as Array<{ total: number; in_progress: number; resolved: number; resolution_rate: number }>;
+    },
+    enabled: canViewDashboard,
+  });
+  const cmpKpi = cmpKpiRows?.[0];
+  const { data: cmpLocRows } = useQuery({
+    queryKey: ["dashboard-complaints-loc", from, to, effectiveAgent],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("complaints_locations" as any, { _from: from, _to: to, _agent: cmpAgent, _mine: false });
+      if (error) throw error;
+      return (data ?? []) as Array<{ location_type: string; location: string; total: number; resolved: number; open: number; rate: number }>;
+    },
+    enabled: canViewDashboard,
+  });
+  const cmpBranchData = useMemo(
+    () => (cmpLocRows ?? []).filter((r) => r.location_type === "branch")
+      .map((r) => ({ name: r.location, total: Number(r.total), resolved: Number(r.resolved), open: Number(r.open) }))
+      .sort((a, b) => b.total - a.total).slice(0, 10),
+    [cmpLocRows],
+  );
+  const cmpCityData = useMemo(
+    () => (cmpLocRows ?? []).filter((r) => r.location_type === "city")
+      .map((r) => ({ name: r.location, total: Number(r.total), rate: Number(r.rate) }))
+      .sort((a, b) => b.total - a.total),
+    [cmpLocRows],
+  );
+
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
     Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
@@ -788,10 +822,10 @@ function Dashboard() {
       <div>
         <SectionTitle title="Complaints" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-          <Stat label="Total complaints" value={data?.cmpTotal ?? 0} />
-          <Stat label="In progress" value={data?.cmpInProg ?? 0} accent="text-amber-600 dark:text-amber-400" />
-          <Stat label="Resolved" value={data?.cmpResolved ?? 0} accent="text-green-600 dark:text-green-400" />
-          <Stat label="Resolution rate" value={data ? `${data.cmpResolutionRate.toFixed(1)}%` : "—"} />
+          <Stat label="Total complaints" value={Number(cmpKpi?.total ?? 0)} />
+          <Stat label="In progress" value={Number(cmpKpi?.in_progress ?? 0)} accent="text-amber-600 dark:text-amber-400" />
+          <Stat label="Resolved" value={Number(cmpKpi?.resolved ?? 0)} accent="text-green-600 dark:text-green-400" />
+          <Stat label="Resolution rate" value={cmpKpi ? `${Number(cmpKpi.resolution_rate).toFixed(1)}%` : "—"} />
         </div>
 
         <div className="grid lg:grid-cols-2 gap-3 sm:gap-4 mt-3">
@@ -808,8 +842,8 @@ function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.cmpBranchRows ?? []).length === 0 && <tr><td colSpan={4} className="text-center text-muted-foreground py-6">No data</td></tr>}
-                  {(data?.cmpBranchRows ?? []).map((r) => (
+                  {cmpBranchData.length === 0 && <tr><td colSpan={4} className="text-center text-muted-foreground py-6">No data</td></tr>}
+                  {cmpBranchData.map((r) => (
                     <tr key={r.name} className="border-b last:border-0">
                       <td className="px-3 py-2 font-medium">{r.name}</td>
                       <td className="px-3 py-2 text-right">{r.total}</td>
@@ -834,8 +868,8 @@ function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.cmpCityRows ?? []).length === 0 && <tr><td colSpan={3} className="text-center text-muted-foreground py-6">No data</td></tr>}
-                  {(data?.cmpCityRows ?? []).map((r) => (
+                  {cmpCityData.length === 0 && <tr><td colSpan={3} className="text-center text-muted-foreground py-6">No data</td></tr>}
+                  {cmpCityData.map((r) => (
                     <tr key={r.name} className="border-b last:border-0">
                       <td className="px-3 py-2 font-medium">{r.name}</td>
                       <td className="px-3 py-2 text-right">{r.total}</td>
