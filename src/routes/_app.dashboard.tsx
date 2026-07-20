@@ -438,6 +438,27 @@ function Dashboard() {
     [locationRows],
   );
 
+  // Delivery method performance from orders_delivery RPC.
+  const { data: deliveryRows } = useQuery({
+    queryKey: ["dashboard-delivery", from, to, effectiveAgent, effectiveTeam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("orders_delivery" as any, {
+        _from: from,
+        _to: to,
+        _team: effectiveTeam,
+        _agent: effectiveAgent === "all" ? null : effectiveAgent,
+        _mine: false,
+      });
+      if (error) throw error;
+      return (data ?? []) as Array<{ delivery_type: string; order_count: number; completed_sales: number; completion_rate: number }>;
+    },
+    enabled: canViewDashboard,
+  });
+  const deliveryData = useMemo(
+    () => (deliveryRows ?? []).map((r) => ({ name: r.delivery_type, count: Number(r.order_count), sales: Number(r.completed_sales), rate: Number(r.completion_rate) })),
+    [deliveryRows],
+  );
+
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
     Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
@@ -453,7 +474,7 @@ function Dashboard() {
     </Card>
   );
 
-  const deliveryMethods = Array.from(new Set((data?.byDelivery ?? []).map((d) => d.name)));
+  const deliveryMethods = Array.from(new Set(deliveryData.map((d) => d.name)));
   const selectedAgentLabel = canViewAllAgents && agentFilter !== "all"
     ? (agents?.find((a: any) => a.id === agentFilter)?.full_name ?? "agent")
     : null;
@@ -689,8 +710,8 @@ function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.byDelivery ?? []).length === 0 && <tr><td colSpan={4} className="text-center text-muted-foreground py-6">No data</td></tr>}
-                {(data?.byDelivery ?? []).map((d) => (
+                {deliveryData.length === 0 && <tr><td colSpan={4} className="text-center text-muted-foreground py-6">No data</td></tr>}
+                {deliveryData.map((d) => (
                   <tr key={d.name} className="border-b last:border-0">
                     <td className="px-3 py-2 font-medium">{d.name}</td>
                     <td className="px-3 py-2 text-right">{d.count}</td>
