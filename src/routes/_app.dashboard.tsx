@@ -399,6 +399,45 @@ function Dashboard() {
     [agentRows],
   );
 
+  // Sales by branch / city + heat map from orders_locations RPC.
+  const { data: locationRows } = useQuery({
+    queryKey: ["dashboard-locations", from, to, effectiveAgent, effectiveTeam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("orders_locations" as any, {
+        _from: from,
+        _to: to,
+        _team: effectiveTeam,
+        _agent: effectiveAgent === "all" ? null : effectiveAgent,
+        _mine: false,
+      });
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        location_type: string; location: string; order_count: number;
+        completed_sales: number; completed_count: number; total_sales: number; completion_rate: number;
+      }>;
+    },
+    enabled: canViewDashboard,
+  });
+  const branchData = useMemo(
+    () => (locationRows ?? []).filter((r) => r.location_type === "branch")
+      .map((r) => ({ name: r.location, sales: Number(r.completed_sales) }))
+      .sort((a, b) => b.sales - a.sales).slice(0, 10),
+    [locationRows],
+  );
+  const cityData = useMemo(
+    () => (locationRows ?? []).filter((r) => r.location_type === "city")
+      .map((r) => ({ name: r.location, sales: Number(r.completed_sales) }))
+      .sort((a, b) => b.sales - a.sales),
+    [locationRows],
+  );
+  const cityMapData = useMemo(
+    () => (locationRows ?? []).filter((r) => r.location_type === "city").map((r) => ({
+      name: r.location, sales: Number(r.completed_sales), count: Number(r.order_count),
+      total: Number(r.total_sales), completed: Number(r.completed_count),
+    })),
+    [locationRows],
+  );
+
   const COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
   const STATUS_COLORS: Record<string, string> = {
     Pending: "#eab308", Completed: "#16a34a", Cancelled: "#dc2626", "Follow-up": "#2563eb", "No Answer": "#6b7280",
@@ -593,7 +632,7 @@ function Dashboard() {
           <CardHeader><CardTitle className="text-base">Sales by branch (top 10)</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data?.byBranch ?? []} layout="vertical">
+              <BarChart data={branchData} layout="vertical">
                 <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis type="number" tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11 }} />
@@ -608,7 +647,7 @@ function Dashboard() {
           <CardHeader><CardTitle className="text-base">Sales by city</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data?.byCity ?? []} layout="vertical">
+              <BarChart data={cityData} layout="vertical">
                 <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis type="number" tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
@@ -624,7 +663,7 @@ function Dashboard() {
       <div>
         <SectionTitle title="Geographic distribution" />
         <div className="mt-3">
-          <SaudiSalesMap cities={(data?.byCity ?? []).map((c: any) => ({ name: c.name, sales: c.sales, count: c.count, total: c.total ?? c.sales, completed: c.completed ?? 0 }))} />
+          <SaudiSalesMap cities={cityMapData} />
         </div>
       </div>
 
