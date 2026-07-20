@@ -26,6 +26,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const logoUrl = useLogo();
 
   if (!loading && session) {
     if (next) { window.location.assign(next); }
