@@ -211,7 +211,9 @@ function AppLayout() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="text-sm font-medium truncate flex-1 text-foreground/80">MilaServ Portal</div>
+          <ThemeToggle />
           <NotificationBell />
+
         </div>
         {/* Route content — quick fade-in */}
         <div
