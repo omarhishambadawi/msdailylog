@@ -12,9 +12,23 @@ import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — MilaServ Portal" }] }),
-  validateSearch: (s: Record<string, unknown>) => ({
-    next: typeof s.next === "string" && s.next.startsWith("/") && !s.next.startsWith("//") ? s.next : undefined,
-  }),
+  validateSearch: (s: Record<string, unknown>) => {
+    // Only accept a same-origin relative path for the post-login redirect.
+    // Parse against a fixed sentinel origin (no `window` — this runs during SSR
+    // too). Off-origin forms — "//evil.com", "/\evil.com" (backslashes
+    // normalize to slashes), "https://evil.com", "javascript:…" — fail the
+    // origin check and are dropped, closing the open-redirect vector.
+    let next: string | undefined;
+    if (typeof s.next === "string") {
+      try {
+        const u = new URL(s.next, "http://localhost");
+        if (u.origin === "http://localhost") next = u.pathname + u.search + u.hash;
+      } catch {
+        // malformed → leave next undefined
+      }
+    }
+    return { next };
+  },
   component: AuthPage,
 });
 
