@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { useLogo } from "@/lib/use-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { hasPerm } from "@/lib/permissions";
+import { BrandLogo } from "@/components/brand-logo";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — MilaServ Portal" }] }),
@@ -26,7 +26,6 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const logoUrl = useLogo();
 
   if (!loading && session) {
     if (next) { window.location.assign(next); }
@@ -60,7 +59,7 @@ function AuthPage() {
       <div className="absolute right-4 top-4"><ThemeToggle /></div>
       <Card className="w-full max-w-md shadow-xl border-border/60">
         <CardHeader className="text-center space-y-1 pb-4">
-          <img src={logoUrl} alt="MilaServ" className="mx-auto h-16 w-16 object-contain -mb-1" />
+          <BrandLogo size="auth" className="mx-auto -mb-1" />
           <CardTitle className="text-2xl leading-tight">MilaServ Portal</CardTitle>
           <CardDescription className="pt-1">Sign in to access orders, complaints & call center analytics</CardDescription>
         </CardHeader>
