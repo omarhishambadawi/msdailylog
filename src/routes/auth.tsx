@@ -12,7 +12,7 @@ import { hasPerm } from "@/lib/permissions";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — MilaServ Portal" }] }),
-  validateSearch: (s: Record<string, unknown>) => {
+  validateSearch: (s: Record<string, unknown>): { next?: string } => {
     // Only accept a same-origin relative path for the post-login redirect.
     // Parse against a fixed sentinel origin (no `window` — this runs during SSR
     // too). Off-origin forms — "//evil.com", "/\evil.com" (backslashes
