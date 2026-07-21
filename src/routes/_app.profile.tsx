@@ -55,9 +55,20 @@ function ProfilePage() {
     }
   };
 
+  // Kept in step with the avatars bucket's allowed_mime_types / file_size_limit
+  // (20260721002100), which is what actually enforces this server-side. These
+  // checks exist for a good error message, not for security.
+  const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+  const EXT_FOR_TYPE: Record<string, string> = {
+    "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
+  };
+
   const onPickFile = (f: File | null) => {
     if (!f) return;
-    if (!f.type.startsWith("image/")) { toast.error("Please choose an image"); return; }
+    if (!ALLOWED_IMAGE_TYPES.includes(f.type as (typeof ALLOWED_IMAGE_TYPES)[number])) {
+      toast.error("Please choose a PNG, JPEG, WebP or GIF image");
+      return;
+    }
     if (f.size > 4 * 1024 * 1024) { toast.error("Image must be under 4 MB"); return; }
     setFile(f);
     const reader = new FileReader();
@@ -69,7 +80,10 @@ function ProfilePage() {
     if (!file || !session?.user?.id) return;
     setUploading(true);
     try {
-      const ext = (file.name.split(".").pop() || "png").toLowerCase();
+      // Derive the extension from the validated MIME type rather than the
+      // user-supplied filename, so nothing attacker-controlled reaches the
+      // object key.
+      const ext = EXT_FOR_TYPE[file.type] ?? "png";
       const path = `${session.user.id}/avatar-${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, {
         cacheControl: "3600",

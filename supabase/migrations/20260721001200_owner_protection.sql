@@ -151,13 +151,27 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Pin the designated Owner account.
 -- ---------------------------------------------------------------------------
--- Idempotent and non-fatal: if the account has not signed up yet the migration
--- still succeeds, and the assignment can be re-run later. Runs before the
--- triggers could conflict because it only ever promotes TO owner.
+-- SEED-ONCE. This bootstraps the *initial* Owner and must never override the
+-- live state afterwards: once any Owner exists, ownership is managed through
+-- adminSetRole (Owner-only) and this block does nothing. Without that guard a
+-- replay would silently re-promote a demoted account and could fight the
+-- protect_last_owner trigger.
+--
+-- Non-fatal if the account has not signed up yet: the migration still succeeds
+-- and the seed can be applied later by re-running just this block.
 DO $$
 DECLARE
   _uid uuid;
+  _existing_owners int;
 BEGIN
+  SELECT count(*) INTO _existing_owners
+  FROM public.user_roles WHERE role = 'owner'::public.app_role;
+
+  IF _existing_owners > 0 THEN
+    RAISE NOTICE 'An Owner already exists; leaving ownership unchanged.';
+    RETURN;
+  END IF;
+
   SELECT id INTO _uid FROM auth.users
   WHERE lower(email) = lower('omarhishambadawi@gmail.com')
   LIMIT 1;
