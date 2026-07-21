@@ -38,7 +38,11 @@ export const Route = createFileRoute("/api/public/cdr-progress/$jobId")({
         if (!userId) return json({ error: "Unauthorized" }, 401);
 
         const { getJob } = await import("@/lib/yeastar/progress.server");
-        const j = await getJob(params.jobId);
+        // Jobs are stored namespaced as `${userId}:${jobId}` by
+        // getCallCenterAnalytics. Re-deriving the key from the authenticated
+        // caller means a user can only ever read their own job, so a guessed
+        // or copied jobId reveals nothing about anyone else's query.
+        const j = await getJob(`${userId}:${params.jobId}`);
         if (!j) {
           return json({ status: "unknown", message: "No job found" });
         }

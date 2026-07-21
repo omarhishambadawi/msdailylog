@@ -670,8 +670,14 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
     if (!canView && !isAdmin) throw new Error("Forbidden: call analytics access required");
     const seesAll = !!canAll || !!isAdmin;
 
-    const progress = data.jobId ? await import("@/lib/yeastar/progress.server") : null;
-    if (progress && data.jobId) await progress.initJob(data.jobId);
+    // Namespace the client-supplied job id to the caller. cdr_progress has no
+    // owner column, so without this any authenticated user could read (or
+    // clobber) another user's progress record by guessing its id. The progress
+    // route re-derives the same key from its own authenticated user, so a job
+    // is only ever visible to the user who started it.
+    const scopedJobId = data.jobId ? `${userId}:${data.jobId}` : undefined;
+    const progress = scopedJobId ? await import("@/lib/yeastar/progress.server") : null;
+    if (progress && scopedJobId) await progress.initJob(scopedJobId);
 
     let agents = await loadAgents(supabase);
 
@@ -698,8 +704,8 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
     }
 
     try {
-      const cdr = await getCdrCached(data.from, data.to, data.jobId);
-      if (progress && data.jobId) await progress.updateJob(data.jobId, { status: "aggregating", message: "Computing analytics…", records: cdr.records.length });
+      const cdr = await getCdrCached(data.from, data.to, scopedJobId);
+      if (progress && scopedJobId) await progress.updateJob(scopedJobId, { status: "aggregating", message: "Computing analytics…", records: cdr.records.length });
 
       // [C2] Do NOT pre-filter raw rows by direction/status here — that would
       // strip ANSWERED legs and misclassify grouped queue calls. Filters are
@@ -733,7 +739,7 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
         scope,
       });
 
-      if (progress && data.jobId) await progress.finishJob(data.jobId, cdr.totalReported, cdr.records.length);
+      if (progress && scopedJobId) await progress.finishJob(scopedJobId, cdr.totalReported, cdr.records.length);
 
       return {
         ok: true as const, configured: true as const,
@@ -744,7 +750,7 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (progress && data.jobId) await progress.failJob(data.jobId, msg);
+      if (progress && scopedJobId) await progress.failJob(scopedJobId, msg);
       throw err;
     }
   });
