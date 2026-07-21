@@ -2,7 +2,46 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const RoleEnum = z.enum(["owner", "admin", "customer_care", "telesales", "call_center", "auditor"]);
+const RoleEnum = z.enum([
+  "owner",
+  "admin",
+  "supervisor",
+  "customer_care",
+  "telesales",
+  "call_center",
+  "auditor",
+]);
+
+/** Single source of truth for role values crossing the API boundary.
+ *  Derived from RoleEnum so adding a role cannot leave a stale union behind. */
+type RoleValue = z.infer<typeof RoleEnum>;
+
+/**
+ * Owner protection, actor half.
+ *
+ * The DB triggers (20260721001200) enforce the invariants -- never zero owners,
+ * an owner can't be deactivated or deleted -- but every privileged write here
+ * runs through supabaseAdmin (service_role) where auth.uid() is NULL, so the
+ * database cannot tell WHO is acting. These helpers supply that half: only an
+ * owner may act on another owner. Without this an ordinary admin could reset
+ * the Owner's password and take over the account.
+ */
+async function isOwner(supabase: any, userId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("is_owner", { _user_id: userId });
+  if (error) {
+    console.error("[authz] is_owner RPC error", { userId, error: error.message });
+    throw new Error("Forbidden: authorization check failed");
+  }
+  return !!data;
+}
+
+/** Refuse when the target is an Owner and the caller is not one. */
+async function assertMayActOnTarget(supabase: any, callerId: string, targetId: string, action: string) {
+  if (!(await isOwner(supabase, targetId))) return;
+  if (await isOwner(supabase, callerId)) return;
+  console.warn("[authz] non-owner attempted to act on Owner", { callerId, targetId, action });
+  throw new Error(`Forbidden: only an Owner may ${action} an Owner account`);
+}
 
 async function assertAdmin(supabase: any, userId: string) {
   // Owner and admin have identical administrative privileges.
@@ -22,7 +61,7 @@ async function assertAdmin(supabase: any, userId: string) {
 
 export const adminCreateUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string; password: string; fullName: string; agentCode?: string; role: "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor" }) =>
+  .inputValidator((d: { email: string; password: string; fullName: string; agentCode?: string; role: RoleValue }) =>
     z
       .object({
         email: z.string().email(),
@@ -35,6 +74,9 @@ export const adminCreateUser = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
+    if (data.role === "owner" && !(await isOwner(context.supabase, context.userId))) {
+      throw new Error("Forbidden: only an Owner may create an Owner account");
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // [H3] Do NOT pass role via user_metadata — the handle_new_user trigger
     // ignores it and always writes the default (customer_care). Elevated
@@ -65,6 +107,11 @@ export const adminSetActive = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
+    // An Owner can never be deactivated, by anyone -- including another Owner.
+    // Mirrors the protect_owner_profile trigger.
+    if (!data.active && (await isOwner(context.supabase, data.userId))) {
+      throw new Error("Owner accounts cannot be deactivated");
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin
       .from("profiles")
@@ -76,11 +123,21 @@ export const adminSetActive = createServerFn({ method: "POST" })
 
 export const adminSetRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; role: "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor" }) =>
+  .inputValidator((d: { userId: string; role: RoleValue }) =>
     z.object({ userId: z.string().uuid(), role: RoleEnum }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
+    // An Owner's role is immutable: "Cannot have role changed". Only another
+    // Owner may promote someone TO owner. The protect_last_owner trigger is the
+    // backstop that guarantees at least one Owner always remains.
+    await assertMayActOnTarget(context.supabase, context.userId, data.userId, "change the role of");
+    if (await isOwner(context.supabase, data.userId)) {
+      throw new Error("Owner accounts cannot have their role changed");
+    }
+    if (data.role === "owner" && !(await isOwner(context.supabase, context.userId))) {
+      throw new Error("Forbidden: only an Owner may grant the Owner role");
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
     const { error } = await supabaseAdmin
@@ -105,6 +162,8 @@ export const adminUpdateProfile = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
+    // Keeps a non-Owner admin from rewriting the Owner's profile or permissions.
+    await assertMayActOnTarget(context.supabase, context.userId, data.userId, "modify");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const patch: any = { full_name: data.fullName, agent_code: data.agentCode ?? null };
     if (data.permissions) patch.permissions = data.permissions;
@@ -128,6 +187,10 @@ export const adminSetPassword = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
+    // Resetting a password is account takeover: without this an ordinary admin
+    // could set the Owner's password and sign in as the Owner, defeating every
+    // other Owner protection.
+    await assertMayActOnTarget(context.supabase, context.userId, data.userId, "reset the password of");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
       password: data.password,
@@ -142,6 +205,11 @@ export const adminDeleteUser = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     if (data.userId === context.userId) throw new Error("You cannot delete your own account");
+    // Owner accounts are undeletable outright. Mirrors protect_owner_profile,
+    // which also blocks the profiles cascade from auth.users deletion.
+    if (await isOwner(context.supabase, data.userId)) {
+      throw new Error("Owner accounts cannot be deleted");
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.userId);
     if (error) throw new Error(error.message);

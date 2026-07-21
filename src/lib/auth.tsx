@@ -3,7 +3,20 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { hasPerm } from "@/lib/permissions";
 
-export type AppRole = "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor";
+export type AppRole =
+  | "owner"
+  | "admin"
+  | "supervisor"
+  | "customer_care"
+  | "telesales"
+  | "call_center"
+  | "auditor";
+
+/** True for the Owner role. Owner is protected: it cannot be deleted,
+ *  deactivated, or have its role changed. See 20260721001200_owner_protection. */
+export function isOwnerRole(role: AppRole | null | undefined): boolean {
+  return role === "owner";
+}
 
 /**
  * Centralized administrator check. Owner and admin have identical

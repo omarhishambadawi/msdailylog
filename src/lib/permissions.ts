@@ -39,7 +39,13 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   // Administration
   { key: "view_reports", label: "View All Reports", group: "Administration" },
   { key: "manage_users", label: "Manage Users", group: "Administration" },
-  { key: "manage_roles", label: "Manage Roles", group: "Administration" },
+  // `manage_roles` was removed: it was declared here (so it rendered a
+  // checkbox) but enforced nowhere. Role changes go through adminSetRole,
+  // which gates on assertAdmin/is_administrator -- and has_permission()
+  // short-circuits to true for owner/admin, so the flag could never evaluate
+  // false for anyone able to reach that function. Leaving it in place was
+  // actively misleading: unticking it looked like it revoked role management
+  // while changing nothing. Role management remains administrator-only.
   { key: "admin_access", label: "Admin Access (edit branches, system)", group: "Administration" },
 ] as const;
 
@@ -60,7 +66,30 @@ const AUDITOR_PERMS: PermKey[] = [
 
 const AUDITOR_SAFE_READ_PERMS: PermKey[] = [...AUDITOR_PERMS];
 
+// Operational role between the administrators and the agents: runs the daily
+// order/complaint workflow across the whole team, but never touches user
+// administration, roles, permissions or system settings.
+// `edit_all_orders` is what grants order reassignment -- prevent_order_reassignment
+// only permits changing agent_id/team for callers holding it.
+const SUPERVISOR_ALLOWED_PERMS: PermKey[] = [
+  "view_orders", "create_orders", "edit_orders", "edit_all_orders",
+  "view_complaints", "create_complaints", "edit_complaints", "edit_all_complaints",
+  "resolve_complaints", "resolve_all_complaints",
+  "view_dashboard", "view_team_analytics", "view_all_agents", "view_call_center",
+  "verify_own_orders", "verify_all_orders", "view_invoice_analytics",
+  "view_branches", "export_reports",
+];
+
+const SUPERVISOR_DEFAULT_PERMS: PermKey[] = [
+  "view_orders", "create_orders", "edit_orders", "edit_all_orders",
+  "view_complaints", "create_complaints", "edit_complaints", "edit_all_complaints",
+  "resolve_complaints", "resolve_all_complaints",
+  "view_dashboard", "view_team_analytics", "view_all_agents", "view_call_center",
+  "verify_own_orders", "verify_all_orders", "view_branches",
+];
+
 const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin" | "owner">, PermKey[]> = {
+  supervisor: SUPERVISOR_ALLOWED_PERMS,
   customer_care: [
     "view_orders", "create_orders", "edit_orders",
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
@@ -89,6 +118,7 @@ const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin" | "owner">, PermKey[]>
 const ROLE_DEFAULTS: Record<AppRole, PermKey[]> = {
   owner: ALL_PERMISSIONS.map((p) => p.key),
   admin: ALL_PERMISSIONS.map((p) => p.key),
+  supervisor: SUPERVISOR_DEFAULT_PERMS,
   customer_care: [
     "view_orders", "create_orders", "edit_orders",
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",

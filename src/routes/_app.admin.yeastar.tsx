@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShieldAlert } from "lucide-react";
-import { useAuth } from "@/lib/auth";
-import { hasPerm } from "@/lib/permissions";
+import { useAuth, isAdministrator } from "@/lib/auth";
 import {
   yeastarConfigDiagnostic,
   yeastarAuthDiagnostic,
@@ -34,8 +33,14 @@ function Json({ data }: { data: unknown }) {
 }
 
 function YeastarAdmin() {
-  const { role, profile } = useAuth();
-  const isAdmin = hasPerm(role, profile?.permissions as any, "view_all_agents");
+  const { role } = useAuth();
+  // This page gates on administrator status, not on a view permission.
+  // It previously checked `view_all_agents`, which auditor and supervisor both
+  // hold by default -- so the sidebar hid the link while the route stayed
+  // reachable by URL, rendering the admin tooling to non-administrators. The
+  // underlying server functions all enforce assertAdmin, so no data leaked, but
+  // the page must not present admin surfaces it cannot back.
+  const isAdmin = isAdministrator(role);
 
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);

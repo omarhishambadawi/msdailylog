@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useAuth, isAdministrator } from "@/lib/auth";
+import { useAuth, isAdministrator, isOwnerRole } from "@/lib/auth";
 import { adminCreateUser, adminListUsers, adminSetActive, adminSetRole, adminSetPassword, adminUpdateProfile, adminDeleteUser } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,11 +26,12 @@ export const Route = createFileRoute("/_app/admin/users")({
   component: AdminUsers,
 });
 
-type RoleKey = "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor";
+type RoleKey = "owner" | "admin" | "supervisor" | "customer_care" | "telesales" | "call_center" | "auditor";
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Owner",
   admin: "Admin",
+  supervisor: "Supervisor",
   customer_care: "Customer Care",
   telesales: "Telesales",
   call_center: "Call Center",
@@ -40,6 +41,7 @@ const ROLE_LABEL: Record<string, string> = {
 const ROLE_TONE: Record<string, string> = {
   owner: "bg-primary/10 text-primary border-primary/30",
   admin: "bg-secondary/15 text-secondary-foreground border-secondary/40",
+  supervisor: "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/30",
   auditor: "bg-muted text-muted-foreground border-border",
   customer_care: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30",
   telesales: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
@@ -190,6 +192,7 @@ function AdminUsers() {
                       <SelectItem value="customer_care">Customer Care</SelectItem>
                       <SelectItem value="telesales">Telesales</SelectItem>
                       <SelectItem value="call_center">Call Center</SelectItem>
+                      <SelectItem value="supervisor">Supervisor</SelectItem>
                       <SelectItem value="auditor">Auditor (read-only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
@@ -250,7 +253,14 @@ function AdminUsers() {
               {!isLoading && filtered.length === 0 && (
                 <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-10">No users match your filters.</TableCell></TableRow>
               )}
-              {filtered.map((u: any) => (
+              {filtered.map((u: any) => {
+                // Owner rows are protected. Deletion and deactivation are
+                // refused for everyone; edits and password resets are limited to
+                // another Owner. The server enforces all of this independently
+                // (admin.functions.ts) -- this only keeps the UI honest.
+                const rowIsOwner = isOwnerRole(u.role);
+                const mayActOnRow = !rowIsOwner || isOwnerRole(role);
+                return (
                 <TableRow key={u.id} className="group">
                   <TableCell>
                     <div className="flex items-center gap-3 min-w-0">
@@ -280,10 +290,10 @@ function AdminUsers() {
                         <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 group-hover:opacity-100"><MoreHorizontal className="h-4 w-4" /></Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-52">
-                        <DropdownMenuItem onClick={() => openEdit(u)}>
+                        <DropdownMenuItem onClick={() => openEdit(u)} disabled={!mayActOnRow}>
                           <Pencil className="h-4 w-4 mr-2" />Edit & permissions
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setPwUser(u)}>
+                        <DropdownMenuItem onClick={() => setPwUser(u)} disabled={!mayActOnRow}>
                           <KeyRound className="h-4 w-4 mr-2" />Reset password
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={(e) => e.preventDefault()} asChild>
@@ -291,14 +301,20 @@ function AdminUsers() {
                             <span className="mr-auto">Active</span>
                             <Switch
                               checked={u.active}
+                              disabled={rowIsOwner}
                               onCheckedChange={async (v) => { try { await setActiveFn({ data: { userId: u.id, active: v } }); reload(); } catch (e: any) { toast.error(e.message); } }}
                             />
                           </label>
                         </DropdownMenuItem>
+                        {rowIsOwner && (
+                          <div className="px-2 pb-1 text-[10px] text-muted-foreground">
+                            Owner accounts are protected
+                          </div>
+                        )}
                         <DropdownMenuSeparator />
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive focus:text-destructive">
+                            <DropdownMenuItem onSelect={(e) => e.preventDefault()} disabled={rowIsOwner} className="text-destructive focus:text-destructive">
                               <Trash2 className="h-4 w-4 mr-2" />Delete user
                             </DropdownMenuItem>
                           </AlertDialogTrigger>
@@ -317,7 +333,8 @@ function AdminUsers() {
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -352,6 +369,7 @@ function AdminUsers() {
                       <SelectItem value="customer_care">Customer Care</SelectItem>
                       <SelectItem value="telesales">Telesales</SelectItem>
                       <SelectItem value="call_center">Call Center</SelectItem>
+                      <SelectItem value="supervisor">Supervisor</SelectItem>
                       <SelectItem value="auditor">Auditor (read-only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
