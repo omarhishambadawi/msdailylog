@@ -1,6 +1,7 @@
 import { defineTool } from "@lovable.dev/mcp-js";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { buildSearchOr, normalizeSearchTerm } from "../search";
 
 export default defineTool({
   name: "list_orders",
@@ -11,8 +12,14 @@ export default defineTool({
     from: z.string().optional().describe("Start date (YYYY-MM-DD) for order_date."),
     to: z.string().optional().describe("End date (YYYY-MM-DD) for order_date."),
     team: z.enum(["customer_care", "telesales"]).optional().describe("Filter by team."),
-    status: z.string().optional().describe("Filter by status (e.g. pending, confirmed, cancelled)."),
-    search: z.string().optional().describe("Match customer name, phone, invoice_no, or display_no."),
+    status: z
+      .string()
+      .optional()
+      .describe("Filter by status (e.g. pending, confirmed, cancelled)."),
+    search: z
+      .string()
+      .optional()
+      .describe("Match customer name, phone, invoice_no, or display_no."),
     limit: z.number().int().min(1).max(200).optional().describe("Max rows (default 50)."),
   },
   annotations: { readOnlyHint: true, openWorldHint: false },
@@ -40,10 +47,12 @@ export default defineTool({
     if (input.team) q = q.eq("team", input.team);
     if (input.status) q = q.eq("status", input.status);
     if (input.search) {
-      const s = `%${input.search}%`;
-      q = q.or(
-        `customer_name.ilike.${s},customer_phone.ilike.${s},invoice_no.ilike.${s},display_no.ilike.${s}`,
-      );
+      const term = normalizeSearchTerm(input.search);
+      if (term) {
+        q = q.or(
+          buildSearchOr(term, ["customer_name", "customer_phone", "invoice_no", "display_no"]),
+        );
+      }
     }
     const { data, error } = await q;
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };

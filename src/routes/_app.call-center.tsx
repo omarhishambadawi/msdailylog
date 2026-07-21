@@ -133,7 +133,14 @@ function CallCenterPage() {
     let stop = false;
     const tick = async () => {
       try {
-        const res = await fetch(`/api/public/cdr-progress/${jobId}`, { cache: "no-store" });
+        // The progress endpoint reads via service_role, so it requires a
+        // bearer token — send the current session's access token.
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        const res = await fetch(`/api/public/cdr-progress/${jobId}`, {
+          cache: "no-store",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
         if (!res.ok) return;
         const j = await res.json();
         if (!stop) setProgress({ percent: j.percent ?? 0, message: j.message ?? "Loading…" });
