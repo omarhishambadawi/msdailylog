@@ -7,11 +7,12 @@ import {
   ShieldAlert, MessageSquareWarning, Menu, X, PhoneCall, Headphones,
   UserCircle2,
 } from "lucide-react";
-import logo from "@/assets/milaserv-logo.png.asset.json";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/notification-bell";
 import { hasPerm } from "@/lib/permissions";
 import { UserAvatar } from "@/components/user-avatar";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { BrandLogo } from "@/components/brand-logo";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -26,6 +27,7 @@ function AppLayout() {
 
   // Compact-by-default: sidebar starts collapsed (icons + label under icon).
   // Preference persisted to localStorage and hydrated after mount to avoid SSR mismatch.
+  // Compact-by-default: sidebar starts collapsed (icons + label under icon).
   const [expanded, setExpanded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -99,7 +101,9 @@ function AppLayout() {
         "px-3 py-4 border-b border-border flex items-center gap-3",
         !expanded && "justify-center px-2",
       )}>
-        <img src={logo.url} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+        <BrandLogo />
+
+
         {expanded && (
           <div className="min-w-0">
             <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
@@ -207,7 +211,9 @@ function AppLayout() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="text-sm font-medium truncate flex-1 text-foreground/80">MilaServ Portal</div>
+          <ThemeToggle />
           <NotificationBell />
+
         </div>
         {/* Route content — quick fade-in */}
         <div
@@ -232,7 +238,9 @@ function MobileSidebar({ nav, activePath, profile, role, email, onSignOut }: {
   return (
     <>
       <div className="px-3 py-3 border-b border-border flex items-center gap-3">
-        <img src={logo.url} alt="MilaServ" className="h-8 w-auto object-contain shrink-0" />
+        <BrandLogo />
+
+
         <div className="min-w-0">
           <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
           <div className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">Portal</div>
