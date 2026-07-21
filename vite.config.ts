@@ -8,7 +8,7 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/tanstack/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { sep } from "node:path";
-import type { Plugin } from "vite";
+import { loadEnv, type Plugin } from "vite";
 
 // Workaround for an upstream Windows-only bug in @lovable.dev/mcp-js (present in
 // every version from 0.20.0 through 0.24.0, the current latest).
@@ -43,6 +43,34 @@ function withNativeSepRoot(plugin: Plugin): Plugin {
   return plugin;
 }
 
+// Local-dev-only bridge from `.env` into the real Node `process.env`.
+//
+// `@lovable.dev/vite-tanstack-config` loads `.env` with a hard `VITE_` prefix
+// filter and injects the result only into `import.meta.env` for the client
+// bundle — nothing ever reaches `process.env`. Server functions, however, read
+// their secrets from `process.env` (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+// YEASTAR_BASE_URL, YEASTAR_CLIENT_ID, YEASTAR_CLIENT_SECRET), because in
+// production the Cloudflare Workers runtime materializes bound secrets there
+// via unenv's process shim. Under plain `vite dev` no such bridge exists, so
+// Users/Yeastar admin pages fail locally while client-side pages work.
+//
+// This plugin closes that gap for `vite dev` only (`command === "serve"`;
+// `vite build` is untouched, so the Cloudflare/Vercel build paths and prod
+// runtime behavior are unchanged). `loadEnv` with an empty prefix returns
+// every key from the mode's `.env` files merged with the ambient
+// `process.env`, ambient winning — so real environment variables still take
+// precedence over `.env` file values, and the assign is a no-op for keys the
+// shell already set.
+function serverEnvBridge(): Plugin {
+  return {
+    name: "msdailylog:server-env-bridge",
+    config(_config, { command, mode }) {
+      if (command !== "serve") return;
+      Object.assign(process.env, loadEnv(mode, process.cwd(), ""));
+    },
+  };
+}
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
@@ -51,6 +79,7 @@ export default defineConfig({
   },
   vite: {
     plugins: [
+      serverEnvBridge(),
       withNativeSepRoot(mcpPlugin()),
       VitePWA({
         registerType: "autoUpdate",
