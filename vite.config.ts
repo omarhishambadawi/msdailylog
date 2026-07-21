@@ -7,6 +7,41 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/tanstack/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { sep } from "node:path";
+import type { Plugin } from "vite";
+
+// Workaround for an upstream Windows-only bug in @lovable.dev/mcp-js (present in
+// every version from 0.20.0 through 0.24.0, the current latest).
+//
+// Its `configResolved` hook takes `config.root` — which Vite always normalizes to
+// forward slashes — and compares it against `path.resolve()` output, which uses
+// native separators. The containment guard is
+// `child.startsWith(parent + path.sep)`, so on Windows it compares
+// "C:\...\src\routes" against "C:/.../msdailylog\" and can never hold; the plugin
+// throws and neither `vite dev` nor `vite build` can start. On POSIX `sep` is "/"
+// and the mismatch does not exist, which is why CI and the Lovable sandbox pass.
+//
+// Handing that one hook a root with native separators is behaviour-neutral: the
+// plugin only feeds the value to path.resolve()/path.relative(), both of which
+// accept either form and produce identical output. No-op off Windows.
+function withNativeSepRoot(plugin: Plugin): Plugin {
+  const original = plugin.configResolved;
+  if (sep === "/" || typeof original !== "function") return plugin;
+  // Mutate in place rather than spreading: the plugin exposes `api.mcpEntry` as a
+  // getter that is finalized during configResolved, and a spread would snapshot it.
+  plugin.configResolved = function (config, ...rest) {
+    const nativeRoot = new Proxy(config, {
+      // Receiver is the target, not the proxy, so any getters on the resolved
+      // config still see their real `this`.
+      get: (target, prop) =>
+        prop === "root"
+          ? String(target.root).split("/").join(sep)
+          : Reflect.get(target, prop, target),
+    });
+    return (original as (...a: unknown[]) => unknown).call(this, nativeRoot, ...rest);
+  } as Plugin["configResolved"];
+  return plugin;
+}
 
 export default defineConfig({
   tanstackStart: {
@@ -16,7 +51,7 @@ export default defineConfig({
   },
   vite: {
     plugins: [
-      mcpPlugin(),
+      withNativeSepRoot(mcpPlugin()),
       VitePWA({
         registerType: "autoUpdate",
         injectRegister: null,
