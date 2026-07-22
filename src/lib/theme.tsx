@@ -20,7 +20,7 @@ function applyRaw(theme: Theme) {
 }
 
 type ViewTransitionDocument = Document & {
-  startViewTransition?: (cb: () => void) => { ready: Promise<void> };
+  startViewTransition?: (cb: () => void) => { ready: Promise<void>; finished: Promise<void> };
 };
 
 function apply(theme: Theme, animate = true, origin?: ThemeOrigin) {
@@ -40,15 +40,21 @@ function apply(theme: Theme, animate = true, origin?: ThemeOrigin) {
       Math.max(x, window.innerWidth - x),
       Math.max(y, window.innerHeight - y),
     );
+    // Feed the reveal geometry to the CSS keyframe (see styles.css). Declaring
+    // the animation in CSS means it runs from the transition's first frame —
+    // no JS-scheduled frame gap where the new snapshot flashes fully first.
+    root.style.setProperty("--theme-reveal-x", `${x}px`);
+    root.style.setProperty("--theme-reveal-y", `${y}px`);
+    root.style.setProperty("--theme-reveal-r", `${maxRadius}px`);
+    root.style.setProperty("--theme-reveal-ms", `${REVEAL_MS}ms`);
     const transition = doc.startViewTransition(() => { applyRaw(theme); });
-    transition.ready
-      .then(() => {
-        root.animate(
-          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${maxRadius}px at ${x}px ${y}px)`] },
-          { duration: REVEAL_MS, easing: "cubic-bezier(0.4, 0, 0.2, 1)", pseudoElement: "::view-transition-new(root)" },
-        );
-      })
-      .catch(() => {});
+    const cleanup = () => {
+      root.style.removeProperty("--theme-reveal-x");
+      root.style.removeProperty("--theme-reveal-y");
+      root.style.removeProperty("--theme-reveal-r");
+      root.style.removeProperty("--theme-reveal-ms");
+    };
+    transition.finished.then(cleanup, cleanup);
     return;
   }
 
