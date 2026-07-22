@@ -5,7 +5,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 const RoleEnum = z.enum([
   "owner",
   "admin",
-  "supervisor",
   "customer_care",
   "telesales",
   "call_center",
