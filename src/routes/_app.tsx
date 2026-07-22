@@ -98,21 +98,24 @@ function AppLayout() {
     <>
       {/* Logo — inline, no plate/container */}
       <div className={cn(
-        "px-3 py-4 border-b border-border flex items-center gap-3",
-        !expanded && "justify-center px-2",
+        "h-16 shrink-0 border-b border-border flex items-center gap-3 transition-[padding] duration-200 ease-in-out",
+        expanded ? "px-4" : "justify-center px-2",
       )}>
         <BrandLogo />
-
-
         {expanded && (
           <div className="min-w-0">
             <div className="text-sm font-bold leading-tight tracking-tight truncate text-foreground">MilaServ</div>
-            <div className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">Portal</div>
+            <div className="text-[10px] text-muted-foreground font-medium tracking-[0.18em] uppercase">Portal</div>
           </div>
         )}
       </div>
 
-      <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
+      <nav className={cn(
+        "flex-1 py-3 space-y-1 overflow-y-auto overflow-x-hidden",
+        "[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent",
+        "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border/70 hover:[&::-webkit-scrollbar-thumb]:bg-border",
+        expanded ? "px-3" : "px-2.5",
+      )}>
         {nav.map((n) => {
           const active = activePath === n.to;
           const Icon = n.icon;
@@ -121,31 +124,46 @@ function AppLayout() {
               key={n.to}
               to={n.to}
               title={!expanded ? n.label : undefined}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                "group relative flex rounded-lg font-medium transition-all duration-150",
+                "group relative flex rounded-lg font-medium tracking-tight outline-none",
+                "transition-[background-color,color,box-shadow,transform] duration-200 ease-out",
+                "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-1 focus-visible:ring-offset-card",
                 expanded
                   ? "items-center gap-3 px-3 py-2 text-sm"
-                  : "flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px]",
+                  : "flex-col items-center justify-center gap-1 px-1 py-2.5 text-[10px] leading-none",
                 active
-                  ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
-                  : "text-foreground/80 hover:bg-accent hover:text-foreground",
+                  ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25"
+                  : cn(
+                      "text-foreground/70 hover:bg-accent hover:text-foreground",
+                      expanded && "hover:translate-x-0.5",
+                    ),
               )}
             >
-              <Icon className={cn(expanded ? "h-4 w-4 shrink-0" : "h-5 w-5")} />
-              <span className={cn("truncate", !expanded && "leading-none")}>{n.label}</span>
+              {/* Active accent rail (expanded only) — clean modern indicator */}
+              {active && expanded && (
+                <span aria-hidden className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-primary-foreground/70" />
+              )}
+              <Icon
+                className={cn(
+                  "shrink-0 transition-transform duration-200 ease-out group-hover:scale-110",
+                  expanded ? "h-[18px] w-[18px]" : "h-5 w-5",
+                )}
+              />
+              <span className="truncate">{n.label}</span>
             </Link>
           );
         })}
       </nav>
 
       {/* Profile */}
-      <div className="border-t border-border p-2 space-y-1.5">
+      <div className="border-t border-border p-2.5 space-y-1.5">
         <Link
           to="/profile"
           title={!expanded ? "Profile" : undefined}
           className={cn(
-            "flex rounded-lg transition-colors duration-150 hover:bg-accent",
-            expanded ? "items-center gap-2.5 px-2 py-1.5" : "flex-col items-center gap-1 px-1 py-1.5",
+            "flex rounded-lg transition-colors duration-200 ease-out hover:bg-accent",
+            expanded ? "items-center gap-2.5 px-2 py-2" : "flex-col items-center gap-1 px-1 py-2",
           )}
         >
           <UserAvatar name={profile?.full_name ?? session.user.email} url={profile?.avatar_url} size="sm" />
@@ -159,7 +177,7 @@ function AppLayout() {
         <Button
           variant="ghost"
           size="sm"
-          className={cn("w-full", !expanded && "px-0")}
+          className={cn("w-full transition-colors duration-200 ease-out", !expanded && "px-0")}
           onClick={() => signOut().then(() => navigate({ to: "/auth", replace: true }))}
           title={!expanded ? "Sign out" : undefined}
         >
@@ -174,7 +192,7 @@ function AppLayout() {
     <div className="min-h-screen flex bg-muted/30">
       {/* Desktop sidebar */}
       <aside className={cn(
-        "hidden md:flex shrink-0 sticky top-0 h-screen bg-card border-r border-border flex-col transition-[width] duration-150 ease-out z-20",
+        "hidden md:flex shrink-0 sticky top-0 h-screen bg-card border-r border-border flex-col overflow-hidden transition-[width] duration-200 ease-in-out will-change-[width] z-20",
         sidebarWidth,
       )}>
         {SidebarContent}
@@ -184,7 +202,7 @@ function AppLayout() {
       {mobileOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/50 animate-in fade-in duration-150" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-56 bg-card border-r border-border flex flex-col shadow-2xl animate-in slide-in-from-left duration-150">
+          <aside className="absolute inset-y-0 left-0 w-[min(16rem,82vw)] bg-card border-r border-border flex flex-col shadow-2xl animate-in slide-in-from-left duration-200 ease-out">
             <div className="flex justify-end p-2">
               <Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></Button>
             </div>
@@ -246,7 +264,7 @@ function MobileSidebar({ nav, activePath, profile, role, email, onSignOut }: {
           <div className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">Portal</div>
         </div>
       </div>
-      <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border/70">
         {nav.map((n) => {
           const active = activePath === n.to;
           const Icon = n.icon;
@@ -254,14 +272,18 @@ function MobileSidebar({ nav, activePath, profile, role, email, onSignOut }: {
             <Link
               key={n.to}
               to={n.to}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150",
+                "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium tracking-tight transition-[background-color,color,transform] duration-200 ease-out",
                 active
-                  ? "bg-primary text-primary-foreground"
-                  : "text-foreground/80 hover:bg-accent hover:text-foreground",
+                  ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25"
+                  : "text-foreground/70 hover:bg-accent hover:text-foreground hover:translate-x-0.5",
               )}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              {active && (
+                <span aria-hidden className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-primary-foreground/70" />
+              )}
+              <Icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-200 ease-out group-hover:scale-110" />
               <span className="truncate">{n.label}</span>
             </Link>
           );
