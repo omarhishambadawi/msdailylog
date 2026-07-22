@@ -16,17 +16,20 @@ export function ThemeToggle({ className }: { className?: string }) {
       }}
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       title={isDark ? "Light mode" : "Dark mode"}
-      className={cn("h-9 w-9 relative overflow-hidden", className)}
+      className={cn(
+        "h-9 w-9 rounded-lg relative overflow-hidden text-foreground/70 transition-colors duration-200 hover:text-foreground active:scale-95",
+        className,
+      )}
     >
       <Sun
         className={cn(
-          "h-4 w-4 absolute transition-all duration-300",
+          "h-[18px] w-[18px] absolute transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
           isDark ? "opacity-0 rotate-90 scale-50" : "opacity-100 rotate-0 scale-100",
         )}
       />
       <Moon
         className={cn(
-          "h-4 w-4 absolute transition-all duration-300",
+          "h-[18px] w-[18px] absolute transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
           isDark ? "opacity-100 rotate-0 scale-100" : "opacity-0 -rotate-90 scale-50",
         )}
       />

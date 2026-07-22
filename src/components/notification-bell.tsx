@@ -63,10 +63,15 @@ export function NotificationBell() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
-          <Bell className="h-5 w-5" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative h-9 w-9 rounded-lg text-foreground/70 transition-colors duration-200 hover:text-foreground active:scale-95 data-[state=open]:bg-accent data-[state=open]:text-foreground"
+          aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+        >
+          <Bell className="h-[18px] w-[18px]" />
           {unread > 0 && (
-            <span className="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center leading-none">
+            <span className="absolute top-1 right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center leading-none ring-2 ring-card animate-in zoom-in-50 duration-200">
               {unread > 99 ? "99+" : unread}
             </span>
           )}

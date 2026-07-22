@@ -214,25 +214,32 @@ function AppLayout() {
 
       <main className="flex-1 min-w-0 flex flex-col">
         {/* Top bar */}
-        <div className="sticky top-0 z-30 bg-card/80 backdrop-blur-md border-b border-border h-12 flex items-center px-3 gap-2">
-          <Button variant="ghost" size="icon" className="md:hidden h-9 w-9" onClick={() => setMobileOpen(true)} aria-label="Open menu">
+        <header className="sticky top-0 z-30 h-14 flex items-center gap-1 px-2 sm:px-4 border-b border-border bg-card/70 backdrop-blur-xl supports-[backdrop-filter]:bg-card/60">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden h-9 w-9 rounded-lg text-foreground/70 transition-colors duration-200 hover:text-foreground active:scale-95"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open menu"
+          >
             <Menu className="h-5 w-5" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="hidden md:inline-flex h-9 w-9"
+            className="hidden md:inline-flex h-9 w-9 rounded-lg text-foreground/70 transition-colors duration-200 hover:text-foreground active:scale-95"
             onClick={() => setExpanded((v) => !v)}
             aria-label="Toggle sidebar"
             aria-expanded={expanded}
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <div className="text-sm font-medium truncate flex-1 text-foreground/80">MilaServ Portal</div>
-          <ThemeToggle />
-          <NotificationBell />
-
-        </div>
+          <div className="flex-1 min-w-0 truncate text-sm font-semibold tracking-tight text-foreground/90">MilaServ Portal</div>
+          <div className="flex items-center gap-0.5 sm:gap-1">
+            <ThemeToggle />
+            <NotificationBell />
+          </div>
+        </header>
         {/* Route content — quick fade-in */}
         <div
           key={location.pathname}
