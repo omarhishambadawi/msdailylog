@@ -1,11 +1,17 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 export type Theme = "light" | "dark";
-type ThemeCtx = { theme: Theme; setTheme: (t: Theme) => void; toggle: () => void };
+export type ThemeOrigin = { x: number; y: number };
+type ThemeCtx = {
+  theme: Theme;
+  setTheme: (t: Theme, origin?: ThemeOrigin) => void;
+  toggle: (origin?: ThemeOrigin) => void;
+};
 
 const Ctx = createContext<ThemeCtx | null>(null);
 const STORAGE_KEY = "milaserv.theme";
-const TRANSITION_MS = 340;
+const TRANSITION_MS = 320;
+const REVEAL_MS = 420;
 
 function applyRaw(theme: Theme) {
   const root = document.documentElement;
@@ -13,21 +19,38 @@ function applyRaw(theme: Theme) {
   root.style.colorScheme = theme;
 }
 
-function apply(theme: Theme, animate = true) {
+type ViewTransitionDocument = Document & {
+  startViewTransition?: (cb: () => void) => { ready: Promise<void> };
+};
+
+function apply(theme: Theme, animate = true, origin?: ThemeOrigin) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   // Respect reduced-motion — swap instantly, no color transition.
   const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   if (!animate || reduce) { applyRaw(theme); return; }
 
-  // Use View Transitions API for a seamless cross-fade when supported.
-  // Falls back to a CSS transition class otherwise.
-  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  // Use the View Transitions API for a premium "reveal" that radiates from the
+  // toggle button, rather than the default full-page opacity crossfade (which
+  // double-exposes the old/new screenshots and reads as a page reload/flash).
+  const doc = document as ViewTransitionDocument;
   if (typeof doc.startViewTransition === "function") {
-    doc.startViewTransition(() => { applyRaw(theme); });
+    const { x, y } = origin ?? { x: window.innerWidth - 32, y: 24 };
+    const maxRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y),
+    );
+    const transition = doc.startViewTransition(() => { applyRaw(theme); });
+    transition.ready
+      .then(() => {
+        root.animate(
+          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${maxRadius}px at ${x}px ${y}px)`] },
+          { duration: REVEAL_MS, easing: "cubic-bezier(0.4, 0, 0.2, 1)", pseudoElement: "::view-transition-new(root)" },
+        );
+      })
+      .catch(() => {});
     return;
   }
-
 
   root.classList.add("theme-transition");
   applyRaw(theme);
@@ -57,14 +80,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener?.("change", onChange);
   }, []);
 
-  const setTheme = (t: Theme) => {
-    apply(t);
+  const setTheme = (t: Theme, origin?: ThemeOrigin) => {
+    apply(t, true, origin);
     setThemeState(t);
     try { localStorage.setItem(STORAGE_KEY, t); } catch {}
   };
 
   return (
-    <Ctx.Provider value={{ theme, setTheme, toggle: () => setTheme(theme === "dark" ? "light" : "dark") }}>
+    <Ctx.Provider value={{ theme, setTheme, toggle: (origin) => setTheme(theme === "dark" ? "light" : "dark", origin) }}>
       {children}
     </Ctx.Provider>
   );

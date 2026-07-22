@@ -2,14 +2,18 @@
 @source "../src";
 @import "tw-animate-css";
 
-/* Cross-fade the whole viewport during a theme change (View Transitions API) */
-@keyframes theme-fade-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes theme-fade-out { from { opacity: 1; } to { opacity: 0; } }
-::view-transition-old(root) {
-  animation: theme-fade-out 320ms cubic-bezier(0.4, 0, 0.2, 1) both;
+/* Theme changes use a JS-driven clip-path "reveal" from the toggle button
+   (see src/lib/theme.tsx) instead of the browser's default full-page
+   crossfade — a plain opacity dissolve between two screenshots reads as a
+   flash/page-reload. Disable the default animation so only the reveal runs;
+   the old snapshot stays static underneath while the new one is clipped in. */
+::view-transition-group(root) {
+  animation-duration: 0s;
 }
+::view-transition-old(root),
 ::view-transition-new(root) {
-  animation: theme-fade-in 320ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: none;
+  mix-blend-mode: normal;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -80,6 +84,12 @@
   --chart-3: oklch(0.4 0.06 255);           /* navy mid */
   --chart-4: oklch(0.65 0.09 220);          /* steel blue */
   --chart-5: oklch(0.78 0.1 190);           /* light turquoise */
+  --map-fill-1: oklch(0.965 0.02 195);
+  --map-fill-2: oklch(0.93 0.015 205);
+  --map-outline: oklch(0.72 0.07 194);
+  --map-grid: oklch(0.9 0.012 205);
+  --map-label: oklch(0.28 0.05 260);
+  --map-label-halo: oklch(1 0 0);
   color-scheme: light;
 }
 
@@ -114,6 +124,12 @@
   --chart-3: oklch(0.62 0.1 235);
   --chart-4: oklch(0.72 0.12 175);
   --chart-5: oklch(0.85 0.09 190);
+  --map-fill-1: oklch(0.27 0.03 200);
+  --map-fill-2: oklch(0.23 0.025 255);
+  --map-outline: oklch(0.48 0.07 195);
+  --map-grid: oklch(0.33 0.02 220);
+  --map-label: oklch(0.94 0.01 210);
+  --map-label-halo: oklch(0.19 0.02 255);
 }
 
 @layer base {

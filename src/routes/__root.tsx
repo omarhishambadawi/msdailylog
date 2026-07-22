@@ -14,7 +14,7 @@ import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { registerPwa } from "@/lib/pwa/register";
-import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme";
+import { ThemeProvider, THEME_INIT_SCRIPT, useTheme } from "@/lib/theme";
 
 function NotFoundComponent() {
   return (
@@ -33,6 +33,11 @@ function NotFoundComponent() {
       </div>
     </div>
   );
+}
+
+function ThemedToaster() {
+  const { theme } = useTheme();
+  return <Toaster richColors position="top-right" theme={theme} />;
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
@@ -116,7 +121,7 @@ function RootComponent() {
       <ThemeProvider>
         <AuthProvider>
           <Outlet />
-          <Toaster richColors position="top-right" />
+          <ThemedToaster />
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

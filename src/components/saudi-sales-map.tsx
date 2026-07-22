@@ -291,8 +291,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
           >
             <defs>
               <linearGradient id="ksa-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="hsl(184 40% 92%)" stopOpacity="0.9" />
-                <stop offset="100%" stopColor="hsl(200 30% 88%)" stopOpacity="0.6" />
+                <stop offset="0%" style={{ stopColor: "var(--map-fill-1)" }} stopOpacity="0.9" />
+                <stop offset="100%" style={{ stopColor: "var(--map-fill-2)" }} stopOpacity="0.6" />
               </linearGradient>
               <filter id="ksa-shadow" x="-10%" y="-10%" width="120%" height="120%">
                 <feGaussianBlur in="SourceAlpha" stdDeviation="2.5" />
@@ -307,7 +307,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                 <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
               <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="hsl(200 30% 90%)" strokeWidth="0.5" opacity="0.4" />
+                <path d="M 40 0 L 0 0 0 40" fill="none" style={{ stroke: "var(--map-grid)" }} strokeWidth="0.5" opacity="0.4" />
               </pattern>
             </defs>
 
@@ -316,7 +316,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
             <path
               d={outlinePath}
               fill="url(#ksa-fill)"
-              stroke="hsl(184 30% 55%)"
+              style={{ stroke: "var(--map-outline)" }}
               strokeWidth={1.5}
               strokeLinejoin="round"
               filter="url(#ksa-shadow)"
@@ -330,7 +330,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
               return (
                 <line key={`ln-${p.name}`}
                   x1={p.cx} y1={p.cy} x2={tx} y2={ty}
-                  stroke="hsl(200 15% 60%)" strokeWidth={0.6} opacity={active ? 0.9 : 0.35}
+                  style={{ stroke: "var(--color-muted-foreground)" }} strokeWidth={0.6} opacity={active ? 0.9 : 0.35}
                 />
               );
             })}
@@ -378,9 +378,14 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                     textAnchor={p.anchor}
                     fontSize={11.5}
                     fontWeight={active ? 700 : 600}
-                    fill="hsl(215 28% 18%)"
-                    stroke="white" strokeWidth={3.5} strokeOpacity={0.98} paintOrder="stroke"
-                    style={{ letterSpacing: 0.15, fontFeatureSettings: '"kern"', textRendering: "geometricPrecision" }}
+                    strokeWidth={3.5} strokeOpacity={0.98} paintOrder="stroke"
+                    style={{
+                      fill: "var(--map-label)",
+                      stroke: "var(--map-label-halo)",
+                      letterSpacing: 0.15,
+                      fontFeatureSettings: '"kern"',
+                      textRendering: "geometricPrecision",
+                    }}
                   >
                     {displayLabel(p.name)}
                   </text>
@@ -448,7 +453,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
             const yShift = flipBelow ? `calc(${hover.r + 16}px)` : `calc(-100% - ${hover.r + 14}px)`;
             return (
             <div
-              className="pointer-events-none absolute z-10 min-w-[210px] rounded-lg border bg-popover/95 backdrop-blur px-3.5 py-2.5 text-xs text-popover-foreground shadow-lg ring-1 ring-black/5"
+              className="pointer-events-none absolute z-10 min-w-[210px] rounded-lg border bg-popover/95 backdrop-blur px-3.5 py-2.5 text-xs text-popover-foreground shadow-lg ring-1 ring-border/40"
               style={{
                 left: `${leftPct}%`,
                 top: `${topPct}%`,
