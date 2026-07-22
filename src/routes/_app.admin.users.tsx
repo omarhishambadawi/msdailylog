@@ -190,7 +190,6 @@ function AdminUsers() {
                       <SelectItem value="customer_care">Customer Care</SelectItem>
                       <SelectItem value="telesales">Telesales</SelectItem>
                       <SelectItem value="call_center">Call Center</SelectItem>
-                      <SelectItem value="supervisor">Supervisor</SelectItem>
                       <SelectItem value="auditor">Auditor (read-only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
