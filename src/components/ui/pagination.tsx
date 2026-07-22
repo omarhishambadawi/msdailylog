@@ -16,7 +16,11 @@ Pagination.displayName = "Pagination";
 
 const PaginationContent = React.forwardRef<HTMLUListElement, React.ComponentProps<"ul">>(
   ({ className, ...props }, ref) => (
-    <ul ref={ref} className={cn("flex flex-row items-center gap-1", className)} {...props} />
+    <ul
+      ref={ref}
+      className={cn("flex flex-row flex-wrap items-center justify-center gap-1", className)}
+      {...props}
+    />
   ),
 );
 PaginationContent.displayName = "PaginationContent";
@@ -39,6 +43,8 @@ const PaginationLink = ({ className, isActive, size = "icon", ...props }: Pagina
         variant: isActive ? "outline" : "ghost",
         size,
       }),
+      "rounded-lg transition-colors duration-150 active:scale-95",
+      isActive && "border-primary/40 bg-primary/10 font-semibold text-primary hover:bg-primary/15",
       className,
     )}
     {...props}
