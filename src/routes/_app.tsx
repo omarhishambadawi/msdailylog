@@ -4,15 +4,13 @@ import { useAuth, isAdministrator } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, ListOrdered, Plus, Users, MapPin, LogOut,
-  ShieldAlert, MessageSquareWarning, Menu, X, PhoneCall, Headphones,
-  UserCircle2,
+  ShieldAlert, MessageSquareWarning, X, PhoneCall, Headphones,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NotificationBell } from "@/components/notification-bell";
 import { hasPerm } from "@/lib/permissions";
 import { UserAvatar } from "@/components/user-avatar";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLogo } from "@/components/brand-logo";
+import { AppHeader } from "@/components/app-header";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -91,6 +89,8 @@ function AppLayout() {
     const cands = nav.filter((m) => path === m.to || path.startsWith(m.to + "/"));
     return cands.sort((a, b) => b.to.length - a.to.length)[0]?.to ?? "";
   })();
+
+  const activeItem = nav.find((n) => n.to === activePath);
 
   const sidebarWidth = expanded ? "w-56" : "w-20";
 
@@ -213,33 +213,17 @@ function AppLayout() {
       )}
 
       <main className="flex-1 min-w-0 flex flex-col">
-        {/* Top bar */}
-        <header className="sticky top-0 z-30 h-14 flex items-center gap-1 px-2 sm:px-4 border-b border-border bg-card/70 backdrop-blur-xl supports-[backdrop-filter]:bg-card/60">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden h-9 w-9 rounded-lg text-foreground/70 transition-colors duration-200 hover:text-foreground active:scale-95"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Open menu"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden md:inline-flex h-9 w-9 rounded-lg text-foreground/70 transition-colors duration-200 hover:text-foreground active:scale-95"
-            onClick={() => setExpanded((v) => !v)}
-            aria-label="Toggle sidebar"
-            aria-expanded={expanded}
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <div className="flex-1 min-w-0 truncate text-sm font-semibold tracking-tight text-foreground/90">MilaServ Portal</div>
-          <div className="flex items-center gap-0.5 sm:gap-1">
-            <ThemeToggle />
-            <NotificationBell />
-          </div>
-        </header>
+        <AppHeader
+          title={activeItem?.label ?? "MilaServ Portal"}
+          icon={activeItem?.icon}
+          expanded={expanded}
+          onToggleSidebar={() => setExpanded((v) => !v)}
+          onOpenMobile={() => setMobileOpen(true)}
+          name={profile?.full_name ?? session.user.email ?? "Account"}
+          role={role}
+          avatarUrl={profile?.avatar_url}
+          onSignOut={() => signOut().then(() => navigate({ to: "/auth", replace: true }))}
+        />
         {/* Route content — quick fade-in */}
         <div
           key={location.pathname}
