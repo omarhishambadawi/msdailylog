@@ -26,12 +26,11 @@ export const Route = createFileRoute("/_app/admin/users")({
   component: AdminUsers,
 });
 
-type RoleKey = "owner" | "admin" | "supervisor" | "customer_care" | "telesales" | "call_center" | "auditor";
+type RoleKey = "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor";
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Owner",
   admin: "Admin",
-  supervisor: "Supervisor",
   customer_care: "Customer Care",
   telesales: "Telesales",
   call_center: "Call Center",
@@ -41,7 +40,6 @@ const ROLE_LABEL: Record<string, string> = {
 const ROLE_TONE: Record<string, string> = {
   owner: "bg-primary/10 text-primary border-primary/30",
   admin: "bg-secondary/15 text-secondary-foreground border-secondary/40",
-  supervisor: "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/30",
   auditor: "bg-muted text-muted-foreground border-border",
   customer_care: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30",
   telesales: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
@@ -192,7 +190,6 @@ function AdminUsers() {
                       <SelectItem value="customer_care">Customer Care</SelectItem>
                       <SelectItem value="telesales">Telesales</SelectItem>
                       <SelectItem value="call_center">Call Center</SelectItem>
-                      <SelectItem value="supervisor">Supervisor</SelectItem>
                       <SelectItem value="auditor">Auditor (read-only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
@@ -369,7 +366,7 @@ function AdminUsers() {
                       <SelectItem value="customer_care">Customer Care</SelectItem>
                       <SelectItem value="telesales">Telesales</SelectItem>
                       <SelectItem value="call_center">Call Center</SelectItem>
-                      <SelectItem value="supervisor">Supervisor</SelectItem>
+                      
                       <SelectItem value="auditor">Auditor (read-only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
