@@ -1,112 +1,111 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
 export type Theme = "light" | "dark";
-export type ThemeOrigin = { x: number; y: number };
-type ThemeCtx = {
-  theme: Theme;
-  setTheme: (t: Theme, origin?: ThemeOrigin) => void;
-  toggle: (origin?: ThemeOrigin) => void;
-};
+type ThemeCtx = { theme: Theme; setTheme: (t: Theme) => void; toggle: () => void };
 
 const Ctx = createContext<ThemeCtx | null>(null);
 const STORAGE_KEY = "milaserv.theme";
-const TRANSITION_MS = 320;
-const REVEAL_MS = 420;
 
-function applyRaw(theme: Theme) {
-  const root = document.documentElement;
-  root.classList.toggle("dark", theme === "dark");
-  root.style.colorScheme = theme;
+/** Mirrors --theme-duration in src/styles.css. */
+const TRANSITION_MS = 200;
+
+/** Browser chrome colour (mobile address bar) — approximates --background per theme. */
+const THEME_COLOR: Record<Theme, string> = { light: "#fbfdfd", dark: "#171b26" };
+
+/*
+ * Theme lives in the DOM, not in React.
+ *
+ * A theme change is one synchronous class flip on <html>; every colour in the
+ * app resolves from that class through CSS variables and `dark:` variants, so
+ * the whole tree repaints on a single frame. React is only told afterwards, and
+ * only so the toggle button can label itself — no component re-renders to pick
+ * up a colour, which is what used to make the sidebar logo and charts land a
+ * beat after everything else.
+ */
+const listeners = new Set<() => void>();
+
+function readDom(): Theme {
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
-type ViewTransitionDocument = Document & {
-  startViewTransition?: (cb: () => void) => { ready: Promise<void>; finished: Promise<void> };
-};
+let current: Theme = typeof document === "undefined" ? "light" : readDom();
 
-function apply(theme: Theme, animate = true, origin?: ThemeOrigin) {
-  if (typeof document === "undefined") return;
+function subscribe(cb: () => void) {
+  listeners.add(cb);
+  return () => void listeners.delete(cb);
+}
+
+const getSnapshot = () => current;
+/** SSR always renders Light; the pre-hydration script fixes the DOM before paint. */
+const getServerSnapshot = (): Theme => "light";
+
+let resetTimer: ReturnType<typeof setTimeout> | undefined;
+
+function apply(theme: Theme) {
   const root = document.documentElement;
-  // Respect reduced-motion — swap instantly, no color transition.
-  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  if (!animate || reduce) { applyRaw(theme); return; }
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-  // Use the View Transitions API for a premium "reveal" that radiates from the
-  // toggle button, rather than the default full-page opacity crossfade (which
-  // double-exposes the old/new screenshots and reads as a page reload/flash).
-  const doc = document as ViewTransitionDocument;
-  if (typeof doc.startViewTransition === "function") {
-    const { x, y } = origin ?? { x: window.innerWidth - 32, y: 24 };
-    const maxRadius = Math.hypot(
-      Math.max(x, window.innerWidth - x),
-      Math.max(y, window.innerHeight - y),
-    );
-    // Feed the reveal geometry to the CSS keyframe (see styles.css). Declaring
-    // the animation in CSS means it runs from the transition's first frame —
-    // no JS-scheduled frame gap where the new snapshot flashes fully first.
-    root.style.setProperty("--theme-reveal-x", `${x}px`);
-    root.style.setProperty("--theme-reveal-y", `${y}px`);
-    root.style.setProperty("--theme-reveal-r", `${maxRadius}px`);
-    root.style.setProperty("--theme-reveal-ms", `${REVEAL_MS}ms`);
-    const transition = doc.startViewTransition(() => { applyRaw(theme); });
-    const cleanup = () => {
-      root.style.removeProperty("--theme-reveal-x");
-      root.style.removeProperty("--theme-reveal-y");
-      root.style.removeProperty("--theme-reveal-r");
-      root.style.removeProperty("--theme-reveal-ms");
-    };
-    transition.finished.then(cleanup, cleanup);
-    return;
+  // Arm the transition in the same style recalculation as the colour change.
+  // Transitions take their timing from the after-change style, so one pass is
+  // enough — no forced reflow, no second frame, nothing to get out of step.
+  if (!reduce) {
+    root.classList.add("theme-switching");
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(() => {
+      root.classList.remove("theme-switching");
+      resetTimer = undefined;
+    }, TRANSITION_MS + 50);
   }
 
-  root.classList.add("theme-transition");
-  applyRaw(theme);
-  window.setTimeout(() => root.classList.remove("theme-transition"), TRANSITION_MS);
+  root.classList.toggle("dark", theme === "dark");
+  root.style.colorScheme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_COLOR[theme]);
+}
+
+function setTheme(theme: Theme) {
+  if (typeof document === "undefined" || theme === current) return;
+  apply(theme);
+  current = theme;
+  try {
+    localStorage.setItem(STORAGE_KEY, theme);
+  } catch {}
+  for (const cb of listeners) cb();
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof document === "undefined") return "light";
-    return document.documentElement.classList.contains("dark") ? "dark" : "light";
-  });
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
-    // Sync from any pre-hydration state set by inline no-flicker script.
-    const initial = document.documentElement.classList.contains("dark") ? "dark" : "light";
-    setThemeState(initial);
-    // Only follow OS changes if user hasn't made an explicit choice.
-    // Default behaviour is Light unless the user opts in to Dark, so this
-    // listener effectively only reacts if a stored preference exists.
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = (e: MediaQueryListEvent) => {
-      try { if (localStorage.getItem(STORAGE_KEY)) return; } catch {}
-      // No stored pref → keep Light regardless of OS.
-      void e;
+    // Keep other tabs in step.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY) return;
+      setTheme(e.newValue === "dark" ? "dark" : "light");
     };
-    mq.addEventListener?.("change", onChange);
-    return () => mq.removeEventListener?.("change", onChange);
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const setTheme = (t: Theme, origin?: ThemeOrigin) => {
-    apply(t, true, origin);
-    setThemeState(t);
-    try { localStorage.setItem(STORAGE_KEY, t); } catch {}
-  };
-
-  return (
-    <Ctx.Provider value={{ theme, setTheme, toggle: (origin) => setTheme(theme === "dark" ? "light" : "dark", origin) }}>
-      {children}
-    </Ctx.Provider>
+  const value = useMemo<ThemeCtx>(
+    () => ({ theme, setTheme, toggle: () => setTheme(theme === "dark" ? "light" : "dark") }),
+    [theme],
   );
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-export function useTheme() {
-  const v = useContext(Ctx);
-  if (!v) return { theme: "light" as Theme, setTheme: () => {}, toggle: () => {} };
-  return v;
+export function useTheme(): ThemeCtx {
+  return useContext(Ctx) ?? { theme: "light", setTheme: () => {}, toggle: () => {} };
 }
 
 /**
- * Inline script — runs synchronously before hydration to prevent FOUC.
+ * Inline script — runs synchronously before first paint to prevent FOUC.
  * Default: Light Mode. Only opts into Dark when the user has explicitly saved it.
  */
-export const THEME_INIT_SCRIPT = `(function(){try{var k='${STORAGE_KEY}';var s=localStorage.getItem(k);var d=s==='dark';var r=document.documentElement;if(d){r.classList.add('dark');}r.style.colorScheme=d?'dark':'light';}catch(e){}})();`;
+export const THEME_INIT_SCRIPT = `(function(){try{var d=localStorage.getItem('${STORAGE_KEY}')==='dark';var r=document.documentElement;if(d)r.classList.add('dark');r.style.colorScheme=d?'dark':'light';var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',d?'${THEME_COLOR.dark}':'${THEME_COLOR.light}');}catch(e){}})();`;

@@ -279,7 +279,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="relative w-full overflow-hidden rounded-xl border bg-gradient-to-br from-[oklch(0.98_0.015_195)] via-background to-background dark:from-[oklch(0.22_0.03_200)]">
+        <div className="relative w-full overflow-hidden rounded-xl border bg-gradient-to-br from-[var(--tint-map)] via-background to-background">
           <svg
             ref={svgRef}
             viewBox={`0 0 ${W} ${H}`}
@@ -291,8 +291,8 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
           >
             <defs>
               <linearGradient id="ksa-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" style={{ stopColor: "var(--map-fill-1)" }} stopOpacity="0.9" />
-                <stop offset="100%" style={{ stopColor: "var(--map-fill-2)" }} stopOpacity="0.6" />
+                <stop offset="0%" style={{ stopColor: "var(--map-land-top)" }} stopOpacity="0.9" />
+                <stop offset="100%" style={{ stopColor: "var(--map-land-bottom)" }} stopOpacity="0.6" />
               </linearGradient>
               <filter id="ksa-shadow" x="-10%" y="-10%" width="120%" height="120%">
                 <feGaussianBlur in="SourceAlpha" stdDeviation="2.5" />
@@ -330,7 +330,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
               return (
                 <line key={`ln-${p.name}`}
                   x1={p.cx} y1={p.cy} x2={tx} y2={ty}
-                  style={{ stroke: "var(--color-muted-foreground)" }} strokeWidth={0.6} opacity={active ? 0.9 : 0.35}
+                  style={{ stroke: "var(--map-leader)" }} strokeWidth={0.6} opacity={active ? 0.9 : 0.35}
                 />
               );
             })}
@@ -379,13 +379,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
                     fontSize={11.5}
                     fontWeight={active ? 700 : 600}
                     strokeWidth={3.5} strokeOpacity={0.98} paintOrder="stroke"
-                    style={{
-                      fill: "var(--map-label)",
-                      stroke: "var(--map-label-halo)",
-                      letterSpacing: 0.15,
-                      fontFeatureSettings: '"kern"',
-                      textRendering: "geometricPrecision",
-                    }}
+                    style={{ fill: "var(--map-label)", stroke: "var(--map-label-halo)", letterSpacing: 0.15, fontFeatureSettings: '"kern"', textRendering: "geometricPrecision" }}
                   >
                     {displayLabel(p.name)}
                   </text>
@@ -453,7 +447,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
             const yShift = flipBelow ? `calc(${hover.r + 16}px)` : `calc(-100% - ${hover.r + 14}px)`;
             return (
             <div
-              className="pointer-events-none absolute z-10 min-w-[210px] rounded-lg border bg-popover/95 backdrop-blur px-3.5 py-2.5 text-xs text-popover-foreground shadow-lg ring-1 ring-border/40"
+              className="pointer-events-none absolute z-10 min-w-[210px] rounded-lg border bg-popover/95 backdrop-blur px-3.5 py-2.5 text-xs text-popover-foreground shadow-lg ring-1 ring-black/5"
               style={{
                 left: `${leftPct}%`,
                 top: `${topPct}%`,

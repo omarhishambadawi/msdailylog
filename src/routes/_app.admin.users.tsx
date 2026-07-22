@@ -41,9 +41,9 @@ const ROLE_TONE: Record<string, string> = {
   owner: "bg-primary/10 text-primary border-primary/30",
   admin: "bg-secondary/15 text-secondary-foreground border-secondary/40",
   auditor: "bg-muted text-muted-foreground border-border",
-  customer_care: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30",
-  telesales: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
-  call_center: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30",
+  customer_care: "bg-blue-500/10 text-[var(--badge-blue)] border-blue-500/30",
+  telesales: "bg-emerald-500/10 text-[var(--badge-emerald)] border-emerald-500/30",
+  call_center: "bg-amber-500/10 text-[var(--badge-amber)] border-amber-500/30",
 };
 
 function AdminUsers() {
@@ -366,7 +366,6 @@ function AdminUsers() {
                       <SelectItem value="customer_care">Customer Care</SelectItem>
                       <SelectItem value="telesales">Telesales</SelectItem>
                       <SelectItem value="call_center">Call Center</SelectItem>
-                      
                       <SelectItem value="auditor">Auditor (read-only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>

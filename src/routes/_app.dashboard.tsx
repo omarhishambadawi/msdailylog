@@ -626,8 +626,8 @@ function Dashboard() {
       <div>
         <SectionTitle title="Performance for selected period" />
         <div className="grid gap-3 sm:grid-cols-3">
-          <DashKpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10" stats={kpiByBucket.cash} />
-          <DashKpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10" stats={kpiByBucket.wasfaty} />
+          <DashKpiCard label="Cash" tone="from-[var(--tint-cash)] to-transparent" stats={kpiByBucket.cash} />
+          <DashKpiCard label="Wasfaty" tone="from-[var(--tint-wasfaty)] to-transparent" stats={kpiByBucket.wasfaty} />
           <DashKpiCard label="Total" tone="from-primary/10 to-transparent" highlight stats={kpiByBucket.total} />
         </div>
       </div>
@@ -656,7 +656,7 @@ function Dashboard() {
                   <tr key={r.name} className="border-b last:border-0">
                     <td className="px-3 py-2 font-medium whitespace-nowrap">{r.name}</td>
                     <td className="px-3 py-2 text-right">{r.total}</td>
-                    <td className="px-3 py-2 text-right text-green-600 dark:text-green-400 font-semibold">{r.verified}</td>
+                    <td className="px-3 py-2 text-right text-[var(--positive)] font-semibold">{r.verified}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{r.nonVerified}</td>
                     <td className="px-3 py-2 text-right">{r.rate.toFixed(0)}%</td>
                     <td className="px-3 py-2 text-right font-mono text-xs">{fmtSAR(r.verifiedValue)}</td>
@@ -831,8 +831,8 @@ function Dashboard() {
         <SectionTitle title="Complaints" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           <Stat label="Total complaints" value={Number(cmpKpi?.total ?? 0)} />
-          <Stat label="In progress" value={Number(cmpKpi?.in_progress ?? 0)} accent="text-amber-600 dark:text-amber-400" />
-          <Stat label="Resolved" value={Number(cmpKpi?.resolved ?? 0)} accent="text-green-600 dark:text-green-400" />
+          <Stat label="In progress" value={Number(cmpKpi?.in_progress ?? 0)} accent="text-[var(--attention)]" />
+          <Stat label="Resolved" value={Number(cmpKpi?.resolved ?? 0)} accent="text-[var(--positive)]" />
           <Stat label="Resolution rate" value={cmpKpi ? `${Number(cmpKpi.resolution_rate).toFixed(1)}%` : "—"} />
         </div>
 
@@ -855,8 +855,8 @@ function Dashboard() {
                     <tr key={r.name} className="border-b last:border-0">
                       <td className="px-3 py-2 font-medium">{r.name}</td>
                       <td className="px-3 py-2 text-right">{r.total}</td>
-                      <td className="px-3 py-2 text-right text-green-600 dark:text-green-400">{r.resolved}</td>
-                      <td className="px-3 py-2 text-right text-amber-600 dark:text-amber-400">{r.open}</td>
+                      <td className="px-3 py-2 text-right text-[var(--positive)]">{r.resolved}</td>
+                      <td className="px-3 py-2 text-right text-[var(--attention)]">{r.open}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -956,7 +956,7 @@ function DashKpiCard({ label, tone, highlight, stats }: {
         </div>
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-xs text-muted-foreground">Completed sales</span>
-          <span className="text-base font-semibold tabular-nums truncate text-green-600 dark:text-green-400">{fmtSAR(s.completedSales)}</span>
+          <span className="text-base font-semibold tabular-nums truncate text-[var(--positive)]">{fmtSAR(s.completedSales)}</span>
         </div>
       </div>
       <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-2">
@@ -966,13 +966,13 @@ function DashKpiCard({ label, tone, highlight, stats }: {
         </div>
         <div className="text-right">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Completed</div>
-          <div className="text-2xl font-bold tabular-nums leading-tight text-green-600 dark:text-green-400">{s.completedOrders}</div>
+          <div className="text-2xl font-bold tabular-nums leading-tight text-[var(--positive)]">{s.completedOrders}</div>
         </div>
       </div>
       <div className="mt-2 pt-2 border-t border-border/40 grid grid-cols-3 gap-1 text-[11px]">
         <div><span className="text-muted-foreground">Rate </span><span className="font-semibold">{s.completionRate.toFixed(1)}%</span></div>
-        <div><span className="text-muted-foreground">Pending </span><span className="font-semibold text-amber-600 dark:text-amber-400">{s.pending}</span></div>
-        <div><span className="text-muted-foreground">Cancelled </span><span className="font-semibold text-red-600 dark:text-red-400">{s.cancelled}</span></div>
+        <div><span className="text-muted-foreground">Pending </span><span className="font-semibold text-[var(--attention)]">{s.pending}</span></div>
+        <div><span className="text-muted-foreground">Cancelled </span><span className="font-semibold text-[var(--negative)]">{s.cancelled}</span></div>
       </div>
     </div>
   );

@@ -135,7 +135,7 @@ function ComplaintsList() {
                   const canResolveRow = canResolveAll || (owned && canResolveOwn);
                   const resolved = c.status === "Resolved";
                   return (
-                    <TableRow key={c.id} className={resolved ? "bg-green-50/40 dark:bg-green-500/5" : ""}>
+                    <TableRow key={c.id} className={resolved ? "bg-[var(--tint-resolved)]" : ""}>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox checked={resolved} disabled={!canResolveRow} onCheckedChange={(v) => toggleStatus(c, !!v)} aria-label="Resolved" />
                       </TableCell>

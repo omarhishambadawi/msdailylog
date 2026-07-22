@@ -381,10 +381,10 @@ function OrdersList() {
 
       {/* KPI summary: 3 cards — Cash · Wasfaty · Total (each shows sales + completed sales + total/completed orders split) */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <KpiCard label="Cash" tone="from-amber-50 to-transparent dark:from-amber-500/10"
+        <KpiCard label="Cash" tone="from-[var(--tint-cash)] to-transparent"
           totalSales={summary.cashSales} completedSales={summary.cashCompletedSales}
           totalOrders={summary.cashCount} completedOrders={summary.cashCompletedCount} />
-        <KpiCard label="Wasfaty" tone="from-sky-50 to-transparent dark:from-sky-500/10"
+        <KpiCard label="Wasfaty" tone="from-[var(--tint-wasfaty)] to-transparent"
           totalSales={summary.wasSales} completedSales={summary.wasCompletedSales}
           totalOrders={summary.wasCount} completedOrders={summary.wasCompletedCount} />
         <KpiCard label="Total" tone="from-primary/10 to-transparent" highlight
@@ -436,7 +436,7 @@ function OrdersList() {
                   const verified = !!o.call_center_verified;
                   const zebra = idx % 2 === 1;
                   const rowBg = verified
-                    ? "bg-primary/[0.06] dark:bg-primary/[0.12]"
+                    ? "bg-[var(--tint-row)]"
                     : zebra ? "bg-muted/25" : "bg-background";
                   const cellCls = "align-middle border-b border-border/40 py-3";
                   return (
@@ -509,7 +509,7 @@ function OrdersList() {
               const canVerifyRow = canVerifyOrder(o);
               const verified = !!o.call_center_verified;
               return (
-                <div key={o.id} className={cn("relative p-4 transition-colors active:bg-accent/40", verified && "bg-primary/[0.06] dark:bg-primary/[0.12] border-l-[3px] border-l-primary pl-[13px]")}>
+                <div key={o.id} className={cn("relative p-4 transition-colors active:bg-accent/40", verified && "bg-[var(--tint-row)] border-l-[3px] border-l-primary pl-[13px]")}>
                   <div className="flex items-start gap-3">
                     <div onClick={(e) => e.stopPropagation()} className="pt-1">
                       <Checkbox checked={verified} disabled={!canVerifyRow} onCheckedChange={(v) => toggleVerified(o, !!v)} aria-label="Call Center invoice verified" />
@@ -609,7 +609,7 @@ function CopyableOrderNo({ value, alwaysShowIcon = false }: { value: string; alw
         className={cn(
           "inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-opacity",
           alwaysShowIcon ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus:opacity-100",
-          copied && "opacity-100 text-emerald-600 dark:text-emerald-400",
+          copied && "opacity-100 text-[var(--positive-alt)]",
         )}
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -658,7 +658,7 @@ function KpiCard({ label, tone, highlight, totalSales, completedSales, totalOrde
         </div>
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-xs text-muted-foreground">Completed sales</span>
-          <span className="text-base font-semibold tabular-nums truncate text-green-600 dark:text-green-400">{fmtSAR(completedSales)}</span>
+          <span className="text-base font-semibold tabular-nums truncate text-[var(--positive)]">{fmtSAR(completedSales)}</span>
         </div>
       </div>
       <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-2">
@@ -668,7 +668,7 @@ function KpiCard({ label, tone, highlight, totalSales, completedSales, totalOrde
         </div>
         <div className="text-right">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Completed</div>
-          <div className="text-2xl font-bold tabular-nums leading-tight text-green-600 dark:text-green-400">{completedOrders}</div>
+          <div className="text-2xl font-bold tabular-nums leading-tight text-[var(--positive)]">{completedOrders}</div>
         </div>
       </div>
     </div>

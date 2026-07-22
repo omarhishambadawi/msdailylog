@@ -1,7 +1,5 @@
-import { useEffect } from "react";
 import lightLogo from "@/assets/milaserv-logo.png.asset.json";
 import darkLogo from "@/assets/milaserv-logo-dark.png.asset.json";
-import { useLogo } from "@/lib/use-logo";
 import { cn } from "@/lib/utils";
 
 type BrandLogoProps = {
@@ -14,27 +12,19 @@ const sizes = {
   auth: "h-16 w-16",
 } as const;
 
+/**
+ * Both marks stay mounted and their opacity is a function of --theme-dark, so
+ * the cross-fade is driven by the same interpolation as every colour in the app.
+ * Swapping `src` on a single <img> made the logo pop after everything else: it
+ * waited on a React commit *and* on the browser decoding the new bitmap.
+ */
 export function BrandLogo({ size = "sidebar", className }: BrandLogoProps) {
-  const logoUrl = useLogo();
-
-  useEffect(() => {
-    // Keep both immutable CDN assets decoded so changing only `src` is seamless.
-    for (const src of [lightLogo.url, darkLogo.url]) {
-      const image = new Image();
-      image.src = src;
-      void image.decode().catch(() => undefined);
-    }
-  }, []);
+  const img = "absolute inset-0 block h-full w-full object-contain object-center";
 
   return (
-    <div className={cn("flex shrink-0 items-center justify-center", sizes[size], className)}>
-      <img
-        src={logoUrl}
-        alt="MilaServ"
-        width={512}
-        height={389}
-        className="block h-full w-full object-contain object-center"
-      />
+    <div className={cn("relative flex shrink-0 items-center justify-center", sizes[size], className)}>
+      <img src={lightLogo.url} alt="MilaServ" width={512} height={389} className={cn(img, "theme-mark-light")} />
+      <img src={darkLogo.url} alt="" aria-hidden width={512} height={389} className={cn(img, "theme-mark-dark")} />
     </div>
   );
 }

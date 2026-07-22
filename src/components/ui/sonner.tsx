@@ -1,10 +1,16 @@
 import { Toaster as Sonner } from "sonner";
+import { useTheme } from "@/lib/theme";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
 const Toaster = ({ ...props }: ToasterProps) => {
+  // `richColors` variants are styled from Sonner's own `data-theme` stylesheet
+  // rather than from our tokens, so it has to be told which theme it is in.
+  const { theme } = useTheme();
+
   return (
     <Sonner
+      theme={theme}
       className="toaster group"
       toastOptions={{
         classNames: {

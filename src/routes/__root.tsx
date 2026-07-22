@@ -62,7 +62,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#0F172A" },
+      // Light-mode default; THEME_INIT_SCRIPT rewrites it before paint and the
+      // toggle keeps it in sync, so mobile browser chrome tracks the theme.
+      { name: "theme-color", content: "#fbfdfd" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
       { name: "apple-mobile-web-app-title", content: "MilaServ Portal" },
@@ -93,7 +95,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    // THEME_INIT_SCRIPT sets `class` and `color-scheme` on <html> before React
+    // hydrates, which is by design — it is what prevents the first-paint flash.
+    // Without this, React reports those attributes as a hydration mismatch.
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
