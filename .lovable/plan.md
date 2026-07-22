@@ -1,87 +1,115 @@
-# UI/UX Refinement Plan
+# Supabase configuration diagnostic
 
-Six focused workstreams. No schema-breaking changes; one additive migration for avatars + `view_branches` permission.
+## 1. Validation of the uploaded `.env`
 
-## 1. Sidebar — compact-by-default
+All six variable names are correct and match what the codebase reads
+(`src/integrations/supabase/client.ts` reads
+`VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY` with a
+`SUPABASE_URL`/`SUPABASE_PUBLISHABLE_KEY` SSR fallback;
+`client.server.ts` reads `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`).
 
-Rewrite `src/routes/_app.tsx`:
-- Default state: **collapsed** (icons + label under icon), width `w-20` (~80px).
-- Expanded state: icons + labels beside, width `w-56` (down from `w-64`).
-- Preference persisted to `localStorage` (`milaserv.sidebar.collapsed`), hydrated after mount to avoid SSR mismatch.
-- Toggle button in top bar (Menu icon) — clear affordance, `aria-expanded`.
-- Transition: `transition-[width] duration-200 ease-out` (was 300ms).
-- Active state: kept (primary bg + accent stripe), but tightened.
-- Logo area: **always-white rounded container** (`bg-white ring-1 ring-border`), padded, dark-mode safe. Sits in header regardless of collapsed/expanded.
+- `SUPABASE_PROJECT_ID` = `gwnxlpophyvgafctrbkx` ✅
+- `SUPABASE_URL` = `https://gwnxlpophyvgafctrbkx.supabase.co` ✅ (host matches ref)
+- `VITE_*` mirrors of the above ✅
+- `SUPABASE_PUBLISHABLE_KEY` / `VITE_SUPABASE_PUBLISHABLE_KEY` — **INVALID JWT** ❌
+- `SUPABASE_SERVICE_ROLE_KEY` — not present in the upload (see §8)
 
-## 2. Global animation speed pass
+## 2. Internal consistency
 
-- Reduce durations: `duration-300` → `duration-150`/`200` on page transitions, sidebar, drawers.
-- Buttons/cards hover: `transition-colors duration-150`.
-- Route content wrapper: `duration-150` fade-in only (drop slide-in — it feels laggy).
-- Dropdowns/dialogs (shadcn) already use fast Radix defaults — no change needed unless a component overrides them.
+URLs, project IDs, and their VITE_ mirrors are consistent and belong to
+project `gwnxlpophyvgafctrbkx`. The publishable key claims the same
+`ref`, but its payload is malformed (see §3).
 
-## 3. Editable Profile + avatars
+## 3. Decoded anon JWT (uploaded key)
 
-Migration:
-- Add `avatar_url text` to `public.profiles`.
-- Create private storage bucket `avatars` (per-user folder `${uid}/…`), RLS: user can CRUD own folder; anyone authenticated can read (needed to display avatars everywhere). Or public bucket — simpler for cross-user display. **Going public** so avatars render in orders/comments without signed URLs.
-- Add `view_branches` to permissions catalog (see §5).
+Base64-decoding the middle segment yields:
 
-`src/routes/_app.profile.tsx`:
-- Remove gradient banner.
-- Minimalist header: large avatar (Linear/Slack style), name, role badge, edit affordance.
-- Avatar upload dialog: file input → preview → Save/Remove. Uploads to `avatars/${uid}/avatar-<ts>.<ext>`, updates `profiles.avatar_url`.
-- Editable fields (with permission gate): `full_name`. `agent_code`, `yeastar_ext`, role, active flag remain admin-only (read-only for self).
-- Save via server fn using `requireSupabaseAuth` (writes own row).
+```
+{"iss":"supabase","ref":"gwnxlpophyvgafctrbkx","role":"anon",
+ "iat":1781843b52,"exp":2097241440}
+```
 
-Reusable `<UserAvatar userId? url? name? size />` component in `src/components/user-avatar.tsx` used by orders lists, comments, activity, sidebar profile card. Falls back to initials gradient (existing style) when no `avatar_url`.
+- `iss`: supabase ✅
+- `ref`: gwnxlpophyvgafctrbkx ✅ (matches URL)
+- `role`: anon ✅
+- `exp`: 2097241440 → year 2036 ✅
+- `iat`: **`1781843b52`** — contains the letter `b` inside a JSON number.
+  This is not valid JSON, so the payload cannot be parsed. Supabase
+  Auth/PostgREST reject the key with `Invalid API key` before any
+  signature check.
 
-Wire into: sidebar profile card, mobile bottom-nav profile icon, orders list agent column, order detail activity/comments, complaint activity — wherever a name currently renders with initials.
+For comparison, the anon key actually provisioned on the project (already
+present in the sandbox `.env` and Lovable secrets) decodes cleanly to:
 
-## 4. Branches read-only for agents
+```
+{"iss":"supabase","ref":"gwnxlpophyvgafctrbkx","role":"anon",
+ "iat":1781962852,"exp":2097538852}
+```
 
-Migration:
-- Add `view_branches` permission string (catalog only — no DB enum for permissions, they're text[] on profiles).
-- Update `has_permission` mapping in `src/lib/permissions.ts`: `customer_care`, `telesales`, `call_center` get `view_branches`; only `admin_access` gets edit/delete.
+Same signature suffix, but `iat` is a valid integer. The uploaded value
+is a mangled copy of the real key (one character corrupted during
+copy/paste).
 
-Route `_app.admin.branches.tsx`:
-- Gate render on `view_branches` (not `admin_access`).
-- Hide Add/Edit/Delete/Import/Export buttons when `!admin_access`.
-- Add search + filter (existing table probably has search; verify and add if missing).
-- Sidebar link visibility: show for `view_branches` (currently gated on `admin_access`).
+## 4. Cause of "Invalid API key"
 
-## 5. Users page redesign
+Not the URL, not the variable names, not the client, not the project
+config, not a rotation. It is the **publishable key string itself**: the
+JWT payload is not valid JSON, so Supabase rejects every request that
+carries it.
 
-Rewrite `src/routes/_app.admin.users.tsx` presentation only — keep existing server fns and mutations:
-- Header row with title + primary "Invite user" button.
-- Toolbar: search (name/email), role filter, status filter, results count.
-- Table redesigned with proper avatar column (uses `<UserAvatar />`), role badge with tone (owner=primary, admin=secondary, auditor=muted, others=outline), status pill (Active/Inactive with dot), overflow menu (…) for actions instead of raw buttons.
-- Permission management: switch from a wall of checkboxes to a **grouped popover/sheet** — grouped by section (Dashboard, Orders, Complaints, Call Center, Admin) with toggle switches. Better UX, same underlying `permissions text[]`.
-- Client-side pagination retained (or add simple `page-size` selector).
-- Mobile: table collapses to card list.
+## 5. Codebase env wiring
 
-## 6. Non-goals / preserved
+`src/integrations/supabase/client.ts` already reads the correct names
+(`import.meta.env.VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY`,
+with server fallbacks). No code change needed.
 
-- Auth flow, RLS on orders/complaints, Call Center analytics logic — untouched.
-- Yeastar integration untouched.
-- Existing route paths unchanged.
+## 6. Non-env culprits
 
-## Technical notes
+None. If the correct key is placed in `.env`, no other file is at fault.
 
-- Storage bucket via `supabase--storage_create_bucket` tool, then RLS policies via migration.
-- `profiles.avatar_url` returned by existing `get_my_profile()` RPC — update RPC signature to include the new column.
-- `Profile` interface extended with `avatar_url`.
-- No changes to `_authenticated`/auth middleware wiring.
+## 7. Missing secrets
 
-## Order of execution
+None required. `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`, `LOVABLE_API_KEY`, and the three Yeastar
+secrets are already configured on the project (verified via
+`fetch_secrets`). Only the local `.env` copy of the publishable key is
+wrong.
 
-1. Migration (avatar_url column, `get_my_profile` update) + storage bucket.
-2. `permissions.ts` update + `Profile` type.
-3. `<UserAvatar />` component.
-4. Sidebar rewrite + white logo container + animation speeds.
-5. Profile page editable + minimalist header.
-6. Branches gating.
-7. Users page redesign.
-8. Wire `<UserAvatar />` into orders/complaints/activity lists.
+## 8. Service role vs anon
 
-Ready to build on approval.
+The app needs both:
+- **Anon/publishable** — used by the browser client and by RLS-bound
+  server functions (`requireSupabaseAuth`). This is the one currently
+  broken.
+- **Service role** — used only by `src/integrations/supabase/client.server.ts`
+  for privileged server work (admin user management, webhooks). It is
+  already set as a Lovable Cloud secret on the deployed environment and
+  must NEVER be prefixed with `VITE_`. You don't need to add it to your
+  local `.env` unless you want to exercise admin server functions
+  locally.
+
+## 9. Root cause
+
+The publishable key in the uploaded `.env` has a corrupted payload
+(`"iat":1781843b52`). Supabase can't parse the JWT, so every request
+returns `Invalid API key`.
+
+## 10. Smallest fix
+
+Replace the two publishable-key lines in your local `.env` with the
+valid key already stored in the project (its payload matches
+`iat:1781962852`). Everything else in the file is correct and can stay.
+
+The sandbox `.env` is already using the valid key, so the deployed
+preview and production sites are unaffected — this fix is only needed
+for your local machine.
+
+## Technical details
+
+- File read: `.env` (upload), `src/integrations/supabase/client.ts`,
+  `client.server.ts`, `.env.example`.
+- JWT decoded with standard base64url; payload failed `JSON.parse` at
+  column 75 (the `b` in `1781843b52`).
+- No code, migration, or secret changes are proposed — this plan is
+  diagnostic only plus a one-line local `.env` replacement you perform
+  on your machine.
