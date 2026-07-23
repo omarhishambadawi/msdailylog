@@ -447,19 +447,19 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
             const yShift = flipBelow ? `calc(${hover.r + 16}px)` : `calc(-100% - ${hover.r + 14}px)`;
             return (
             <div
-              className="pointer-events-none absolute z-10 min-w-[210px] rounded-lg border bg-popover/95 backdrop-blur px-3.5 py-2.5 text-xs text-popover-foreground shadow-lg ring-1 ring-black/5"
+              className="pointer-events-none absolute z-10 w-[min(220px,60vw)] sm:min-w-[210px] sm:w-auto rounded-lg border bg-popover/95 backdrop-blur px-2.5 py-2 sm:px-3.5 sm:py-2.5 text-[11px] sm:text-xs text-popover-foreground shadow-lg ring-1 ring-black/5"
               style={{
                 left: `${leftPct}%`,
                 top: `${topPct}%`,
                 transform: `translate(${xShift}, ${yShift})`,
-                maxWidth: "min(260px, 92vw)",
+                maxWidth: "min(260px, 88vw)",
               }}
             >
-              <div className="mb-1.5 flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full" style={{ background: hover.color }} />
-                <span className="font-semibold text-sm">{hover.name}</span>
+              <div className="mb-1 sm:mb-1.5 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full shrink-0" style={{ background: hover.color }} />
+                <span className="font-semibold text-[12px] sm:text-sm truncate">{hover.name}</span>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-0.5 sm:space-y-1">
                 <Row label="Total sales" value={fmtSAR(hover.total ?? hover.sales)} />
                 <Row label="Completed sales" value={fmtSAR(hover.sales)} strong />
                 <Row label="Total orders" value={String(hover.count)} />
@@ -472,6 +472,7 @@ export function SaudiSalesMap({ cities }: { cities: CitySales[] }) {
             </div>
             );
           })()}
+
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
