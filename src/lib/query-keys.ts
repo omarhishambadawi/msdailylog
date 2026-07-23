@@ -45,10 +45,15 @@ export interface DashboardFilters {
   team: string;
 }
 
-/** Filter set identifying the complaints list query. */
+/** Filter set identifying a complaints list/page query. */
 export interface ComplaintsFilters {
   status: string;
   mineOnly: boolean;
+  /** Normalized search term (empty when not searching). */
+  term: string;
+  /** Comma-joined agent ids whose name matched the term — part of the search
+   *  identity, since agent-name search resolves to an agent_id filter. */
+  agentMatch: string;
   userId: string | undefined;
 }
 
@@ -94,9 +99,10 @@ export const queryKeys = {
   },
 
   complaints: {
-    /** Invalidation boundary — sweeps list, detail and activity. */
+    /** Invalidation boundary — sweeps page, detail and activity. */
     all: () => ["complaints"] as const,
-    list: (filters: ComplaintsFilters) => ["complaints", "list", filters] as const,
+    page: (filters: ComplaintsFilters, page: number, pageSize: number) =>
+      ["complaints", "page", filters, { page, pageSize }] as const,
     detail: (id: string | undefined) => ["complaints", "detail", id] as const,
     activity: (complaintId: string) => ["complaints", "activity", complaintId] as const,
   },
