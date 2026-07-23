@@ -12,7 +12,9 @@ import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { Download, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
-import * as XLSX from "xlsx";
+// xlsx is lazy-loaded inside exportDashboard() to keep it out of this route's
+// initial chunk — Dashboard is the default landing route for most roles, and the
+// library is only needed once the user clicks Export.
 import { DateRangePicker } from "@/components/date-range-picker";
 import { hasPerm } from "@/lib/permissions";
 import { SaudiSalesMap } from "@/components/saudi-sales-map";
@@ -578,6 +580,13 @@ function Dashboard() {
     ? (agents?.find((a: any) => a.id === agentFilter)?.full_name ?? "agent")
     : null;
 
+  // Caption reads the scope that was actually applied rather than `mineOnly`
+  // alone. `effectiveAgent` narrows to the current user in two ways: via the
+  // toggle, and implicitly for users without `view_team_analytics` — the latter
+  // used to be labelled "Team performance" while showing only their own rows.
+  // Display only; `effectiveAgent` itself is untouched.
+  const scopedToSelf = !!user?.id && effectiveAgent === user.id;
+
   if (!canViewDashboard) {
     return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to Dashboard.</p></div>;
   }
@@ -588,41 +597,45 @@ function Dashboard() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">Dashboard</h1>
           <p className="text-xs sm:text-sm text-muted-foreground truncate">
-            {selectedAgentLabel ? `Performance for ${selectedAgentLabel}` : mineOnly ? "Your performance" : "Team performance"} · {dateLabel}
+            {selectedAgentLabel ? `Performance for ${selectedAgentLabel}` : scopedToSelf ? "Your performance" : "Team performance"} · {dateLabel}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <DateRangePicker range={range} onChange={setRange} align="end" size="sm" />
-          {canViewTeamAnalytics ? (
-            <>
-              <Select value={teamFilter} onValueChange={(v) => { setTeamFilter(v); setAgentFilter("all"); }}>
-                <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="All teams" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All teams</SelectItem>
-                  <SelectItem value="customer_care">Customer Care</SelectItem>
-                  <SelectItem value="telesales">Telesales</SelectItem>
-                </SelectContent>
-              </Select>
-              {canViewAllAgents && (
-                <Select value={agentFilter} onValueChange={setAgentFilter}>
-                  <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All agents</SelectItem>
-                    {filteredAgents.map((a: any) => (
-                      <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </>
-          ) : (
-            canViewTeamAnalytics && <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
+          {canViewTeamAnalytics && (
+            <Select value={teamFilter} onValueChange={(v) => { setTeamFilter(v); setAgentFilter("all"); }}>
+              <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="All teams" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All teams</SelectItem>
+                <SelectItem value="customer_care">Customer Care</SelectItem>
+                <SelectItem value="telesales">Telesales</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          {canViewTeamAnalytics && canViewAllAgents && (
+            <Select value={agentFilter} onValueChange={setAgentFilter}>
+              <SelectTrigger className="h-9 w-[170px] sm:w-[200px]"><SelectValue placeholder="All agents" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All agents</SelectItem>
+                {filteredAgents.map((a: any) => (
+                  <SelectItem key={a.id} value={a.id}>{a.full_name}{a.agent_code ? ` (${a.agent_code})` : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {/* Scope toggle for the one tier `effectiveAgent` defers to `mineOnly`:
+              users who may see team-wide figures but have no agent picker to narrow
+              with (customer_care, call_center). It previously sat in the FALSE branch
+              of a `canViewTeamAnalytics ?` ternary and re-tested `canViewTeamAnalytics
+              &&`, so it could never render and `mineOnly` was frozen at false. */}
+          {canViewTeamAnalytics && !canViewAllAgents && (
+            <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
               {mineOnly ? "My data" : "All data"}
             </Button>
           )}
           {canExport && <Button variant="outline" size="sm" onClick={async () => {
             const r = await refetchExport();
-            if (r.data) exportDashboard(r.data, { from, to, agentLabel: selectedAgentLabel, teamLabel: teamFilter });
+            if (r.data) await exportDashboard(r.data, { from, to, agentLabel: selectedAgentLabel, teamLabel: teamFilter });
           }} disabled={exportBusy}>
             <Download className="h-4 w-4 mr-2" />{exportBusy ? "Preparing…" : "Export"}
           </Button>}
@@ -985,11 +998,12 @@ function DashKpiCard({ label, tone, highlight, stats }: {
 }
 
 
-function exportDashboard(
+async function exportDashboard(
   data: any,
   ctx: { from: string; to: string; agentLabel: string | null; teamLabel: string },
 ) {
   if (!data) return;
+  const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
   const teamLbl = ctx.teamLabel === "customer_care" ? "Customer Care" : ctx.teamLabel === "telesales" ? "Telesales" : "All Teams";
   const summary = [

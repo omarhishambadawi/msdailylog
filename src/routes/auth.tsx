@@ -1,5 +1,5 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -35,18 +35,36 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const { session, loading, role, profile } = useAuth();
-  const navigate = useNavigate();
   const { next } = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (!loading && session) {
-    if (next) { window.location.assign(next); }
-    else if (hasPerm(role, profile?.permissions, "view_dashboard")) navigate({ to: "/dashboard", replace: true });
-    else if (hasPerm(role, profile?.permissions, "view_orders")) navigate({ to: "/orders", replace: true });
-    else navigate({ to: "/", replace: true });
-  }
+  // Where an already-authenticated visitor belongs. A pure derivation: reading
+  // it has no effect on anything, so it is safe to compute during render and
+  // safe for React to discard and recompute. Same precedence as before —
+  // dashboard, then orders, then "/" (which re-resolves against permissions).
+  const authed = !loading && !!session;
+  const redirectTo = !authed
+    ? null
+    : hasPerm(role, profile?.permissions, "view_dashboard")
+      ? "/dashboard"
+      : hasPerm(role, profile?.permissions, "view_orders")
+        ? "/orders"
+        : "/";
+
+  // `next` survives validateSearch as an app-relative path, but it is an
+  // arbitrary string rather than a typed route, so it still goes through a full
+  // document load instead of <Navigate>. That is a genuine side effect, so it
+  // belongs in an effect — never in render, where React may call the component
+  // more than once and fire the assignment repeatedly. The ref makes it
+  // at-most-once even under StrictMode's double invocation in development.
+  const assigned = useRef(false);
+  useEffect(() => {
+    if (!authed || !next || assigned.current) return;
+    assigned.current = true;
+    window.location.assign(next);
+  }, [authed, next]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,8 +73,10 @@ function AuthPage() {
     setBusy(false);
     if (error) { toast.error(error.message); return; }
     toast.success("Signed in");
-    if (next) window.location.assign(next);
-    else navigate({ to: "/", replace: true });
+    // No navigation here on purpose. A successful sign-in fires SIGNED_IN on
+    // supabase.auth.onAuthStateChange, AuthProvider sets `session`, and the
+    // redirect above takes over. Navigating here as well is what produced two
+    // competing redirects for a single sign-in.
   };
 
   const onForgot = async () => {
@@ -67,6 +87,13 @@ function AuthPage() {
     if (error) toast.error(error.message);
     else toast.success("Password reset email sent");
   };
+
+  // Declarative redirect for in-app targets: React performs the navigation as
+  // part of committing this render instead of the component mutating router
+  // state while rendering. Matches the pattern already used in routes/index.tsx.
+  // Placed below every hook so the hook order never changes between renders.
+  // The `next` case is excluded — the effect above owns that one.
+  if (redirectTo && !next) return <Navigate to={redirectTo} replace />;
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-accent to-background px-4">

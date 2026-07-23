@@ -14,7 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { hasPerm } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query-keys";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
+// xlsx is lazy-loaded inside exportComplaints() to keep it out of this route's
+// initial chunk; it is only fetched when the user clicks Export.
 
 export const Route = createFileRoute("/_app/complaints/")({
   head: () => ({ meta: [{ title: "Complaints" }] }),
@@ -90,7 +91,7 @@ function ComplaintsList() {
         </div>
         <div className="flex gap-2 items-center">
           <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>{mineOnly ? "Mine" : "All"}</Button>
-          {canExport && <Button variant="outline" size="sm" onClick={() => exportComplaints(filtered)}><Download className="h-4 w-4 mr-2" />Export</Button>}
+          {canExport && <Button variant="outline" size="sm" onClick={() => { exportComplaints(filtered).catch((e) => toast.error(e?.message ?? "Export failed")); }}><Download className="h-4 w-4 mr-2" />Export</Button>}
           {canCreate && <Button onClick={() => navigate({ to: "/complaints/new" })}><Plus className="h-4 w-4 mr-2" />New complaint</Button>}
         </div>
       </div>
@@ -173,7 +174,7 @@ function ComplaintsList() {
   );
 }
 
-function exportComplaints(rows: any[]) {
+async function exportComplaints(rows: any[]) {
   const xrows = rows.map((c) => ({
     "#": c.display_no,
     Date: c.complaint_date,
@@ -185,6 +186,7 @@ function exportComplaints(rows: any[]) {
     Notes: c.description ?? "",
     Status: c.status,
   }));
+  const XLSX = await import("xlsx");
   const ws = XLSX.utils.json_to_sheet(xrows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Complaints");

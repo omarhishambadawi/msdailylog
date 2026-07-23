@@ -107,9 +107,12 @@ function CallCenterPage() {
       },
     }),
     enabled: !authLoading && canView,
+    // Overrides that are NOT covered by the global defaults: a full CDR sweep
+    // can page through millions of records, so this query opts out of remount
+    // and reconnect refetches entirely and holds data for 5 min rather than 1.
+    // (`refetchOnWindowFocus: false` was dropped — it is now the global default.)
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,
-    refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
   });
