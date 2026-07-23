@@ -1,0 +1,147 @@
+/**
+ * Centralized React Query key factory.
+ *
+ * Why this exists: React Query prefix-matches invalidation keys **element by
+ * element**, so `invalidateQueries({ queryKey: ["orders"] })` matches
+ * `["orders", "page", …]` but NOT `["orders-page", …]` — `"orders-page"` and
+ * `"orders"` are different strings, not a prefix relationship. The codebase had
+ * flat, hyphenated keys (`orders-page`, `dashboard-kpis`, `complaint`) and
+ * several invalidations written against the entity name (`["orders"]`,
+ * `["dashboard"]`). Those calls compiled, ran, matched nothing, and silently
+ * left stale data on screen.
+ *
+ * The rule this file enforces: **the first element is the entity, and every
+ * query for that entity nests under it.** That makes `entity.all()` a real
+ * invalidation boundary.
+ *
+ *   queryKeys.orders.all()          →  ["orders"]                    ← sweeps everything below
+ *   queryKeys.orders.page(f)        →  ["orders","page",f]
+ *   queryKeys.orders.kpi(f)         →  ["orders","kpi",f]
+ *   queryKeys.orders.detail(id)     →  ["orders","detail",id]
+ *
+ * Lookup data (agent/branch dropdowns) deliberately lives under its own
+ * `lookups` root rather than under `orders`/`dashboard`. It is reference data
+ * that does not change when an order does, so nesting it beneath an entity
+ * would make every order write needlessly re-fetch the directory.
+ */
+
+/** Filter set identifying an orders list/KPI query. */
+export interface OrdersFilters {
+  from: string;
+  to: string;
+  team: string;
+  agent: string;
+  status: string;
+  mineOnly: boolean;
+  term: string;
+  userId: string | undefined;
+}
+
+/** Filter set identifying a dashboard aggregation query. */
+export interface DashboardFilters {
+  from: string;
+  to: string;
+  agent: string;
+  team: string;
+}
+
+/** Filter set identifying the complaints list query. */
+export interface ComplaintsFilters {
+  status: string;
+  mineOnly: boolean;
+  userId: string | undefined;
+}
+
+/** Filter set identifying a call-center analytics query. */
+export interface CallCenterFilters {
+  from: string;
+  to: string;
+  team: string;
+  agentId: string;
+  direction: string;
+}
+
+export const queryKeys = {
+  orders: {
+    /** Invalidation boundary — sweeps page, kpi, detail and activity. */
+    all: () => ["orders"] as const,
+    page: (filters: OrdersFilters, page: number, pageSize: number) =>
+      ["orders", "page", filters, { page, pageSize }] as const,
+    kpi: (filters: OrdersFilters) => ["orders", "kpi", filters] as const,
+    detail: (id: string | undefined) => ["orders", "detail", id] as const,
+    activity: (orderId: string) => ["orders", "activity", orderId] as const,
+  },
+
+  dashboard: {
+    /** Invalidation boundary — sweeps all 12 dashboard aggregations. */
+    all: () => ["dashboard"] as const,
+    kpis: (f: DashboardFilters) => ["dashboard", "kpis", f] as const,
+    daily: (f: DashboardFilters) => ["dashboard", "daily", f] as const,
+    status: (f: DashboardFilters) => ["dashboard", "status", f] as const,
+    teams: (f: DashboardFilters) => ["dashboard", "teams", f] as const,
+    agentSales: (f: DashboardFilters) => ["dashboard", "agent-sales", f] as const,
+    locations: (f: DashboardFilters) => ["dashboard", "locations", f] as const,
+    delivery: (f: DashboardFilters) => ["dashboard", "delivery", f] as const,
+    deliveryMatrix: (f: DashboardFilters) => ["dashboard", "delivery-matrix", f] as const,
+    verification: (f: DashboardFilters) => ["dashboard", "verification", f] as const,
+    complaintsKpis: (f: Omit<DashboardFilters, "team">) =>
+      ["dashboard", "complaints-kpis", f] as const,
+    complaintsLocations: (f: Omit<DashboardFilters, "team">) =>
+      ["dashboard", "complaints-locations", f] as const,
+    /** On-demand XLSX dataset. `enabled: false`; fetched via refetch(). */
+    exportData: (f: DashboardFilters & { isAdmin: boolean; userId: string | undefined }) =>
+      ["dashboard", "export", f] as const,
+  },
+
+  complaints: {
+    /** Invalidation boundary — sweeps list, detail and activity. */
+    all: () => ["complaints"] as const,
+    list: (filters: ComplaintsFilters) => ["complaints", "list", filters] as const,
+    detail: (id: string | undefined) => ["complaints", "detail", id] as const,
+    activity: (complaintId: string) => ["complaints", "activity", complaintId] as const,
+  },
+
+  branches: {
+    /** Invalidation boundary — sweeps both the picker list and the admin table. */
+    all: () => ["branches"] as const,
+    /** Branch picker used by the order and complaint forms. */
+    list: () => ["branches", "list"] as const,
+    /** Full rows for the admin management table. */
+    admin: () => ["branches", "admin"] as const,
+  },
+
+  notifications: {
+    all: () => ["notifications"] as const,
+    list: (userId: string | undefined) => ["notifications", "list", userId] as const,
+  },
+
+  adminUsers: {
+    all: () => ["admin-users"] as const,
+    list: () => ["admin-users", "list"] as const,
+  },
+
+  callCenter: {
+    all: () => ["call-center"] as const,
+    analytics: (f: CallCenterFilters) => ["call-center", "analytics", f] as const,
+    realtime: () => ["call-center", "realtime"] as const,
+  },
+
+  yeastar: {
+    all: () => ["yeastar"] as const,
+    config: () => ["yeastar", "config"] as const,
+  },
+
+  /**
+   * Reference/directory data (profiles, roles, branches for dropdowns).
+   * Kept off the entity roots on purpose: an order write must not invalidate
+   * the agent directory. Each entry keeps its own cache slot, matching the
+   * pre-existing separate keys.
+   */
+  lookups: {
+    all: () => ["lookups"] as const,
+    ordersAgents: () => ["lookups", "orders-agents"] as const,
+    ordersDirectory: () => ["lookups", "orders-directory"] as const,
+    dashboardAgents: () => ["lookups", "dashboard-agents"] as const,
+    callCenterAgents: () => ["lookups", "call-center-agents"] as const,
+  },
+} as const;

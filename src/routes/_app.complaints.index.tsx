@@ -12,6 +12,7 @@ import { Plus, Search, ShieldAlert, Pencil, Eye, Download } from "lucide-react";
 import { COMPLAINT_STATUSES, STATUS_STYLES } from "@/lib/branches";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { hasPerm } from "@/lib/permissions";
+import { queryKeys } from "@/lib/query-keys";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
@@ -36,7 +37,7 @@ function ComplaintsList() {
   const [mineOnly, setMineOnly] = useState(false);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["complaints", status, mineOnly, user?.id],
+    queryKey: queryKeys.complaints.list({ status, mineOnly, userId: user?.id }),
     queryFn: async () => {
       const { fetchAllPaginated } = await import("@/lib/supabase-paginate");
       const buildComplaints = () => {
@@ -72,7 +73,8 @@ function ComplaintsList() {
     const id = complaint.id;
     const { error } = await supabase.from("complaints" as any).update({ status: resolved ? "Resolved" : "In Progress" } as any).eq("id", id);
     if (error) { toast.error(error.message); return; }
-    qc.invalidateQueries({ queryKey: ["complaints"] });
+    qc.invalidateQueries({ queryKey: queryKeys.complaints.all() });
+    qc.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
   };
 
   if (!canView) {

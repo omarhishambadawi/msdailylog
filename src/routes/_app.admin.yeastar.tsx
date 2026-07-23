@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShieldAlert } from "lucide-react";
 import { useAuth, isAdministrator } from "@/lib/auth";
+import { queryKeys } from "@/lib/query-keys";
 import {
   yeastarConfigDiagnostic,
   yeastarAuthDiagnostic,
@@ -59,7 +60,7 @@ function YeastarAdmin() {
 
   const [debugCallId, setDebugCallId] = useState("");
 
-  const config = useQuery({ queryKey: ["yeastar-config"], queryFn: () => configFn(), enabled: isAdmin });
+  const config = useQuery({ queryKey: queryKeys.yeastar.config(), queryFn: () => configFn(), enabled: isAdmin });
   const auth = useMutation({ mutationFn: () => authFn() });
   const probe = useMutation({ mutationFn: () => probeFn({ data: { from, to } }) });
   const map = useMutation({ mutationFn: () => mapFn({ data: { from, to } }) });

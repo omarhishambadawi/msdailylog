@@ -3,14 +3,12 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { hasPerm } from "@/lib/permissions";
 
-export type AppRole =
-  | "owner"
-  | "admin"
-  | "supervisor"
-  | "customer_care"
-  | "telesales"
-  | "call_center"
-  | "auditor";
+import type { AppRole } from "@/lib/roles";
+
+// Re-exported so the many existing `import type { AppRole } from "@/lib/auth"`
+// call sites keep working. The definition itself now lives in `@/lib/roles`,
+// derived from APP_ROLES so the role list cannot drift between modules again.
+export type { AppRole };
 
 /** True for the Owner role. Owner is protected: it cannot be deleted,
  *  deactivated, or have its role changed. See 20260721001200_owner_protection. */

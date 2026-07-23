@@ -18,33 +18,27 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ShieldAlert, KeyRound, Pencil, Plus, Trash2, Search, MoreHorizontal, Users as UsersIcon } from "lucide-react";
 import { ALL_PERMISSIONS, defaultPermsForRole, PERMISSION_GROUPS, hasPerm } from "@/lib/permissions";
+import {
+  ASSIGNABLE_ROLES,
+  ROLE_LABEL,
+  ROLE_OPTION_LABEL,
+  roleLabel,
+  roleTone,
+  type AppRole,
+} from "@/lib/roles";
 import { UserAvatar } from "@/components/user-avatar";
 import { cn } from "@/lib/utils";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/_app/admin/users")({
   head: () => ({ meta: [{ title: "Users — MilaServ Portal" }] }),
   component: AdminUsers,
 });
 
-type RoleKey = "owner" | "admin" | "customer_care" | "telesales" | "call_center" | "auditor";
-
-const ROLE_LABEL: Record<string, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  customer_care: "Customer Care",
-  telesales: "Telesales",
-  call_center: "Call Center",
-  auditor: "Auditor",
-};
-
-const ROLE_TONE: Record<string, string> = {
-  owner: "bg-primary/10 text-primary border-primary/30",
-  admin: "bg-secondary/15 text-secondary-foreground border-secondary/40",
-  auditor: "bg-muted text-muted-foreground border-border",
-  customer_care: "bg-blue-500/10 text-[var(--badge-blue)] border-blue-500/30",
-  telesales: "bg-emerald-500/10 text-[var(--badge-emerald)] border-emerald-500/30",
-  call_center: "bg-amber-500/10 text-[var(--badge-amber)] border-amber-500/30",
-};
+// Role list, labels and badge tones all come from @/lib/roles so this screen
+// cannot fall behind the enum again (it was missing `supervisor` entirely:
+// absent from the type, both maps and both dropdowns).
+type RoleKey = AppRole;
 
 function AdminUsers() {
   const { role, profile } = useAuth();
@@ -59,7 +53,7 @@ function AdminUsers() {
   const delFn = useServerFn(adminDeleteUser);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["admin-users"],
+    queryKey: queryKeys.adminUsers.list(),
     queryFn: () => listFn(),
     enabled: canManageUsers,
   });
@@ -95,7 +89,7 @@ function AdminUsers() {
     return <div className="text-center py-16"><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><p className="mt-2 text-sm text-muted-foreground">You don't have access to user management.</p></div>;
   }
 
-  const reload = () => qc.invalidateQueries({ queryKey: ["admin-users"] });
+  const reload = () => qc.invalidateQueries({ queryKey: queryKeys.adminUsers.all() });
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,11 +181,11 @@ function AdminUsers() {
                   <Select value={nf.role} onValueChange={(v) => setNf({ ...nf, role: v as RoleKey })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="customer_care">Customer Care</SelectItem>
-                      <SelectItem value="telesales">Telesales</SelectItem>
-                      <SelectItem value="call_center">Call Center</SelectItem>
-                      <SelectItem value="auditor">Auditor (read-only)</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
+                      {ASSIGNABLE_ROLES.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {ROLE_OPTION_LABEL[r]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -271,8 +265,8 @@ function AdminUsers() {
                   <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{u.email}</TableCell>
                   <TableCell className="hidden md:table-cell font-mono text-xs">{u.agent_code ?? "—"}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={cn("capitalize font-medium", ROLE_TONE[u.role ?? ""] ?? "")}>
-                      {ROLE_LABEL[u.role ?? ""] ?? "—"}
+                    <Badge variant="outline" className={cn("capitalize font-medium", roleTone(u.role))}>
+                      {roleLabel(u.role)}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -363,11 +357,11 @@ function AdminUsers() {
                   }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="customer_care">Customer Care</SelectItem>
-                      <SelectItem value="telesales">Telesales</SelectItem>
-                      <SelectItem value="call_center">Call Center</SelectItem>
-                      <SelectItem value="auditor">Auditor (read-only)</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
+                      {ASSIGNABLE_ROLES.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {ROLE_OPTION_LABEL[r]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

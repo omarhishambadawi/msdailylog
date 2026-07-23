@@ -30,6 +30,7 @@ import { Progress } from "@/components/ui/progress";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { cn } from "@/lib/utils";
 import { fmtSAR } from "@/lib/branches";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/_app/call-center")({
   head: () => ({ meta: [{ title: "Call Center Analytics — MilaServ Portal" }] }),
@@ -64,7 +65,7 @@ function CallCenterPage() {
 
   // Agents dropdown (admin only)
   const { data: agents } = useQuery({
-    queryKey: ["cc-agents"],
+    queryKey: queryKeys.lookups.callCenterAgents(),
     queryFn: async () => {
       const [{ data: profiles }, { data: roles }] = await Promise.all([
         supabase.from("profiles").select("id,full_name,agent_code").order("full_name"),
@@ -95,7 +96,7 @@ function CallCenterPage() {
   // Gate on auth readiness + permissions to prevent duplicate/premature fetches.
   const analyticsFn = useServerFn(getCallCenterAnalytics);
   const q = useQuery({
-    queryKey: ["cc-analytics", from, to, team, agentId, direction],
+    queryKey: queryKeys.callCenter.analytics({ from, to, team, agentId, direction }),
     queryFn: () => analyticsFn({
       data: {
         from, to, team,
@@ -116,7 +117,7 @@ function CallCenterPage() {
   // Realtime queue widget — /queue/call_status + /queue/agent_status
   const realtimeFn = useServerFn(yeastarRealtimeQueue);
   const rt = useQuery({
-    queryKey: ["cc-realtime"],
+    queryKey: queryKeys.callCenter.realtime(),
     queryFn: () => realtimeFn(),
     enabled: !authLoading && canView,
     refetchInterval: 15_000,
@@ -151,15 +152,6 @@ function CallCenterPage() {
     return () => { stop = true; clearInterval(iv); };
   }, [q.isFetching, jobId]);
 
-  if (!authLoading && !canView) {
-    return (
-      <div className="text-center py-16">
-        <ShieldAlert className="mx-auto h-10 w-10 text-destructive" />
-        <p className="mt-2 text-sm text-muted-foreground">You don't have access to Call Center Analytics.</p>
-      </div>
-    );
-  }
-
   const data = q.data;
   const ok = data && data.ok === true;
   const configured = !data || (data as any).configured !== false;
@@ -188,6 +180,21 @@ function CallCenterPage() {
     const s = search.toLowerCase();
     return rows.filter((r) => r.name.toLowerCase().includes(s) || r.ext.toLowerCase().includes(s));
   }, [rows, search]);
+
+  // Permission gate sits below every hook: `authLoading` starts true, so an
+  // early return placed above the hooks would run 15 hooks on the first render
+  // and 13 on the render where auth resolves to "no access" — which React
+  // rejects outright ("Rendered fewer hooks than expected"). Hooks first, then
+  // the guard; the derivations above are pure and simply compute over empty
+  // arrays on the render that bails out.
+  if (!authLoading && !canView) {
+    return (
+      <div className="text-center py-16">
+        <ShieldAlert className="mx-auto h-10 w-10 text-destructive" />
+        <p className="mt-2 text-sm text-muted-foreground">You don't have access to Call Center Analytics.</p>
+      </div>
+    );
+  }
 
   const doExport = async () => {
     if (!ok || !totals) return;

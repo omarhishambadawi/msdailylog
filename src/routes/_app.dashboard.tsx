@@ -18,6 +18,7 @@ import { hasPerm } from "@/lib/permissions";
 import { SaudiSalesMap } from "@/components/saudi-sales-map";
 
 import { fetchAllPaginated } from "@/lib/supabase-paginate";
+import { queryKeys } from "@/lib/query-keys";
 
 
 
@@ -67,8 +68,13 @@ function Dashboard() {
   const effectiveAgent = canViewAllAgents ? agentFilter : (!canViewTeamAnalytics && user?.id ? user.id : (mineOnly && user?.id ? user.id : "all"));
   const effectiveTeam = canViewTeamAnalytics ? teamFilter : "all";
 
+  // Identity of every dashboard aggregation query. Complaints have no team
+  // dimension, so those two queries use the `team`-less subset.
+  const dashFilters = { from, to, agent: effectiveAgent, team: effectiveTeam };
+  const cmpFilters = { from, to, agent: effectiveAgent };
+
   const { data: agents } = useQuery({
-    queryKey: ["dashboard-agents"],
+    queryKey: queryKeys.lookups.dashboardAgents(),
     queryFn: async () => {
       const [{ data: profiles }, { data: roles }] = await Promise.all([
         supabase.from("profiles").select("id,full_name,agent_code").order("full_name"),
@@ -92,7 +98,7 @@ function Dashboard() {
   // longer pulls every order/complaint on each page load. All on-screen widgets
   // read the focused orders_*/complaints_* RPCs above.
   const { refetch: refetchExport, isFetching: exportBusy } = useQuery({
-    queryKey: ["dashboard-export", from, to, effectiveAgent, effectiveTeam, isAdmin, user?.id],
+    queryKey: queryKeys.dashboard.exportData({ ...dashFilters, isAdmin, userId: user?.id }),
     enabled: false,
     queryFn: async () => {
       const buildOrders = () => {
@@ -286,7 +292,7 @@ function Dashboard() {
   // aggregation) instead of the client-side cash/wasfaty/total reduction.
   // Scoped by the same effective team/agent filters; RLS applies.
   const { data: kpiRows } = useQuery({
-    queryKey: ["dashboard-kpis", from, to, effectiveAgent, effectiveTeam],
+    queryKey: queryKeys.dashboard.kpis(dashFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_kpis" as any, {
         _from: from,
@@ -321,7 +327,7 @@ function Dashboard() {
   // Daily sales trend from orders_daily RPC. Rows arrive ordered by full date
   // (fixes the year-boundary ordering); the label is formatted client-side.
   const { data: dailyRows } = useQuery({
-    queryKey: ["dashboard-daily", from, to, effectiveAgent, effectiveTeam],
+    queryKey: queryKeys.dashboard.daily(dashFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_daily" as any, {
         _from: from,
@@ -342,7 +348,7 @@ function Dashboard() {
 
   // Orders-by-status distribution from orders_status RPC.
   const { data: statusRows } = useQuery({
-    queryKey: ["dashboard-status", from, to, effectiveAgent, effectiveTeam],
+    queryKey: queryKeys.dashboard.status(dashFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_status" as any, {
         _from: from,
@@ -364,7 +370,7 @@ function Dashboard() {
   // Sales by team from orders_teams RPC.
   const teamLabel = (t: string) => (t === "telesales" ? "Telesales" : "Customer Care");
   const { data: teamRows } = useQuery({
-    queryKey: ["dashboard-teams", from, to, effectiveAgent, effectiveTeam],
+    queryKey: queryKeys.dashboard.teams(dashFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_teams" as any, {
         _from: from,
@@ -385,7 +391,7 @@ function Dashboard() {
 
   // Top agents by sales from orders_agents RPC (top 10 for the chart).
   const { data: agentRows } = useQuery({
-    queryKey: ["dashboard-agent-sales", from, to, effectiveAgent, effectiveTeam],
+    queryKey: queryKeys.dashboard.agentSales(dashFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_agents" as any, {
         _from: from,
@@ -406,7 +412,7 @@ function Dashboard() {
 
   // Sales by branch / city + heat map from orders_locations RPC.
   const { data: locationRows } = useQuery({
-    queryKey: ["dashboard-locations", from, to, effectiveAgent, effectiveTeam],
+    queryKey: queryKeys.dashboard.locations(dashFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_locations" as any, {
         _from: from,
@@ -445,7 +451,7 @@ function Dashboard() {
 
   // Delivery method performance from orders_delivery RPC.
   const { data: deliveryRows } = useQuery({
-    queryKey: ["dashboard-delivery", from, to, effectiveAgent, effectiveTeam],
+    queryKey: queryKeys.dashboard.delivery(dashFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_delivery" as any, {
         _from: from,
@@ -466,7 +472,7 @@ function Dashboard() {
 
   // Branch x method / city x method crosstabs from orders_delivery_matrix RPC.
   const { data: matrixRows } = useQuery({
-    queryKey: ["dashboard-delivery-matrix", from, to, effectiveAgent, effectiveTeam],
+    queryKey: queryKeys.dashboard.deliveryMatrix(dashFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_delivery_matrix" as any, {
         _from: from,
@@ -493,7 +499,7 @@ function Dashboard() {
 
   // CC invoice verification per agent from orders_verification RPC (top 12).
   const { data: verificationRows } = useQuery({
-    queryKey: ["dashboard-verification", from, to, effectiveAgent, effectiveTeam],
+    queryKey: queryKeys.dashboard.verification(dashFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_verification" as any, {
         _from: from,
@@ -521,7 +527,7 @@ function Dashboard() {
   // Complaints analytics (scoped by date + agent only; complaints have no team).
   const cmpAgent = effectiveAgent === "all" ? null : effectiveAgent;
   const { data: cmpKpiRows } = useQuery({
-    queryKey: ["dashboard-complaints-kpis", from, to, effectiveAgent],
+    queryKey: queryKeys.dashboard.complaintsKpis(cmpFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("complaints_kpis" as any, { _from: from, _to: to, _agent: cmpAgent, _mine: false });
       if (error) throw error;
@@ -531,7 +537,7 @@ function Dashboard() {
   });
   const cmpKpi = cmpKpiRows?.[0];
   const { data: cmpLocRows } = useQuery({
-    queryKey: ["dashboard-complaints-loc", from, to, effectiveAgent],
+    queryKey: queryKeys.dashboard.complaintsLocations(cmpFilters),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("complaints_locations" as any, { _from: from, _to: to, _agent: cmpAgent, _mine: false });
       if (error) throw error;

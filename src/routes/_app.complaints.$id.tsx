@@ -14,6 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { toast } from "sonner";
 import { ArrowLeft, Check, ChevronsUpDown, Clock, ShieldAlert, Trash2 } from "lucide-react";
 import { hasPerm } from "@/lib/permissions";
+import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 
@@ -45,12 +46,12 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
   const canDelete = hasPerm(role, profile?.permissions as any, "delete_complaints");
 
   const { data: branches } = useQuery({
-    queryKey: ["branches"],
+    queryKey: queryKeys.branches.list(),
     queryFn: async () => (await supabase.from("branches").select("branch_no,city").order("branch_no")).data ?? [],
   });
 
   const { data: existing } = useQuery({
-    queryKey: ["complaint", id],
+    queryKey: queryKeys.complaints.detail(id),
     enabled: mode === "edit" && !!id,
     queryFn: async () => {
       const { data, error } = await supabase.from("complaints" as any).select("*").eq("id", id!).maybeSingle();
@@ -122,7 +123,8 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
         if (error) throw error;
         toast.success("Complaint updated");
       }
-      qc.invalidateQueries({ queryKey: ["complaints"] });
+      qc.invalidateQueries({ queryKey: queryKeys.complaints.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
       navigate({ to: "/complaints" });
     } catch (e: any) { toast.error(e.message ?? "Failed to save"); } finally { setBusy(false); }
   };
@@ -134,7 +136,8 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
     const { error } = await supabase.from("complaints" as any).delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
     toast.success("Deleted");
-    qc.invalidateQueries({ queryKey: ["complaints"] });
+    qc.invalidateQueries({ queryKey: queryKeys.complaints.all() });
+    qc.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
     navigate({ to: "/complaints" });
   };
 
@@ -219,7 +222,7 @@ export function ComplaintForm({ mode }: { mode: "create" | "edit" }) {
 
 function ComplaintActivityTimeline({ complaintId }: { complaintId: string }) {
   const { data, isLoading } = useQuery({
-    queryKey: ["complaint-activity", complaintId],
+    queryKey: queryKeys.complaints.activity(complaintId),
     queryFn: async () => {
       const [{ data: events }, { data: profiles }] = await Promise.all([
         supabase.from("complaint_activity" as any).select("*").eq("complaint_id", complaintId).order("created_at", { ascending: false }),

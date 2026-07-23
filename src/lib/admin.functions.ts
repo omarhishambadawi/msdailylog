@@ -1,15 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { APP_ROLES } from "@/lib/roles";
 
-const RoleEnum = z.enum([
-  "owner",
-  "admin",
-  "customer_care",
-  "telesales",
-  "call_center",
-  "auditor",
-]);
+// Derived from APP_ROLES so a role added to the enum cannot be silently
+// rejected at this boundary. `supervisor` was missing here even though the
+// database enum, has_permission() and the client permission table all had it,
+// which made the role impossible to assign through adminCreateUser/adminSetRole.
+const RoleEnum = z.enum(APP_ROLES);
 
 /** Single source of truth for role values crossing the API boundary.
  *  Derived from RoleEnum so adding a role cannot leave a stale union behind. */

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Bell, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { queryKeys } from "@/lib/query-keys";
 
 function timeAgo(iso: string) {
   const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -21,7 +22,7 @@ export function NotificationBell() {
   const qc = useQueryClient();
 
   const { data } = useQuery({
-    queryKey: ["notifications", user?.id],
+    queryKey: queryKeys.notifications.list(user?.id),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("notifications" as any)
@@ -41,7 +42,7 @@ export function NotificationBell() {
     const ch = supabase
       .channel(`notif-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
-        () => qc.invalidateQueries({ queryKey: ["notifications", user.id] }))
+        () => qc.invalidateQueries({ queryKey: queryKeys.notifications.all() }))
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [user?.id, qc]);
@@ -52,12 +53,12 @@ export function NotificationBell() {
   const markAllRead = async () => {
     if (!user) return;
     await supabase.from("notifications" as any).update({ read_at: new Date().toISOString() } as any).is("read_at", null).eq("user_id", user.id);
-    qc.invalidateQueries({ queryKey: ["notifications", user.id] });
+    qc.invalidateQueries({ queryKey: queryKeys.notifications.all() });
   };
 
   const markOne = async (id: string) => {
     await supabase.from("notifications" as any).update({ read_at: new Date().toISOString() } as any).eq("id", id);
-    qc.invalidateQueries({ queryKey: ["notifications", user?.id] });
+    qc.invalidateQueries({ queryKey: queryKeys.notifications.all() });
   };
 
   return (

@@ -17,6 +17,7 @@ import { ORDER_TYPES, DELIVERY_TYPES, TEAMS, CURRENCY, formatOrderNo } from "@/l
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 import { hasPerm } from "@/lib/permissions";
+import { queryKeys } from "@/lib/query-keys";
 
 const schema = z.object({
   order_date: z.string().min(1),
@@ -49,7 +50,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
   const id = params?.id;
 
   const { data: branches } = useQuery({
-    queryKey: ["branches"],
+    queryKey: queryKeys.branches.list(),
     queryFn: async () => {
       const { data, error } = await supabase.from("branches").select("branch_no,city").order("branch_no");
       if (error) throw error;
@@ -58,7 +59,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
   });
 
   const { data: existing } = useQuery({
-    queryKey: ["order", id],
+    queryKey: queryKeys.orders.detail(id),
     enabled: mode === "edit" && !!id,
     queryFn: async () => {
       const { data, error } = await supabase.from("orders").select("*").eq("id", id!).maybeSingle();
@@ -145,8 +146,8 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
         if (error) throw error;
         toast.success("Order updated");
       }
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: queryKeys.orders.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
       navigate({ to: "/orders" });
     } catch (e: any) {
       toast.error(e.message ?? "Failed to save");
@@ -162,7 +163,8 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
     const { error } = await supabase.from("orders").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
     toast.success("Deleted");
-    qc.invalidateQueries({ queryKey: ["orders"] });
+    qc.invalidateQueries({ queryKey: queryKeys.orders.all() });
+    qc.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
     navigate({ to: "/orders" });
   };
 
@@ -315,7 +317,7 @@ export function OrderForm({ mode }: { mode: "create" | "edit" }) {
 
 function OrderActivityTimeline({ orderId }: { orderId: string }) {
   const { data, isLoading } = useQuery({
-    queryKey: ["order-activity", orderId],
+    queryKey: queryKeys.orders.activity(orderId),
     queryFn: async () => {
       const [{ data: events }, { data: profiles }] = await Promise.all([
         supabase.from("order_activity" as any).select("*").eq("order_id", orderId).order("created_at", { ascending: false }),

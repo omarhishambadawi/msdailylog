@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Pencil, Plus, ShieldAlert, Trash2, Search, Eye } from "lucide-react";
 import { hasPerm } from "@/lib/permissions";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/_app/admin/branches")({
   head: () => ({ meta: [{ title: "Branches — MilaServ Portal" }] }),
@@ -29,7 +30,7 @@ function AdminBranches() {
   const [editing, setEditing] = useState<{ branch_no: string; city: string; _new?: boolean } | null>(null);
 
   const { data } = useQuery({
-    queryKey: ["branches-admin"],
+    queryKey: queryKeys.branches.admin(),
     queryFn: async () => {
       const { data, error } = await supabase.from("branches").select("*").order("branch_no");
       if (error) throw error;
@@ -57,8 +58,7 @@ function AdminBranches() {
     if (error) { toast.error(error.message); return; }
     toast.success("Saved");
     setEditing(null); setOpen(false);
-    qc.invalidateQueries({ queryKey: ["branches-admin"] });
-    qc.invalidateQueries({ queryKey: ["branches"] });
+    qc.invalidateQueries({ queryKey: queryKeys.branches.all() });
   };
 
   const del = async (branch_no: string) => {
@@ -66,7 +66,7 @@ function AdminBranches() {
     const { error } = await supabase.from("branches").delete().eq("branch_no", branch_no);
     if (error) { toast.error(error.message); return; }
     toast.success("Deleted");
-    qc.invalidateQueries({ queryKey: ["branches-admin"] });
+    qc.invalidateQueries({ queryKey: queryKeys.branches.all() });
   };
 
   return (

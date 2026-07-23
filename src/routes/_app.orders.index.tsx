@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { hasPerm } from "@/lib/permissions";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/_app/orders/")({
   head: () => ({ meta: [{ title: "Orders" }] }),
@@ -128,7 +129,7 @@ function OrdersList() {
 
   // Agents list for admin filter, with role for team-based dependency
   const { data: agentOpts } = useQuery({
-    queryKey: ["orders-agents"],
+    queryKey: queryKeys.lookups.ordersAgents(),
     queryFn: async () => {
       const [{ data: profiles }, { data: roles }] = await Promise.all([
         supabase.from("profiles").select("id,full_name,agent_code").order("full_name"),
@@ -150,7 +151,7 @@ function OrdersList() {
 
   // Small directory lookups for name + city enrichment (small tables).
   const { data: directory } = useQuery({
-    queryKey: ["orders-directory"],
+    queryKey: queryKeys.lookups.ordersDirectory(),
     queryFn: async () => {
       const [{ data: profiles }, { data: branches }] = await Promise.all([
         supabase.from("profiles").select("id,full_name,agent_code"),
@@ -163,7 +164,7 @@ function OrdersList() {
     },
   });
 
-  const filterKey = [from, to, team, agent, status, mineOnly, term, user?.id] as const;
+  const filterKey = { from, to, team, agent, status, mineOnly, term, userId: user?.id };
 
   // Apply the shared filter set to a PostgREST query builder.
   const applyFilters = (qb: any) => {
@@ -178,7 +179,7 @@ function OrdersList() {
 
   // Paginated page fetch (server-side range + count).
   const { data: pageData, isLoading, isFetching } = useQuery({
-    queryKey: ["orders-page", ...filterKey, page, pageSize],
+    queryKey: queryKeys.orders.page(filterKey, page, pageSize),
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const offset = page * pageSize;
@@ -194,7 +195,7 @@ function OrdersList() {
 
   // KPI totals across the entire filtered set (server-side aggregation).
   const { data: kpi } = useQuery({
-    queryKey: ["orders-kpi", ...filterKey],
+    queryKey: queryKeys.orders.kpi(filterKey),
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("orders_kpi_summary" as any, {
@@ -259,18 +260,16 @@ function OrdersList() {
     const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", order.id);
     if (error) { toast.error(error.message); return; }
     toast.success("Status updated");
-    qc.invalidateQueries({ queryKey: ["orders-page"] });
-    qc.invalidateQueries({ queryKey: ["orders-kpi"] });
-    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: queryKeys.orders.all() });
+    qc.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
   };
 
   const toggleVerified = async (order: any, value: boolean) => {
     if (!canVerifyOrder(order)) { toast.error("You don't have permission to verify this order"); return; }
     const { error } = await supabase.from("orders").update({ call_center_verified: value } as any).eq("id", order.id);
     if (error) { toast.error(error.message); return; }
-    qc.invalidateQueries({ queryKey: ["orders-page"] });
-    qc.invalidateQueries({ queryKey: ["orders-kpi"] });
-    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: queryKeys.orders.all() });
+    qc.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
   };
 
   const exportXlsx = async () => {
