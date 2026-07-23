@@ -89,7 +89,7 @@ const SUPERVISOR_DEFAULT_PERMS: PermKey[] = [
 ];
 
 const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin" | "owner">, PermKey[]> = {
-  supervisor: SUPERVISOR_ALLOWED_PERMS,
+
   customer_care: [
     "view_orders", "create_orders", "edit_orders",
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",
@@ -118,7 +118,7 @@ const ROLE_ALLOWED_PERMS: Record<Exclude<AppRole, "admin" | "owner">, PermKey[]>
 const ROLE_DEFAULTS: Record<AppRole, PermKey[]> = {
   owner: ALL_PERMISSIONS.map((p) => p.key),
   admin: ALL_PERMISSIONS.map((p) => p.key),
-  supervisor: SUPERVISOR_DEFAULT_PERMS,
+
   customer_care: [
     "view_orders", "create_orders", "edit_orders",
     "view_complaints", "create_complaints", "edit_complaints", "resolve_complaints",

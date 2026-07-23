@@ -103,18 +103,17 @@ function AppLayout() {
         onSignOut={() => signOut().then(() => navigate({ to: "/auth", replace: true }))}
       />
 
-      <main className="flex-1 min-w-0 flex flex-col">
+      <main className="flex-1 min-w-0 flex flex-col overflow-x-hidden">
         <AppHeader
           title={activeItem?.label ?? "MilaServ Portal"}
           icon={activeItem?.icon}
-          expanded={expanded}
-          onToggleSidebar={() => setExpanded((v) => !v)}
           onOpenMobile={() => setMobileOpen(true)}
           name={profile?.full_name ?? session.user.email ?? "Account"}
           role={role}
           avatarUrl={profile?.avatar_url}
           onSignOut={() => signOut().then(() => navigate({ to: "/auth", replace: true }))}
         />
+
         {/* Route content — quick fade-in */}
         <div
           key={location.pathname}

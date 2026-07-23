@@ -1,9 +1,9 @@
 import type { ComponentType } from "react";
 import { Link } from "@tanstack/react-router";
-import { ChevronLeft, LogOut, X } from "lucide-react";
-import { UserAvatar } from "@/components/user-avatar";
+import { ChevronLeft, X } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { cn } from "@/lib/utils";
+
 
 export type NavItemData = {
   to: string;
@@ -112,25 +112,16 @@ function SidebarInner({
   nav,
   activePath,
   collapsed,
-  name,
-  role,
-  avatarUrl,
-  onSignOut,
   onToggle,
   onMobileClose,
 }: {
   nav: NavItemData[];
   activePath: string;
   collapsed: boolean;
-  name: string;
-  role?: string | null;
-  avatarUrl?: string | null;
-  onSignOut: () => void;
   onToggle?: () => void;
   onMobileClose?: () => void;
 }) {
   const groups = groupNav(nav);
-  const roleLabel = role?.replace(/_/g, " ") ?? "—";
 
   return (
     <div className="flex h-full flex-col">
@@ -202,9 +193,9 @@ function SidebarInner({
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="mt-auto space-y-1 border-t border-border/60 p-2">
-        {onToggle && (
+      {/* Footer — sidebar toggle only. Profile & sign out live in the header. */}
+      {onToggle && (
+        <div className="mt-auto border-t border-border/60 p-2">
           <button
             type="button"
             onClick={onToggle}
@@ -219,41 +210,12 @@ function SidebarInner({
             />
             {!collapsed && <span>Collapse</span>}
           </button>
-        )}
-
-        <Link
-          to="/profile"
-          title={collapsed ? "Profile" : undefined}
-          className={cn(
-            "flex items-center rounded-xl transition-colors duration-200 hover:bg-accent/70",
-            collapsed ? "justify-center p-1.5" : "gap-2.5 px-2 py-1.5",
-          )}
-        >
-          <UserAvatar name={name} url={avatarUrl} size="sm" className="ring-2 ring-background" />
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-semibold text-foreground">{name}</div>
-              <div className="truncate text-[10px] capitalize text-muted-foreground">{roleLabel}</div>
-            </div>
-          )}
-        </Link>
-
-        <button
-          type="button"
-          onClick={onSignOut}
-          title={collapsed ? "Sign out" : undefined}
-          className={cn(
-            "flex w-full items-center rounded-xl text-muted-foreground transition-colors duration-200 hover:bg-destructive/10 hover:text-destructive",
-            collapsed ? "justify-center p-1.5" : "gap-2.5 px-2.5 py-2",
-          )}
-        >
-          <LogOut className="h-[18px] w-[18px] shrink-0" />
-          {!collapsed && <span className="text-xs font-medium">Sign out</span>}
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 export function AppSidebar({
   nav,
@@ -262,10 +224,6 @@ export function AppSidebar({
   onToggle,
   mobileOpen,
   onMobileClose,
-  name,
-  role,
-  avatarUrl,
-  onSignOut,
 }: SidebarProps) {
   return (
     <>
@@ -282,10 +240,6 @@ export function AppSidebar({
           nav={nav}
           activePath={activePath}
           collapsed={!expanded}
-          name={name}
-          role={role}
-          avatarUrl={avatarUrl}
-          onSignOut={onSignOut}
           onToggle={onToggle}
         />
       </aside>
@@ -302,10 +256,6 @@ export function AppSidebar({
               nav={nav}
               activePath={activePath}
               collapsed={false}
-              name={name}
-              role={role}
-              avatarUrl={avatarUrl}
-              onSignOut={onSignOut}
               onMobileClose={onMobileClose}
             />
           </aside>
@@ -314,3 +264,4 @@ export function AppSidebar({
     </>
   );
 }
+

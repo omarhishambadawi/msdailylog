@@ -839,10 +839,15 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <div className="grid lg:grid-cols-2 gap-3 sm:gap-4 mt-3">
-          <DeliveryMatrix title="Sales by branch × delivery method" matrix={deliveryBranchMatrix} methods={deliveryMethods} />
-          <DeliveryMatrix title="Sales by city × delivery method" matrix={deliveryCityMatrix} methods={deliveryMethods} />
+        <div className="grid lg:grid-cols-2 gap-3 sm:gap-4 mt-3 min-w-0">
+          <div className="min-w-0">
+            <DeliveryMatrix title="Sales by branch × delivery method" matrix={deliveryBranchMatrix} methods={deliveryMethods} />
+          </div>
+          <div className="min-w-0">
+            <DeliveryMatrix title="Sales by city × delivery method" matrix={deliveryCityMatrix} methods={deliveryMethods} />
+          </div>
         </div>
+
       </div>
 
       {/* Complaints analytics */}

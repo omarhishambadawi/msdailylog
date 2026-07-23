@@ -27,7 +27,6 @@
 export const APP_ROLES = [
   "owner",
   "admin",
-  "supervisor",
   "customer_care",
   "telesales",
   "call_center",
@@ -48,16 +47,15 @@ export const ASSIGNABLE_ROLES = [
   "customer_care",
   "telesales",
   "call_center",
-  "supervisor",
   "auditor",
   "admin",
 ] as const satisfies readonly AppRole[];
+
 
 /** Human-readable name. Exhaustive: a new role will not typecheck without one. */
 export const ROLE_LABEL: Record<AppRole, string> = {
   owner: "Owner",
   admin: "Admin",
-  supervisor: "Supervisor",
   customer_care: "Customer Care",
   telesales: "Telesales",
   call_center: "Call Center",
@@ -70,7 +68,6 @@ export const ROLE_LABEL: Record<AppRole, string> = {
  */
 export const ROLE_OPTION_LABEL: Record<AppRole, string> = {
   ...ROLE_LABEL,
-  supervisor: "Supervisor (team-wide operations)",
   auditor: "Auditor (read-only)",
 };
 
@@ -78,13 +75,12 @@ export const ROLE_OPTION_LABEL: Record<AppRole, string> = {
 export const ROLE_TONE: Record<AppRole, string> = {
   owner: "bg-primary/10 text-primary border-primary/30",
   admin: "bg-secondary/15 text-secondary-foreground border-secondary/40",
-  // violet: already defined for both themes in styles.css and unused elsewhere.
-  supervisor: "bg-violet-500/10 text-[var(--badge-violet)] border-violet-500/30",
   customer_care: "bg-blue-500/10 text-[var(--badge-blue)] border-blue-500/30",
   telesales: "bg-emerald-500/10 text-[var(--badge-emerald)] border-emerald-500/30",
   call_center: "bg-amber-500/10 text-[var(--badge-amber)] border-amber-500/30",
   auditor: "bg-muted text-muted-foreground border-border",
 };
+
 
 /** Narrowing guard for values arriving from the database or an API boundary. */
 export function isAppRole(value: unknown): value is AppRole {
