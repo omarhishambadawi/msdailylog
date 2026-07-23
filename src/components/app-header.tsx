@@ -1,6 +1,7 @@
 import { useEffect, useState, type ComponentType } from "react";
 import { Link } from "@tanstack/react-router";
-import { Menu, PanelLeft, ChevronDown, LogOut, UserCircle2 } from "lucide-react";
+import { Menu, ChevronDown, LogOut, UserCircle2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
@@ -18,8 +19,6 @@ import { cn } from "@/lib/utils";
 type AppHeaderProps = {
   title: string;
   icon?: ComponentType<{ className?: string }>;
-  expanded: boolean;
-  onToggleSidebar: () => void;
   onOpenMobile: () => void;
   name: string;
   role?: string | null;
@@ -28,14 +27,14 @@ type AppHeaderProps = {
 };
 
 /**
- * Application top bar. Presentation only — all actions (sidebar toggle, sign out,
+ * Application top bar. Presentation only — all actions (sign out,
  * navigation) are delegated to props/existing routes; no business logic lives here.
+ * The desktop sidebar toggle lives inside the sidebar itself; the mobile
+ * menu button below opens the mobile drawer (the sidebar isn't rendered on mobile).
  */
 export function AppHeader({
   title,
   icon: Icon,
-  expanded,
-  onToggleSidebar,
   onOpenMobile,
   name,
   role,
@@ -65,7 +64,7 @@ export function AppHeader({
           : "border-border/50 shadow-none",
       )}
     >
-      {/* ── Left: navigation controls + page identity ───────────────────── */}
+      {/* ── Left: mobile menu (drawer opener) + page identity ─────────────── */}
       <div className="flex items-center gap-1.5 min-w-0">
         <Button
           variant="ghost"
@@ -76,18 +75,9 @@ export function AppHeader({
         >
           <Menu className="h-5 w-5" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="hidden md:inline-flex h-9 w-9 rounded-lg text-foreground/70 transition-colors duration-200 hover:text-foreground active:scale-95"
-          onClick={onToggleSidebar}
-          aria-label="Toggle sidebar"
-          aria-expanded={expanded}
-        >
-          <PanelLeft className="h-[18px] w-[18px]" />
-        </Button>
 
         <div className="hidden sm:block mx-1 h-6 w-px bg-border/70" aria-hidden />
+
 
         <div className="flex items-center gap-2.5 min-w-0">
           {Icon && (
