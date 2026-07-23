@@ -1,5 +1,6 @@
 import type { AppRole } from "@/lib/auth";
 import { isAdministrator } from "@/lib/auth";
+import { CALL_CENTER_VIEW_PERMISSIONS } from "@/lib/call-center-permissions";
 
 export type PermissionGroup = "Orders" | "Complaints" | "Dashboard" | "Invoice Verification" | "Branches" | "Administration";
 
@@ -156,6 +157,17 @@ export function hasPerm(role: AppRole | null, permissions: string[] | null | und
 
 export function defaultPermsForRole(role: AppRole): PermKey[] {
   return ROLE_DEFAULTS[role];
+}
+
+/**
+ * Shared client gate for the Call Center Analytics feature. Grants access when
+ * the user holds any of {@link CALL_CENTER_VIEW_PERMISSIONS}; administrators
+ * pass via hasPerm's admin short-circuit. This is the single definition used by
+ * both the route (_app.call-center.tsx) and the sidebar (_app.tsx); the server
+ * functions mirror it against the same permission list.
+ */
+export function canViewCallCenter(role: AppRole | null, permissions: string[] | null | undefined): boolean {
+  return CALL_CENTER_VIEW_PERMISSIONS.some((perm) => hasPerm(role, permissions, perm));
 }
 
 export const PERMISSION_GROUPS: PermissionGroup[] = ["Orders", "Complaints", "Dashboard", "Invoice Verification", "Branches", "Administration"];

@@ -6,7 +6,7 @@ import {
   LayoutDashboard, ListOrdered, Plus, Users, MapPin,
   ShieldAlert, MessageSquareWarning, PhoneCall, Headphones,
 } from "lucide-react";
-import { hasPerm } from "@/lib/permissions";
+import { hasPerm, canViewCallCenter } from "@/lib/permissions";
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar } from "@/components/app-sidebar";
 
@@ -50,7 +50,7 @@ function AppLayout() {
   const canComplaints = hasPerm(role, profile?.permissions as any, "view_complaints");
   const canUsers = hasPerm(role, profile?.permissions as any, "manage_users");
   const canBranches = hasPerm(role, profile?.permissions as any, "view_branches") || hasPerm(role, profile?.permissions as any, "admin_access");
-  const canCallCenter = hasPerm(role, profile?.permissions as any, "view_call_center") || hasPerm(role, profile?.permissions as any, "view_team_analytics");
+  const canCallCenter = canViewCallCenter(role, profile?.permissions as any);
 
   const nav = useMemo(() => ([
     ...(canDashboard ? [{ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] : []),

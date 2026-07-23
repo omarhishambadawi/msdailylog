@@ -35,6 +35,7 @@
  */
 import type { CdrRecord } from "./cdr.server";
 import { STATUSES, ORDER_TYPES } from "@/lib/branches";
+import { BUSINESS_UTC_OFFSET_MINUTES } from "@/lib/timezone";
 
 export interface AgentRef {
   id: string;
@@ -380,7 +381,7 @@ export function aggregateAnalytics(
   orders: OrderRef[],
   opts: AggregateOptions = {},
 ): AnalyticsResult {
-  const tz = opts.tzOffsetMin ?? Number(process.env.YEASTAR_UTC_OFFSET_MINUTES ?? 180);
+  const tz = opts.tzOffsetMin ?? Number(process.env.YEASTAR_UTC_OFFSET_MINUTES ?? BUSINESS_UTC_OFFSET_MINUTES);
   const direction = opts.direction ?? "all";
   const status = opts.status ?? "all";
 

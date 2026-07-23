@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 // library is only needed once the user clicks Export.
 import { DateRangePicker } from "@/components/date-range-picker";
 import { hasPerm } from "@/lib/permissions";
+import { useAgentDirectory } from "@/lib/directory";
 import { SaudiSalesMap } from "@/components/saudi-sales-map";
 
 import { fetchAllPaginated } from "@/lib/supabase-paginate";
@@ -75,18 +76,7 @@ function Dashboard() {
   const dashFilters = { from, to, agent: effectiveAgent, team: effectiveTeam };
   const cmpFilters = { from, to, agent: effectiveAgent };
 
-  const { data: agents } = useQuery({
-    queryKey: queryKeys.lookups.dashboardAgents(),
-    queryFn: async () => {
-      const [{ data: profiles }, { data: roles }] = await Promise.all([
-        supabase.from("profiles").select("id,full_name,agent_code").order("full_name"),
-        supabase.from("user_roles").select("user_id,role"),
-      ]);
-      const rm = new Map((roles ?? []).map((r: any) => [r.user_id, r.role]));
-      return (profiles ?? []).map((p: any) => ({ ...p, role: rm.get(p.id) ?? null }));
-    },
-    enabled: canViewAllAgents,
-  });
+  const { data: agents } = useAgentDirectory({ enabled: canViewAllAgents });
 
   const filteredAgents = useMemo(() => {
     if (!agents) return [];

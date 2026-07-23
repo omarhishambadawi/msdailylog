@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { hasPerm } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query-keys";
+import { useAgentDirectory } from "@/lib/directory";
 
 export const Route = createFileRoute("/_app/orders/")({
   head: () => ({ meta: [{ title: "Orders" }] }),
@@ -127,19 +128,10 @@ function OrdersList() {
   const term = normalizeSearchTerm(debouncedQ);
   const searching = term.length > 0;
 
-  // Agents list for admin filter, with role for team-based dependency
-  const { data: agentOpts } = useQuery({
-    queryKey: queryKeys.lookups.ordersAgents(),
-    queryFn: async () => {
-      const [{ data: profiles }, { data: roles }] = await Promise.all([
-        supabase.from("profiles").select("id,full_name,agent_code").order("full_name"),
-        supabase.from("user_roles").select("user_id,role"),
-      ]);
-      const rm = new Map((roles ?? []).map((r: any) => [r.user_id, r.role]));
-      return (profiles ?? []).map((p: any) => ({ ...p, role: rm.get(p.id) ?? null }));
-    },
-    enabled: isAdmin,
-  });
+  // Shared agent directory (profiles + user_roles). Powers both the admin filter
+  // dropdown and the per-row name/code enrichment below, so it stays enabled for
+  // every user (RLS scopes non-admins to their own row, as before).
+  const { data: agentOpts } = useAgentDirectory();
 
   // Filter agent list: only operational agents (exclude admin/auditor), further narrow by selected team
   const filteredAgentOpts = useMemo(() => {
@@ -149,18 +141,18 @@ function OrdersList() {
     return base.filter((a: any) => a.role === team);
   }, [agentOpts, team]);
 
-  // Small directory lookups for name + city enrichment (small tables).
-  const { data: directory } = useQuery({
+  // Name lookup for row enrichment, derived from the shared directory.
+  const namesById = useMemo(
+    () => new Map((agentOpts ?? []).map((p: any) => [p.id, p])),
+    [agentOpts],
+  );
+
+  // City lookup for branch enrichment (small table).
+  const { data: cities } = useQuery({
     queryKey: queryKeys.lookups.ordersDirectory(),
     queryFn: async () => {
-      const [{ data: profiles }, { data: branches }] = await Promise.all([
-        supabase.from("profiles").select("id,full_name,agent_code"),
-        supabase.from("branches").select("branch_no,city"),
-      ]);
-      return {
-        names: new Map((profiles ?? []).map((p: any) => [p.id, p])),
-        cities: new Map((branches ?? []).map((b: any) => [b.branch_no, b.city])),
-      };
+      const { data: branches } = await supabase.from("branches").select("branch_no,city");
+      return new Map((branches ?? []).map((b: any) => [b.branch_no, b.city]));
     },
   });
 
@@ -214,15 +206,13 @@ function OrdersList() {
 
   const enrichedRows = useMemo(() => {
     const rowsRaw = pageData?.rows ?? [];
-    const names = directory?.names;
-    const cities = directory?.cities;
     return rowsRaw.map((o: any) => ({
       ...o,
-      agent_name: names?.get(o.agent_id)?.full_name ?? "—",
-      agent_code: names?.get(o.agent_id)?.agent_code ?? "",
+      agent_name: namesById.get(o.agent_id)?.full_name ?? "—",
+      agent_code: namesById.get(o.agent_id)?.agent_code ?? "",
       city: cities?.get(o.branch_no) ?? "",
     }));
-  }, [pageData, directory]);
+  }, [pageData, namesById, cities]);
 
   const total = pageData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -288,8 +278,7 @@ function OrdersList() {
       all.push(...(data ?? []));
       if (!data || data.length < BATCH) break;
     }
-    const names = directory?.names;
-    const cities = directory?.cities;
+    const names = namesById;
     const XLSX = await import("xlsx");
     const xrows = all.map((o: any) => ({
       "Order #": formatOrderNo(o.team, o.display_no),

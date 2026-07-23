@@ -1,17 +1,40 @@
 /**
  * Yeastar server functions.
  *
- * Config + auth diagnostics require administrator. Analytics require an
- * authenticated user with `view_dashboard`; non-admins are auto-scoped to
- * themselves. PBX data is never persisted.
+ * Config + auth diagnostics require administrator. Call Center analytics and the
+ * realtime queue share one view gate (see `callCenterAccess` /
+ * CALL_CENTER_VIEW_PERMISSIONS); non-admins are auto-scoped to themselves. PBX
+ * data is never persisted.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { BUSINESS_UTC_OFFSET_MINUTES } from "@/lib/timezone";
+import { CALL_CENTER_VIEW_PERMISSIONS } from "@/lib/call-center-permissions";
 import { z } from "zod";
 
 async function assertAdmin(ctx: { supabase: any; userId: string }) {
   const { data, error } = await ctx.supabase.rpc("is_administrator", { _user_id: ctx.userId });
   if (error || !data) throw new Error("Forbidden: administrator access required");
+}
+
+/**
+ * Shared server-side Call Center view gate. Mirrors the client
+ * `canViewCallCenter`: access is granted to administrators or to any user
+ * holding one of CALL_CENTER_VIEW_PERMISSIONS. Returns the admin flag too, since
+ * analytics uses it for agent-scope decisions.
+ */
+async function callCenterAccess(
+  supabase: any,
+  userId: string,
+): Promise<{ canView: boolean; isAdmin: boolean }> {
+  const [{ data: isAdmin }, ...permResults] = await Promise.all([
+    supabase.rpc("is_administrator", { _user_id: userId }),
+    ...CALL_CENTER_VIEW_PERMISSIONS.map((perm) =>
+      supabase.rpc("has_permission", { _user_id: userId, _permission: perm }),
+    ),
+  ]);
+  const canView = !!isAdmin || permResults.some((r: any) => !!r?.data);
+  return { canView, isAdmin: !!isAdmin };
 }
 
 // ---- Configuration / auth diagnostics --------------------------------------
@@ -24,7 +47,7 @@ export const yeastarConfigDiagnostic = createServerFn({ method: "GET" })
       baseUrlLoaded: !!process.env.YEASTAR_BASE_URL,
       clientIdLoaded: !!process.env.YEASTAR_CLIENT_ID,
       clientSecretLoaded: !!process.env.YEASTAR_CLIENT_SECRET,
-      utcOffsetMinutes: Number(process.env.YEASTAR_UTC_OFFSET_MINUTES ?? 180),
+      utcOffsetMinutes: Number(process.env.YEASTAR_UTC_OFFSET_MINUTES ?? BUSINESS_UTC_OFFSET_MINUTES),
       datetimeFormat: process.env.YEASTAR_DATETIME_FORMAT ?? "yyyy/MM/dd HH:mm:ss",
       source: "process.env (Cloudflare Worker runtime)",
       at: new Date().toISOString(),
@@ -662,13 +685,12 @@ export const getCallCenterAnalytics = createServerFn({ method: "POST" })
     const { isConfigured } = await import("@/lib/yeastar/client.server");
     if (!isConfigured()) return { ok: false as const, configured: false as const };
 
-    const [{ data: canView }, { data: canAll }, { data: isAdmin }] = await Promise.all([
-      supabase.rpc("has_permission", { _user_id: userId, _permission: "view_team_analytics" }),
+    const [{ canView, isAdmin }, { data: canAll }] = await Promise.all([
+      callCenterAccess(supabase, userId),
       supabase.rpc("has_permission", { _user_id: userId, _permission: "view_all_agents" }),
-      supabase.rpc("is_administrator", { _user_id: userId }),
     ]);
-    if (!canView && !isAdmin) throw new Error("Forbidden: call analytics access required");
-    const seesAll = !!canAll || !!isAdmin;
+    if (!canView) throw new Error("Forbidden: call analytics access required");
+    const seesAll = !!canAll || isAdmin;
 
     // Namespace the client-supplied job id to the caller. cdr_progress has no
     // owner column, so without this any authenticated user could read (or
@@ -765,11 +787,8 @@ export const yeastarRealtimeQueue = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
-    const [{ data: canView }, { data: isAdmin }] = await Promise.all([
-      supabase.rpc("has_permission", { _user_id: userId, _permission: "view_call_center" }),
-      supabase.rpc("is_administrator", { _user_id: userId }),
-    ]);
-    if (!canView && !isAdmin) throw new Error("Forbidden");
+    const { canView } = await callCenterAccess(supabase, userId);
+    if (!canView) throw new Error("Forbidden");
 
     const { isConfigured, yeastarFetch } = await import("@/lib/yeastar/client.server");
     if (!isConfigured()) {

@@ -17,9 +17,11 @@
  *      Asia/Riyadh — no DST) so buckets line up with dashboard filters.
  */
 import { yeastarFetch } from "./client.server";
+import { BUSINESS_UTC_OFFSET_MINUTES } from "@/lib/timezone";
 
-// Business timezone offset for day-boundary math. Asia/Riyadh = UTC+3, no DST.
-const TZ_OFFSET_MIN = Number(process.env.YEASTAR_UTC_OFFSET_MINUTES ?? 180);
+// Business timezone offset for day-boundary math. Defaults to the centralized
+// business timezone (Asia/Riyadh = UTC+3, no DST); override per-deployment.
+const TZ_OFFSET_MIN = Number(process.env.YEASTAR_UTC_OFFSET_MINUTES ?? BUSINESS_UTC_OFFSET_MINUTES);
 
 
 export interface CdrRecord {

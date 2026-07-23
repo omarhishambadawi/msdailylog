@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { z } from "zod";
 import { hasPerm } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query-keys";
+import { BUSINESS_TIMEZONE } from "@/lib/timezone";
 
 const schema = z.object({
   order_date: z.string().min(1),
@@ -328,10 +329,10 @@ function OrderActivityTimeline({ orderId }: { orderId: string }) {
     },
   });
 
-  const fmtCairo = (iso: string) => {
+  const fmtBusinessTime = (iso: string) => {
     try {
       return new Intl.DateTimeFormat("en-US", {
-        timeZone: "Africa/Cairo", year: "numeric", month: "short", day: "2-digit",
+        timeZone: BUSINESS_TIMEZONE, year: "numeric", month: "short", day: "2-digit",
         hour: "numeric", minute: "2-digit", hour12: true,
       }).format(new Date(iso));
     } catch { return iso; }
@@ -365,7 +366,7 @@ function OrderActivityTimeline({ orderId }: { orderId: string }) {
               <div className="min-w-0 flex-1">
                 <div className="font-medium">{describe(e)}</div>
                 <div className="text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">{e.actor_name}</span> · {fmtCairo(e.created_at)}
+                  <span className="font-medium text-foreground">{e.actor_name}</span> · {fmtBusinessTime(e.created_at)}
                 </div>
               </div>
             </li>

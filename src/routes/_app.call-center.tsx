@@ -19,7 +19,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { hasPerm } from "@/lib/permissions";
+import { hasPerm, canViewCallCenter } from "@/lib/permissions";
+import { useAgentDirectory } from "@/lib/directory";
 import { getCallCenterAnalytics, yeastarRealtimeQueue } from "@/lib/yeastar.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,9 +45,7 @@ type Direction = "all" | "Inbound" | "Outbound";
 
 function CallCenterPage() {
   const { role, profile, loading: authLoading } = useAuth();
-  const canView = hasPerm(role, profile?.permissions as any, "view_call_center")
-    || hasPerm(role, profile?.permissions as any, "view_team_analytics")
-    || hasPerm(role, profile?.permissions as any, "view_dashboard");
+  const canView = canViewCallCenter(role, profile?.permissions as any);
   const canAll = hasPerm(role, profile?.permissions as any, "view_all_agents");
   const canExport = hasPerm(role, profile?.permissions as any, "export_reports");
 
@@ -63,24 +62,12 @@ function CallCenterPage() {
   const to = range?.to ? toISO(range.to) : from;
 
 
-  // Agents dropdown (admin only)
-  const { data: agents } = useQuery({
-    queryKey: queryKeys.lookups.callCenterAgents(),
-    queryFn: async () => {
-      const [{ data: profiles }, { data: roles }] = await Promise.all([
-        supabase.from("profiles").select("id,full_name,agent_code").order("full_name"),
-        supabase.from("user_roles").select("user_id,role"),
-      ]);
-      const rm = new Map((roles ?? []).map((r: any) => [r.user_id, r.role]));
-      return (profiles ?? []).map((p: any) => ({ ...p, role: rm.get(p.id) ?? null }))
-        .filter((a: any) => a.role === "customer_care" || a.role === "telesales");
-    },
-    enabled: canAll,
-    staleTime: 5 * 60_000,
-  });
+  // Agents dropdown (admin only) — reads the shared agent directory.
+  const { data: agents } = useAgentDirectory({ enabled: canAll });
   const filteredAgents = useMemo(() => {
     if (!agents) return [];
-    return team === "all" ? agents : agents.filter((a: any) => a.role === team);
+    const operational = agents.filter((a: any) => a.role === "customer_care" || a.role === "telesales");
+    return team === "all" ? operational : operational.filter((a: any) => a.role === team);
   }, [agents, team]);
 
   // Progress job id (rotates per query)
