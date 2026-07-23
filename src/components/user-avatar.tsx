@@ -1,4 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { AVATAR_BUCKET, AVATAR_SIGNED_TTL, isStoragePath } from "@/lib/avatar";
 
 interface UserAvatarProps {
   name?: string | null;
@@ -20,12 +23,39 @@ function initialsOf(name?: string | null) {
   return name.split(/\s+/).map((s) => s[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 }
 
+/**
+ * Resolve a stored avatar value to a displayable URL. A storage object path is
+ * signed on demand with a short-lived URL (cached per path, shared across every
+ * avatar that renders the same path). Ready-to-use values — full http(s) URLs
+ * (e.g. admin-list rows signed server-side, or legacy data) and local
+ * `data:`/`blob:` previews — pass through unchanged.
+ */
+function useSignedAvatarUrl(value?: string | null): string | null {
+  const path = isStoragePath(value) ? value! : null;
+  const { data } = useQuery({
+    queryKey: ["avatar-signed", path],
+    enabled: !!path,
+    // Refresh a little before the URL expires so images never 403 mid-view.
+    staleTime: (AVATAR_SIGNED_TTL - 300) * 1000,
+    gcTime: AVATAR_SIGNED_TTL * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase.storage
+        .from(AVATAR_BUCKET)
+        .createSignedUrl(path!, AVATAR_SIGNED_TTL);
+      if (error) return null;
+      return data?.signedUrl ?? null;
+    },
+  });
+  return path ? (data ?? null) : (value ?? null);
+}
+
 export function UserAvatar({ name, url, size = "md", className }: UserAvatarProps) {
   const cls = sizeMap[size];
-  if (url) {
+  const resolved = useSignedAvatarUrl(url);
+  if (resolved) {
     return (
       <img
-        src={url}
+        src={resolved}
         alt={name ?? "avatar"}
         className={cn("rounded-full object-cover ring-1 ring-border shrink-0", cls, className)}
         loading="lazy"

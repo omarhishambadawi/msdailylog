@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { APP_ROLES } from "@/lib/roles";
+import { AVATAR_BUCKET, AVATAR_SIGNED_TTL, avatarObjectPath } from "@/lib/avatar";
 
 // Derived from APP_ROLES so a role added to the enum cannot be silently
 // rejected at this boundary. `supervisor` was missing here even though the
@@ -227,9 +228,24 @@ export const adminListUsers = createServerFn({ method: "GET" })
     const { data: list } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
     const emails = new Map(list.users.map((u: any) => [u.id, u.email]));
     const roleMap = new Map((roles ?? []).map((r: any) => [r.user_id, r.role]));
-    return (profiles ?? []).map((p: any) => ({
+    const rows = (profiles ?? []).map((p: any) => ({
       ...p,
       email: emails.get(p.id) ?? "",
       role: roleMap.get(p.id) ?? null,
     }));
+    // Profiles store only the object path. Resolve each to a short-lived signed
+    // URL here (service_role signs any path — owner-scoped storage RLS would
+    // block an admin from signing another user's avatar client-side). Legacy
+    // long-lived URLs are re-signed short-lived via their extracted path too.
+    await Promise.all(
+      rows.map(async (r: any) => {
+        const path = avatarObjectPath(r.avatar_url);
+        if (!path) return;
+        const { data: signed } = await supabaseAdmin.storage
+          .from(AVATAR_BUCKET)
+          .createSignedUrl(path, AVATAR_SIGNED_TTL);
+        r.avatar_url = signed?.signedUrl ?? null;
+      }),
+    );
+    return rows;
   });

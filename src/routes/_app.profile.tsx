@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { UserAvatar } from "@/components/user-avatar";
+import { AVATAR_BUCKET, avatarObjectPath } from "@/lib/avatar";
 import { LogOut, Mail, IdCard, Phone, ShieldCheck, Calendar, Camera, Trash2, Save, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -85,18 +86,19 @@ function ProfilePage() {
       // object key.
       const ext = EXT_FOR_TYPE[file.type] ?? "png";
       const path = `${session.user.id}/avatar-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, {
+      const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, file, {
         cacheControl: "3600",
         upsert: false,
         contentType: file.type,
       });
       if (upErr) throw upErr;
-      // Long-lived signed URL (private bucket). 1 year expiry.
-      const { data: signed, error: signErr } = await supabase.storage
-        .from("avatars")
-        .createSignedUrl(path, 60 * 60 * 24 * 365);
-      if (signErr || !signed?.signedUrl) throw signErr ?? new Error("Sign failed");
-      await updateFn({ data: { avatarUrl: signed.signedUrl } });
+      // Store only the object path — signed URLs are minted on demand at display.
+      const previousPath = avatarObjectPath(profile?.avatar_url);
+      await updateFn({ data: { avatarPath: path } });
+      // Delete the object we just replaced (best-effort; own-folder delete).
+      if (previousPath && previousPath !== path) {
+        await supabase.storage.from(AVATAR_BUCKET).remove([previousPath]).catch(() => {});
+      }
       await refresh();
       qc.invalidateQueries();
       toast.success("Profile picture updated");
@@ -114,7 +116,12 @@ function ProfilePage() {
     if (!profile?.avatar_url) return;
     setUploading(true);
     try {
-      await updateFn({ data: { avatarUrl: null } });
+      const previousPath = avatarObjectPath(profile?.avatar_url);
+      await updateFn({ data: { avatarPath: null } });
+      // Delete the underlying object, not just the pointer.
+      if (previousPath) {
+        await supabase.storage.from(AVATAR_BUCKET).remove([previousPath]).catch(() => {});
+      }
       await refresh();
       qc.invalidateQueries();
       toast.success("Profile picture removed");
